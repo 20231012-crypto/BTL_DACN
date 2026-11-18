@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { readFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,47 +34,67 @@ export function openDatabase(
         db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
     }
   }
-  const one = (sql, ...params) => db.prepare(sql).get(...params);
-  const all = (sql, ...params) => db.prepare(sql).all(...params);
-  const run = (sql, ...params) => db.prepare(sql).run(...params);
-  const insert = (table, values) => {
+  // Keep unrelated requests outside the SQLite transaction while its callback awaits queries.
+  const context = new AsyncLocalStorage();
+  let queue = Promise.resolve();
+  const enqueue = (work) => {
+    const result = queue.then(work);
+    queue = result.catch(() => {});
+    return result;
+  };
+  const execute = (work) => (context.getStore() ? work() : enqueue(work));
+  const one = (sql, ...params) => execute(() => db.prepare(sql).get(...params));
+  const all = (sql, ...params) => execute(() => db.prepare(sql).all(...params));
+  const run = (sql, ...params) => execute(() => db.prepare(sql).run(...params));
+  const insert = async (table, values) => {
     const keys = Object.keys(values);
     return Number(
-      run(
-        `INSERT INTO ${table} (${keys.join(',')}) VALUES (${keys.map(() => '?').join(',')})`,
-        ...Object.values(values),
+      (
+        await run(
+          `INSERT INTO ${table} (${keys.join(',')}) VALUES (${keys.map(() => '?').join(',')})`,
+          ...Object.values(values),
+        )
       ).lastInsertRowid,
     );
   };
-  const update = (table, values, id, idField = 'id') => {
+  const update = async (table, values, id, idField = 'id') => {
     const keys = Object.keys(values);
     if (keys.length)
-      run(
+      return run(
         `UPDATE ${table} SET ${keys.map((k) => `${k}=?`).join(',')} WHERE ${idField}=?`,
         ...Object.values(values),
         id,
       );
   };
   const transaction = (fn) => {
-    db.exec('BEGIN IMMEDIATE');
-    try {
-      const result = fn();
-      db.exec('COMMIT');
-      return result;
-    } catch (error) {
-      db.exec('ROLLBACK');
-      throw error;
-    }
+    if (context.getStore()) return fn();
+    return enqueue(async () => {
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const result = await context.run(true, fn);
+        db.exec('COMMIT');
+        return result;
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
+    });
   };
   return {
     db,
+    kind: 'sqlite',
     one,
     all,
     run,
     insert,
     update,
     transaction,
-    close: () => db.close(),
+    columns: (table) => all(`PRAGMA table_info(${table})`),
+    deferConstraints: () =>
+      execute(() => db.exec('PRAGMA defer_foreign_keys=ON')),
+    foreignKeyViolations: () => all('PRAGMA foreign_key_check'),
+    resetSequences: async () => {},
+    close: () => enqueue(() => db.close()),
   };
 }
 export const camel = (object) =>

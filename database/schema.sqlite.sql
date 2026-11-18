@@ -45,3 +45,4 @@ CREATE INDEX IF NOT EXISTS idx_order_user ON don_hang(user_id,created_at);
 CREATE INDEX IF NOT EXISTS idx_batch_expiry ON lo_thuoc(product_id,expires_at);
 CREATE INDEX IF NOT EXISTS idx_message_session ON tin_nhan(session_id,id);
 CREATE INDEX IF NOT EXISTS idx_otp_user ON ma_otp(user_id,purpose,id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_single_refund ON giao_dich_thanh_toan(order_id) WHERE type='refund' AND status IN ('pending','success');

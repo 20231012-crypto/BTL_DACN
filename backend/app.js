@@ -2,8 +2,10 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
+import { isIP } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { openDatabase, camel } from './repositories/database.js';
+import { openPostgres } from './repositories/postgres.js';
 import { seedDatabase } from './repositories/seed.js';
 import {
   assert,
@@ -16,34 +18,72 @@ import { installOrders, expireOrders } from './services/orders.js';
 import { installAdmin } from './services/admin.js';
 import { installBackup } from './services/backup.js';
 import { installChatbot } from './services/chatbot.js';
+import {
+  installUploadIntents,
+  supabaseStorage,
+} from './services/attachments.js';
 import { googleConfig } from './integrations/google.js';
 import { vnpayConfig } from './integrations/vnpay.js';
 const root = fileURLToPath(new URL('../', import.meta.url));
-export function createApp(options = {}) {
-  const d = openDatabase(options.dbPath || process.env.DATABASE_PATH);
-  const origin = new URL(
-    process.env.APP_ORIGIN || `http://127.0.0.1:${process.env.PORT || 3001}`,
-  ).origin;
+export async function createApp(options = {}) {
+  const hosted =
+    options.hosted ?? (!options.testing && process.env.VERCEL === '1');
+  const databaseUrl =
+    options.databaseUrl ?? (options.dbPath ? '' : process.env.DATABASE_URL);
+  if (hosted && !databaseUrl)
+    throw new Error('Cần DATABASE_URL để chạy trên Vercel.');
+  const defaultOrigin =
+    hosted && process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : `http://127.0.0.1:${process.env.PORT || 3001}`;
+  const origin = new URL(process.env.APP_ORIGIN || defaultOrigin).origin;
   const config = {
+    hosted,
     testing: !!options.testing,
     demo:
-      options.demo ??
-      (process.env.NODE_ENV !== 'production' &&
-        process.env.DEMO_MODE !== 'false'),
+      !hosted &&
+      (!databaseUrl || options.testing) &&
+      (options.demo ??
+        (process.env.NODE_ENV !== 'production' &&
+          process.env.DEMO_MODE !== 'false')),
     storagePath: options.storagePath || process.env.PRESCRIPTIONS_PATH,
+    attachmentStorage:
+      options.attachmentStorage ?? (databaseUrl ? supabaseStorage() : null),
     origin,
     secureCookies:
-      process.env.NODE_ENV === 'production' || origin.startsWith('https:'),
+      hosted ||
+      process.env.NODE_ENV === 'production' ||
+      origin.startsWith('https:'),
     google: googleConfig(origin),
     vnpay: options.vnpay ?? vnpayConfig(origin),
   };
-  // Demo seed is explicit in production. Local projects run immediately with reproducible sample data.
-  seedDatabase(d, {
-    demoData:
-      options.seed !== false &&
-      process.env.SEED_DEMO !== 'false' &&
-      config.demo,
-  });
+  if (hosted && !config.attachmentStorage)
+    throw new Error('Cần Supabase Storage riêng tư để chạy trên Vercel.');
+  const d = databaseUrl
+    ? openPostgres(databaseUrl)
+    : openDatabase(options.dbPath || process.env.DATABASE_PATH);
+  try {
+    if (config.attachmentStorage) await config.attachmentStorage.check();
+    if (d.kind === 'sqlite' || (options.testing && options.seed !== false)) {
+      await seedDatabase(d, {
+        demoData:
+          options.seed !== false &&
+          process.env.SEED_DEMO !== 'false' &&
+          config.demo,
+      });
+    } else {
+      const initialized = await d.one(
+        "SELECT value FROM settings WHERE key='storeName'",
+      );
+      if (!initialized)
+        throw new Error(
+          'Chạy npm run db:setup trước khi khởi động PostgreSQL.',
+        );
+    }
+  } catch (error) {
+    await d.close();
+    throw error;
+  }
   const app = express();
   app.disable('x-powered-by');
   app.locals.store = d;
@@ -58,17 +98,23 @@ export function createApp(options = {}) {
     if (req.path.startsWith('/api')) res.set('Cache-Control', 'no-store');
     next();
   });
-  app.use(express.json({ limit: '20mb' }));
-  app.use(cookieParser());
-  const origins = new Set(
-    [
-      'http://localhost:5173',
-      'http://localhost:3001',
-      'http://127.0.0.1:5173',
-      'http://127.0.0.1:3001',
-      origin,
-    ].filter(Boolean),
+  app.use(
+    express.json({
+      limit: hosted ? '4mb' : '20mb',
+    }),
   );
+  app.use(cookieParser());
+  const origins = new Set([
+    origin,
+    ...(hosted
+      ? [defaultOrigin]
+      : [
+          'http://localhost:5173',
+          'http://localhost:3001',
+          'http://127.0.0.1:5173',
+          'http://127.0.0.1:3001',
+        ]),
+  ]);
   app.use('/api', (req, res, next) => {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       const origin = req.get('Origin');
@@ -88,8 +134,10 @@ export function createApp(options = {}) {
   const limits = new Map();
   app.use('/api', (req, res, next) => {
     if (config.testing) return next();
+    const forwarded = hosted ? req.get('x-vercel-forwarded-for') || '' : '';
+    const clientIp = isIP(forwarded) ? forwarded : req.ip;
     const authRoute = req.path.startsWith('/auth'),
-      key = `${req.ip}:${authRoute ? 'auth' : req.path.startsWith('/chat') ? 'chat' : 'api'}`,
+      key = `${clientIp}:${authRoute ? 'auth' : req.path.startsWith('/chat') ? 'chat' : 'api'}`,
       window = authRoute ? 15 * 60000 : 60000,
       max = authRoute ? 40 : req.path.startsWith('/chat') ? 60 : 600,
       time = Date.now();
@@ -110,10 +158,10 @@ export function createApp(options = {}) {
     next();
   });
   let lastExpire = 0;
-  app.use('/api', (req, res, next) => {
+  app.use('/api', async (req, res, next) => {
     if (Date.now() - lastExpire > 60000) {
       lastExpire = Date.now();
-      expireOrders(d);
+      await expireOrders(d);
     }
     next();
   });
@@ -141,14 +189,14 @@ export function createApp(options = {}) {
       data: {
         status: 'ok',
         name: 'Nhà thuốc An Tâm',
-        database: 'sqlite',
+        database: d.kind,
         demoMode: config.demo,
         geminiConfigured: !!process.env.GEMINI_API_KEY,
       },
     }),
   );
-  app.get('/api/config', (req, res) => {
-    const s = getSettings(d);
+  app.get('/api/config', async (req, res) => {
+    const s = await getSettings(d);
     res.json({
       data: {
         storeName: s.storeName,
@@ -158,6 +206,7 @@ export function createApp(options = {}) {
         chatbotEnabled: s.chatbotEnabled,
         otpMode: config.demo ? 'demo' : 'email',
         googleConfigured: Boolean(config.google),
+        uploadMode: config.attachmentStorage ? 'signed' : 'multipart',
         paymentProvider: config.vnpay ? 'vnpay' : config.demo ? 'demo' : 'cod',
         paymentMethods: [
           'cod',
@@ -167,46 +216,52 @@ export function createApp(options = {}) {
       },
     });
   });
-  app.get('/api/products', (req, res) =>
-    res.json({ data: productList(d, req.query) }),
+  app.get('/api/products', async (req, res) =>
+    res.json({
+      data: await productList(d, req.query),
+    }),
   );
-  app.get('/api/products/:id', (req, res) => {
-    let product = getProduct(d, req.params.id);
+  app.get('/api/products/:id', async (req, res) => {
+    let product = await getProduct(d, req.params.id);
     if (!product) {
-      const row = d.one('SELECT id FROM thuoc WHERE slug=?', req.params.id);
-      if (row) product = getProduct(d, row.id);
+      const row = await d.one(
+        'SELECT id FROM thuoc WHERE slug=?',
+        req.params.id,
+      );
+      if (row) product = await getProduct(d, row.id);
     }
     assert(product, 404, 'Không tìm thấy sản phẩm.');
-    const reviews = d
-      .all(
+    const reviews = (
+      await d.all(
         'SELECT r.id,r.rating,r.comment,r.created_at,u.name user_name FROM danh_gia r JOIN nguoi_dung u ON u.id=r.user_id WHERE r.product_id=? ORDER BY r.id DESC',
         product.id,
       )
-      .map(camel);
+    ).map(camel);
     res.json({ data: { ...product, reviews } });
   });
-  app.get('/api/categories', (req, res) =>
+  app.get('/api/categories', async (req, res) =>
     res.json({
-      data: d
-        .all('SELECT * FROM danh_muc WHERE active=1 ORDER BY id')
-        .map(camel),
+      data: (
+        await d.all('SELECT * FROM danh_muc WHERE active=1 ORDER BY id')
+      ).map(camel),
     }),
   );
-  app.get('/api/manufacturers', (req, res) =>
+  app.get('/api/manufacturers', async (req, res) =>
     res.json({
-      data: d
-        .all('SELECT * FROM nha_san_xuat WHERE active=1 ORDER BY name')
-        .map(camel),
+      data: (
+        await d.all('SELECT * FROM nha_san_xuat WHERE active=1 ORDER BY name')
+      ).map(camel),
     }),
   );
   installOrders(app, d, guards, config);
+  installUploadIntents(app, d, guards.auth, config.attachmentStorage);
   installAdmin(app, d, guards, config);
   installBackup(app, d, guards);
   installChatbot(app, d, guards, config);
   app.use('/api', (req, res) =>
     res.status(404).json({ error: 'API không tồn tại.' }),
   );
-  if (existsSync(path.join(root, 'dist/index.html'))) {
+  if (!hosted && existsSync(path.join(root, 'dist/index.html'))) {
     app.use(express.static(path.join(root, 'dist')));
     app.get('/{*path}', (req, res) =>
       res.sendFile(path.join(root, 'dist/index.html')),
@@ -217,14 +272,19 @@ export function createApp(options = {}) {
       return res.status(400).json({ error: 'Tệp đính kèm tối đa 5 MB.' });
     if (error instanceof SyntaxError && error.type === 'entity.parse.failed')
       return res.status(400).json({ error: 'Dữ liệu JSON không hợp lệ.' });
-    if (error.code?.startsWith('SQLITE_CONSTRAINT'))
+    if (
+      error.code?.startsWith('SQLITE_CONSTRAINT') ||
+      ['23503', '23505', '23514'].includes(error.code)
+    )
       return res.status(409).json({
         error: 'Dữ liệu trùng hoặc vi phạm ràng buộc. Vui lòng kiểm tra lại.',
       });
+    if (error.code === '22P02')
+      return res.status(400).json({ error: 'Định dạng dữ liệu không hợp lệ.' });
     const status = error.status || 500;
     if (status >= 500 && !config.testing)
       console.error(
-        `[${new Date().toISOString()}] ${req.method} ${req.path}: ${error.message}`,
+        `[${new Date().toISOString()}] ${req.method} ${req.path}: ${hosted ? error.code || status : error.message}`,
       );
     res.status(status).json({
       error:

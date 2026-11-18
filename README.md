@@ -45,3 +45,4 @@ Chạy `npm test` để kiểm tra API trên cơ sở dữ liệu tạm. Kịch 
 - [Đối chiếu chức năng theo báo cáo](docs/requirements-map.md)
 - [Thiết kế cơ sở dữ liệu](docs/database-design.md)
 - [Kết quả kiểm thử](docs/verification-results.md)
+- [Triển khai với Vercel và Supabase](docs/deploy-vercel-supabase.md)

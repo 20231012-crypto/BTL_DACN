@@ -26,23 +26,23 @@ const dateValid = (s) =>
   new Date(s).toISOString().slice(0, 10) === s;
 const number = (v, min = 0, max = 100000000000) =>
   Number.isSafeInteger(Number(v)) && Number(v) >= min && Number(v) <= max;
-function inventory(d) {
-  const settings = getSettings(d),
+async function inventory(d) {
+  const settings = await getSettings(d),
     cutoff = daysFromNow(Number(settings.expiryWarningDays));
-  const batches = d
-    .all(
+  const batches = (
+    await d.all(
       'SELECT b.*,t.name product_name,t.unit,s.name supplier_name FROM lo_thuoc b JOIN thuoc t ON t.id=b.product_id LEFT JOIN phieu_nhap_kho p ON p.id=b.receipt_id LEFT JOIN nha_cung_cap s ON s.id=p.supplier_id ORDER BY b.expires_at,b.id',
     )
-    .map((b) => ({
-      ...camel(b),
-      available: b.expires_at <= today() ? 0 : b.quantity - b.reserved,
-      status:
-        b.expires_at <= today()
-          ? 'expired'
-          : b.expires_at <= cutoff
-            ? 'expiring'
-            : 'available',
-    }));
+  ).map((b) => ({
+    ...camel(b),
+    available: b.expires_at <= today() ? 0 : b.quantity - b.reserved,
+    status:
+      b.expires_at <= today()
+        ? 'expired'
+        : b.expires_at <= cutoff
+          ? 'expiring'
+          : 'available',
+  }));
   const alerts = batches
     .filter((b) => b.status !== 'available' && b.quantity > 0)
     .map((b) => ({
@@ -54,7 +54,7 @@ function inventory(d) {
       quantity: b.quantity,
       expiresAt: b.expiresAt,
     }));
-  for (const p of productList(d, {}, true))
+  for (const p of await productList(d, {}, true))
     if (p.active && p.stock < Number(settings.lowStockThreshold))
       alerts.push({
         type: 'low_stock',
@@ -62,11 +62,11 @@ function inventory(d) {
         productName: p.name,
         quantity: p.stock,
       });
-  const movements = d
-    .all(
+  const movements = (
+    await d.all(
       'SELECT l.*,t.name product_name,b.batch_number,u.name user_name FROM lich_su_ton_kho l JOIN thuoc t ON t.id=l.product_id JOIN lo_thuoc b ON b.id=l.batch_id LEFT JOIN nguoi_dung u ON u.id=l.user_id ORDER BY l.id DESC LIMIT 300',
     )
-    .map(camel);
+  ).map(camel);
   return {
     batches,
     movements,
@@ -81,7 +81,7 @@ function inventory(d) {
     },
   };
 }
-function reports(d, query = {}, includeOrderDetails = false) {
+async function reports(d, query = {}, includeOrderDetails = false) {
   const from = query.from || daysFromNow(-29),
     to = query.to || today();
   assert(
@@ -89,7 +89,7 @@ function reports(d, query = {}, includeOrderDetails = false) {
     400,
     'Khoảng thời gian báo cáo không hợp lệ.',
   );
-  const all = d.all(
+  const all = await d.all(
       `SELECT o.*, date(o.created_at,'+7 hours') report_date,
         COALESCE((SELECT SUM(t.amount) FROM giao_dich_thanh_toan t WHERE t.order_id=o.id AND t.type='refund' AND t.status='success'),0) returned_amount
        FROM don_hang o WHERE date(o.created_at,'+7 hours') BETWEEN ? AND ?`,
@@ -121,18 +121,20 @@ function reports(d, query = {}, includeOrderDetails = false) {
       orders: orders.length,
     });
   }
-  const topProducts = d
-    .all(
+  const topProducts = (
+    await d.all(
       "SELECT p.id,p.name,SUM(i.quantity) quantity,SUM(i.quantity*i.price) revenue FROM chi_tiet_don_hang i JOIN don_hang o ON o.id=i.order_id JOIN thuoc p ON p.id=i.product_id WHERE o.status='delivered' AND o.payment_status='paid' AND date(o.created_at,'+7 hours') BETWEEN ? AND ? GROUP BY p.id ORDER BY quantity DESC LIMIT 10",
       from,
       to,
     )
-    .map(camel);
-  const inv = inventory(d),
-    chatCount = d.one(
-      "SELECT COUNT(*) n FROM cuoc_hoi_thoai WHERE date(created_at,'+7 hours') BETWEEN ? AND ?",
-      from,
-      to,
+  ).map(camel);
+  const inv = await inventory(d),
+    chatCount = (
+      await d.one(
+        "SELECT COUNT(*) n FROM cuoc_hoi_thoai WHERE date(created_at,'+7 hours') BETWEEN ? AND ?",
+        from,
+        to,
+      )
     ).n;
   return {
     from,
@@ -149,21 +151,29 @@ function reports(d, query = {}, includeOrderDetails = false) {
           ).toFixed(1),
         )
       : 0,
-    customerCount: d.one(
-      'SELECT COUNT(*) n FROM nguoi_dung u JOIN khach_hang k ON k.id=u.id WHERE u.active=1',
+    customerCount: (
+      await d.one(
+        'SELECT COUNT(*) n FROM nguoi_dung u JOIN khach_hang k ON k.id=u.id WHERE u.active=1',
+      )
     ).n,
-    pendingOrders: d.one(
-      "SELECT COUNT(*) n FROM don_hang WHERE status IN ('pending','pending_payment','pending_prescription')",
+    pendingOrders: (
+      await d.one(
+        "SELECT COUNT(*) n FROM don_hang WHERE status IN ('pending','pending_payment','pending_prescription')",
+      )
     ).n,
-    pendingPrescriptions: d.one(
-      "SELECT COUNT(*) n FROM don_thuoc WHERE status='pending' AND order_id IS NOT NULL",
+    pendingPrescriptions: (
+      await d.one(
+        "SELECT COUNT(*) n FROM don_thuoc WHERE status='pending' AND order_id IS NOT NULL",
+      )
     ).n,
     lowStockCount: inv.alerts.filter((a) => a.type === 'low_stock').length,
     chatCount,
-    handoffCount: d.one(
-      "SELECT COUNT(*) n FROM yeu_cau_ho_tro WHERE date(created_at,'+7 hours') BETWEEN ? AND ?",
-      from,
-      to,
+    handoffCount: (
+      await d.one(
+        "SELECT COUNT(*) n FROM yeu_cau_ho_tro WHERE date(created_at,'+7 hours') BETWEEN ? AND ?",
+        from,
+        to,
+      )
     ).n,
     dailyRevenue,
     topProducts,
@@ -173,11 +183,15 @@ function reports(d, query = {}, includeOrderDetails = false) {
       expiringCount: inv.alerts.filter((a) => a.type === 'expiring').length,
       expiredCount: inv.alerts.filter((a) => a.type === 'expired').length,
     },
-    recentOrders: d
-      .all(
-        'SELECT id,code,created_at,total,status,payment_status,payment_method FROM don_hang ORDER BY id DESC LIMIT 8',
-      )
-      .map((o) => (includeOrderDetails ? orderView(d, o.id) : camel(o))),
+    recentOrders: await Promise.all(
+      (
+        await d.all(
+          'SELECT id,code,created_at,total,status,payment_status,payment_method FROM don_hang ORDER BY id DESC LIMIT 8',
+        )
+      ).map(async (o) =>
+        includeOrderDetails ? await orderView(d, o.id) : camel(o),
+      ),
+    ),
   };
 }
 export function installAdmin(
@@ -186,19 +200,23 @@ export function installAdmin(
   { auth, permission, admin, sendOtp },
   options,
 ) {
-  app.get('/api/admin/dashboard', permission('reports'), (req, res) =>
+  app.get('/api/admin/dashboard', permission('reports'), async (req, res) =>
     res.json({
-      data: reports(
+      data: await reports(
         d,
-        { from: daysFromNow(-6) },
+        {
+          from: daysFromNow(-6),
+        },
         req.user.permissions.includes('orders'),
       ),
     }),
   );
-  app.get('/api/admin/products', permission('catalog'), (req, res) =>
-    res.json({ data: productList(d, req.query, true) }),
+  app.get('/api/admin/products', permission('catalog'), async (req, res) =>
+    res.json({
+      data: await productList(d, req.query, true),
+    }),
   );
-  const productValues = (b, old = {}) => {
+  const productValues = async (b, old = {}) => {
     const p = { ...camel(old), ...b };
     assert(
       text(p.name, 200).length >= 2,
@@ -206,16 +224,16 @@ export function installAdmin(
       'Tên sản phẩm cần ít nhất 2 ký tự.',
     );
     assert(
-      d.one('SELECT id FROM danh_muc WHERE id=?', Number(p.categoryId)),
+      await d.one('SELECT id FROM danh_muc WHERE id=?', Number(p.categoryId)),
       400,
       'Danh mục không hợp lệ.',
     );
     assert(
       !p.manufacturerId ||
-        d.one(
+        (await d.one(
           'SELECT id FROM nha_san_xuat WHERE id=?',
           Number(p.manufacturerId),
-        ),
+        )),
       400,
       'Nhà sản xuất không hợp lệ.',
     );
@@ -257,55 +275,79 @@ export function installAdmin(
       updated_at: now(),
     };
   };
-  app.post('/api/admin/products', permission('catalog'), (req, res) => {
-    const values = productValues(req.body);
+  app.post('/api/admin/products', permission('catalog'), async (req, res) => {
+    const values = await productValues(req.body);
     assert(
-      !d.one('SELECT id FROM thuoc WHERE slug=?', values.slug),
+      !(await d.one('SELECT id FROM thuoc WHERE slug=?', values.slug)),
       409,
       'Mã đường dẫn sản phẩm đã tồn tại.',
     );
-    const id = d.insert('thuoc', values);
-    audit(d, req.user.id, 'product.create', 'product', id);
-    res.status(201).json({ data: getProduct(d, id, true) });
+    const id = await d.insert('thuoc', values);
+    await audit(d, req.user.id, 'product.create', 'product', id);
+    res.status(201).json({
+      data: await getProduct(d, id, true),
+    });
   });
-  app.patch('/api/admin/products/:id', permission('catalog'), (req, res) => {
-    const old = d.one('SELECT * FROM thuoc WHERE id=?', req.params.id);
-    assert(old, 404, 'Không tìm thấy sản phẩm.');
-    const values = productValues(req.body, old);
-    assert(
-      !d.one(
-        'SELECT id FROM thuoc WHERE slug=? AND id!=?',
-        values.slug,
-        old.id,
-      ),
-      409,
-      'Mã đường dẫn sản phẩm đã tồn tại.',
-    );
-    d.update('thuoc', values, old.id);
-    audit(d, req.user.id, 'product.update', 'product', old.id);
-    res.json({ data: getProduct(d, old.id, true) });
-  });
-  app.delete('/api/admin/products/:id', permission('catalog'), (req, res) => {
-    assert(
-      d.one('SELECT id FROM thuoc WHERE id=?', req.params.id),
-      404,
-      'Không tìm thấy sản phẩm.',
-    );
-    d.update('thuoc', { active: 0, updated_at: now() }, req.params.id);
-    audit(d, req.user.id, 'product.hide', 'product', req.params.id);
-    res.json({ data: { hidden: true } });
-  });
+  app.patch(
+    '/api/admin/products/:id',
+    permission('catalog'),
+    async (req, res) => {
+      const old = await d.one('SELECT * FROM thuoc WHERE id=?', req.params.id);
+      assert(old, 404, 'Không tìm thấy sản phẩm.');
+      const values = await productValues(req.body, old);
+      assert(
+        !(await d.one(
+          'SELECT id FROM thuoc WHERE slug=? AND id!=?',
+          values.slug,
+          old.id,
+        )),
+        409,
+        'Mã đường dẫn sản phẩm đã tồn tại.',
+      );
+      await d.update('thuoc', values, old.id);
+      await audit(d, req.user.id, 'product.update', 'product', old.id);
+      res.json({
+        data: await getProduct(d, old.id, true),
+      });
+    },
+  );
+  app.delete(
+    '/api/admin/products/:id',
+    permission('catalog'),
+    async (req, res) => {
+      assert(
+        await d.one('SELECT id FROM thuoc WHERE id=?', req.params.id),
+        404,
+        'Không tìm thấy sản phẩm.',
+      );
+      await d.update(
+        'thuoc',
+        {
+          active: 0,
+          updated_at: now(),
+        },
+        req.params.id,
+      );
+      await audit(d, req.user.id, 'product.hide', 'product', req.params.id);
+      res.json({
+        data: {
+          hidden: true,
+        },
+      });
+    },
+  );
   const simpleEntities = [
     ['categories', 'danh_muc'],
     ['manufacturers', 'nha_san_xuat'],
     ['suppliers', 'nha_cung_cap'],
   ];
   for (const [route, table] of simpleEntities) {
-    app.get(`/api/admin/${route}`, permission('catalog'), (req, res) =>
+    app.get(`/api/admin/${route}`, permission('catalog'), async (req, res) =>
       res.json({
-        data: d
-          .all(`SELECT * FROM ${table} ORDER BY id`)
-          .map((x) => ({ ...camel(x), active: !!x.active })),
+        data: (await d.all(`SELECT * FROM ${table} ORDER BY id`)).map((x) => ({
+          ...camel(x),
+          active: !!x.active,
+        })),
       }),
     );
     const values = (body, old = {}) => {
@@ -330,54 +372,84 @@ export function installAdmin(
         });
       return val;
     };
-    app.post(`/api/admin/${route}`, permission('catalog'), (req, res) => {
+    app.post(`/api/admin/${route}`, permission('catalog'), async (req, res) => {
       const v = values(req.body);
       assert(
-        !d.one(`SELECT id FROM ${table} WHERE name=?`, v.name),
+        !(await d.one(`SELECT id FROM ${table} WHERE name=?`, v.name)),
         409,
         'Tên đã tồn tại.',
       );
-      const id = d.insert(table, v);
-      audit(d, req.user.id, `${route}.create`, route, id);
-      res
-        .status(201)
-        .json({ data: camel(d.one(`SELECT * FROM ${table} WHERE id=?`, id)) });
-    });
-    app.patch(`/api/admin/${route}/:id`, permission('catalog'), (req, res) => {
-      const old = d.one(`SELECT * FROM ${table} WHERE id=?`, req.params.id);
-      assert(old, 404, 'Không tìm thấy dữ liệu.');
-      const v = values(req.body, old);
-      assert(
-        !d.one(
-          `SELECT id FROM ${table} WHERE name=? AND id!=?`,
-          v.name,
-          old.id,
-        ),
-        409,
-        'Tên đã tồn tại.',
-      );
-      d.update(table, v, old.id);
-      audit(d, req.user.id, `${route}.update`, route, old.id);
-      res.json({
-        data: camel(d.one(`SELECT * FROM ${table} WHERE id=?`, old.id)),
+      const id = await d.insert(table, v);
+      await audit(d, req.user.id, `${route}.create`, route, id);
+      res.status(201).json({
+        data: camel(await d.one(`SELECT * FROM ${table} WHERE id=?`, id)),
       });
     });
-    app.delete(`/api/admin/${route}/:id`, permission('catalog'), (req, res) => {
-      assert(
-        d.one(`SELECT id FROM ${table} WHERE id=?`, req.params.id),
-        404,
-        'Không tìm thấy dữ liệu.',
-      );
-      d.update(table, { active: 0 }, req.params.id);
-      audit(d, req.user.id, `${route}.deactivate`, route, req.params.id);
-      res.json({ data: { deactivated: true } });
-    });
+    app.patch(
+      `/api/admin/${route}/:id`,
+      permission('catalog'),
+      async (req, res) => {
+        const old = await d.one(
+          `SELECT * FROM ${table} WHERE id=?`,
+          req.params.id,
+        );
+        assert(old, 404, 'Không tìm thấy dữ liệu.');
+        const v = values(req.body, old);
+        assert(
+          !(await d.one(
+            `SELECT id FROM ${table} WHERE name=? AND id!=?`,
+            v.name,
+            old.id,
+          )),
+          409,
+          'Tên đã tồn tại.',
+        );
+        await d.update(table, v, old.id);
+        await audit(d, req.user.id, `${route}.update`, route, old.id);
+        res.json({
+          data: camel(await d.one(`SELECT * FROM ${table} WHERE id=?`, old.id)),
+        });
+      },
+    );
+    app.delete(
+      `/api/admin/${route}/:id`,
+      permission('catalog'),
+      async (req, res) => {
+        assert(
+          await d.one(`SELECT id FROM ${table} WHERE id=?`, req.params.id),
+          404,
+          'Không tìm thấy dữ liệu.',
+        );
+        await d.update(
+          table,
+          {
+            active: 0,
+          },
+          req.params.id,
+        );
+        await audit(
+          d,
+          req.user.id,
+          `${route}.deactivate`,
+          route,
+          req.params.id,
+        );
+        res.json({
+          data: {
+            deactivated: true,
+          },
+        });
+      },
+    );
   }
-  app.get('/api/admin/promotions', permission('promotions'), (req, res) =>
+  app.get('/api/admin/promotions', permission('promotions'), async (req, res) =>
     res.json({
-      data: d
-        .all('SELECT * FROM khuyen_mai ORDER BY id DESC')
-        .map((x) => ({ ...camel(x), active: !!x.active })),
+      data: (await d.all('SELECT * FROM khuyen_mai ORDER BY id DESC')).map(
+        (x) => ({
+          ...camel(x),
+          active: !!x.active,
+        }),
+      ),
     }),
   );
   const promotionValues = (body, old = {}) => {
@@ -442,64 +514,83 @@ export function installAdmin(
       active: p.active === false || p.active === 0 ? 0 : 1,
     };
   };
-  app.post('/api/admin/promotions', permission('promotions'), (req, res) => {
-    const v = promotionValues(req.body);
-    assert(
-      !d.one('SELECT id FROM khuyen_mai WHERE code=?', v.code),
-      409,
-      'Mã khuyến mãi đã tồn tại.',
-    );
-    const id = d.insert('khuyen_mai', v);
-    audit(d, req.user.id, 'promotion.create', 'promotion', id);
-    res
-      .status(201)
-      .json({ data: camel(d.one('SELECT * FROM khuyen_mai WHERE id=?', id)) });
-  });
-  app.patch(
-    '/api/admin/promotions/:id',
+  app.post(
+    '/api/admin/promotions',
     permission('promotions'),
-    (req, res) => {
-      const p = d.one('SELECT * FROM khuyen_mai WHERE id=?', req.params.id);
-      assert(p, 404, 'Không tìm thấy mã.');
-      const v = promotionValues(req.body, p);
+    async (req, res) => {
+      const v = promotionValues(req.body);
       assert(
-        !d.one(
-          'SELECT id FROM khuyen_mai WHERE code=? AND id!=?',
-          v.code,
-          p.id,
-        ),
+        !(await d.one('SELECT id FROM khuyen_mai WHERE code=?', v.code)),
         409,
         'Mã khuyến mãi đã tồn tại.',
       );
-      d.update('khuyen_mai', v, p.id);
-      audit(d, req.user.id, 'promotion.update', 'promotion', p.id);
+      const id = await d.insert('khuyen_mai', v);
+      await audit(d, req.user.id, 'promotion.create', 'promotion', id);
+      res.status(201).json({
+        data: camel(await d.one('SELECT * FROM khuyen_mai WHERE id=?', id)),
+      });
+    },
+  );
+  app.patch(
+    '/api/admin/promotions/:id',
+    permission('promotions'),
+    async (req, res) => {
+      const p = await d.one(
+        'SELECT * FROM khuyen_mai WHERE id=?',
+        req.params.id,
+      );
+      assert(p, 404, 'Không tìm thấy mã.');
+      const v = promotionValues(req.body, p);
+      assert(
+        !(await d.one(
+          'SELECT id FROM khuyen_mai WHERE code=? AND id!=?',
+          v.code,
+          p.id,
+        )),
+        409,
+        'Mã khuyến mãi đã tồn tại.',
+      );
+      await d.update('khuyen_mai', v, p.id);
+      await audit(d, req.user.id, 'promotion.update', 'promotion', p.id);
       res.json({
-        data: camel(d.one('SELECT * FROM khuyen_mai WHERE id=?', p.id)),
+        data: camel(await d.one('SELECT * FROM khuyen_mai WHERE id=?', p.id)),
       });
     },
   );
   app.delete(
     '/api/admin/promotions/:id',
     permission('promotions'),
-    (req, res) => {
+    async (req, res) => {
       assert(
-        d.one('SELECT id FROM khuyen_mai WHERE id=?', req.params.id),
+        await d.one('SELECT id FROM khuyen_mai WHERE id=?', req.params.id),
         404,
         'Không tìm thấy mã.',
       );
-      d.update('khuyen_mai', { active: 0 }, req.params.id);
-      res.json({ data: { deactivated: true } });
+      await d.update(
+        'khuyen_mai',
+        {
+          active: 0,
+        },
+        req.params.id,
+      );
+      res.json({
+        data: {
+          deactivated: true,
+        },
+      });
     },
   );
-  app.get('/api/admin/inventory', permission('inventory'), (req, res) =>
-    res.json({ data: inventory(d) }),
+  app.get('/api/admin/inventory', permission('inventory'), async (req, res) =>
+    res.json({
+      data: await inventory(d),
+    }),
   );
   app.post(
     '/api/admin/inventory/receipts',
     permission('inventory'),
-    (req, res) => {
+    async (req, res) => {
       assert(
-        d.one(
+        await d.one(
           'SELECT id FROM nha_cung_cap WHERE id=? AND active=1',
           Number(req.body.supplierId),
         ),
@@ -513,37 +604,41 @@ export function installAdmin(
         400,
         'Phiếu nhập cần từ 1 đến 100 dòng.',
       );
-      const items = req.body.items.map((i) => {
-        assert(
-          d.one('SELECT id FROM thuoc WHERE id=?', Number(i.productId)),
-          400,
-          'Sản phẩm không tồn tại.',
-        );
-        assert(
-          text(i.batchNumber, 80) && positiveInt(i.quantity) && number(i.cost),
-          400,
-          'Số lô, số lượng hoặc giá nhập không hợp lệ.',
-        );
-        assert(
-          dateValid(i.manufacturedAt) &&
-            dateValid(i.expiresAt) &&
-            i.manufacturedAt <= today() &&
-            i.expiresAt > today() &&
-            i.manufacturedAt < i.expiresAt,
-          400,
-          'Ngày sản xuất/hạn dùng không hợp lệ; không nhập lô đã hết hạn.',
-        );
-        return {
-          product_id: Number(i.productId),
-          batch_number: text(i.batchNumber, 80),
-          quantity: Number(i.quantity),
-          cost: Number(i.cost),
-          manufactured_at: i.manufacturedAt,
-          expires_at: i.expiresAt,
-        };
-      });
-      const id = d.transaction(() => {
-        const id = d.insert('phieu_nhap_kho', {
+      const items = await Promise.all(
+        req.body.items.map(async (i) => {
+          assert(
+            await d.one('SELECT id FROM thuoc WHERE id=?', Number(i.productId)),
+            400,
+            'Sản phẩm không tồn tại.',
+          );
+          assert(
+            text(i.batchNumber, 80) &&
+              positiveInt(i.quantity) &&
+              number(i.cost),
+            400,
+            'Số lô, số lượng hoặc giá nhập không hợp lệ.',
+          );
+          assert(
+            dateValid(i.manufacturedAt) &&
+              dateValid(i.expiresAt) &&
+              i.manufacturedAt <= today() &&
+              i.expiresAt > today() &&
+              i.manufacturedAt < i.expiresAt,
+            400,
+            'Ngày sản xuất/hạn dùng không hợp lệ; không nhập lô đã hết hạn.',
+          );
+          return {
+            product_id: Number(i.productId),
+            batch_number: text(i.batchNumber, 80),
+            quantity: Number(i.quantity),
+            cost: Number(i.cost),
+            manufactured_at: i.manufacturedAt,
+            expires_at: i.expiresAt,
+          };
+        }),
+      );
+      const id = await d.transaction(async () => {
+        const id = await d.insert('phieu_nhap_kho', {
           code: `PN${Date.now()}`,
           supplier_id: Number(req.body.supplierId),
           user_id: req.user.id,
@@ -551,16 +646,19 @@ export function installAdmin(
         });
         for (const i of items) {
           assert(
-            !d.one(
+            !(await d.one(
               'SELECT id FROM lo_thuoc WHERE product_id=? AND batch_number=?',
               i.product_id,
               i.batch_number,
-            ),
+            )),
             409,
             'Số lô đã tồn tại cho sản phẩm này.',
           );
-          const bid = d.insert('lo_thuoc', { ...i, receipt_id: id });
-          d.insert('lich_su_ton_kho', {
+          const bid = await d.insert('lo_thuoc', {
+            ...i,
+            receipt_id: id,
+          });
+          await d.insert('lich_su_ton_kho', {
             product_id: i.product_id,
             batch_id: bid,
             user_id: req.user.id,
@@ -569,17 +667,22 @@ export function installAdmin(
             reason: `Phiếu nhập ${id}`,
           });
         }
-        audit(d, req.user.id, 'inventory.receipt', 'receipt', id);
+        await audit(d, req.user.id, 'inventory.receipt', 'receipt', id);
         return id;
       });
-      res.status(201).json({ data: { id, ...inventory(d) } });
+      res.status(201).json({
+        data: {
+          id,
+          ...(await inventory(d)),
+        },
+      });
     },
   );
   app.post(
     '/api/admin/inventory/adjustments',
     permission('inventory'),
-    (req, res) => {
-      const b = d.one(
+    async (req, res) => {
+      const b = await d.one(
         'SELECT * FROM lo_thuoc WHERE id=?',
         Number(req.body.batchId),
       );
@@ -597,9 +700,13 @@ export function installAdmin(
         409,
         'Không được giảm tồn dưới số lượng đã giữ cho đơn.',
       );
-      d.transaction(() => {
-        d.run('UPDATE lo_thuoc SET quantity=quantity+? WHERE id=?', qty, b.id);
-        d.insert('lich_su_ton_kho', {
+      await d.transaction(async () => {
+        await d.run(
+          'UPDATE lo_thuoc SET quantity=quantity+? WHERE id=?',
+          qty,
+          b.id,
+        );
+        await d.insert('lich_su_ton_kho', {
           product_id: b.product_id,
           batch_id: b.id,
           user_id: req.user.id,
@@ -607,19 +714,23 @@ export function installAdmin(
           quantity: qty,
           reason,
         });
-        audit(d, req.user.id, 'inventory.adjust', 'batch', b.id, {
+        await audit(d, req.user.id, 'inventory.adjust', 'batch', b.id, {
           quantity: qty,
           reason,
         });
       });
-      res.json({ data: inventory(d) });
+      res.json({
+        data: await inventory(d),
+      });
     },
   );
-  app.get('/api/admin/users', admin, permission('users'), (req, res) =>
+  app.get('/api/admin/users', admin, permission('users'), async (req, res) =>
     res.json({
-      data: d
-        .all('SELECT id FROM nguoi_dung ORDER BY id')
-        .map((x) => publicUser(d, x.id)),
+      data: await Promise.all(
+        (await d.all('SELECT id FROM nguoi_dung ORDER BY id')).map(
+          async (x) => await publicUser(d, x.id),
+        ),
+      ),
     }),
   );
   app.get('/api/admin/permissions', admin, permission('users'), (req, res) =>
@@ -656,16 +767,16 @@ export function installAdmin(
       'Cần cấu hình email để gửi mã kích hoạt nhân viên.',
     );
     assert(
-      !d.one(
+      !(await d.one(
         'SELECT id FROM nguoi_dung WHERE email=? OR phone=?',
         email,
         phone,
-      ),
+      )),
       409,
       'Email hoặc số điện thoại đã được dùng.',
     );
-    const id = d.transaction(() => {
-      const id = d.insert('nguoi_dung', {
+    const id = await d.transaction(async () => {
+      const id = await d.insert('nguoi_dung', {
         name,
         email,
         phone,
@@ -673,178 +784,223 @@ export function installAdmin(
         verified: 0,
         password_hash: bcrypt.hashSync(randomToken(), 10),
       });
-      d.insert('nhan_vien', { id, job_title: jobTitle });
-      d.insert('nguoi_dung_vai_tro', {
-        user_id: id,
-        role_id: d.one("SELECT id FROM vai_tro WHERE name='staff'").id,
+      await d.insert('nhan_vien', {
+        id,
+        job_title: jobTitle,
       });
-      audit(d, req.user.id, 'user.invite', 'user', id, { jobTitle });
+      await d.insert('nguoi_dung_vai_tro', {
+        user_id: id,
+        role_id: (await d.one("SELECT id FROM vai_tro WHERE name='staff'")).id,
+      });
+      await audit(d, req.user.id, 'user.invite', 'user', id, {
+        jobTitle,
+      });
       return id;
     });
     const demoCode = await sendOtp({ id, email, invited: true }, 'verify');
-    res
-      .status(201)
-      .json({
-        data: { user: publicUser(d, id), demoCode: demoCode || undefined },
-      });
-  });
-  app.patch('/api/admin/users/:id', admin, permission('users'), (req, res) => {
-    const u = publicUser(d, req.params.id);
-    assert(u, 404, 'Không tìm thấy tài khoản.');
-    const role = req.body.role ?? u.role,
-      active = req.body.active === undefined ? u.active : !!req.body.active,
-      title = req.body.jobTitle === undefined ? u.jobTitle : req.body.jobTitle;
-    const lockReason = text(req.body.reason, 500);
-    assert(
-      ['customer', 'staff', 'admin'].includes(role),
-      400,
-      'Vai trò không hợp lệ.',
-    );
-    assert(
-      !title || ['pharmacist', 'sales', 'warehouse'].includes(title),
-      400,
-      'Chức danh không hợp lệ.',
-    );
-    if (u.role === 'admin' && (!active || role !== 'admin')) {
-      const count = d.one(
-        "SELECT COUNT(DISTINCT u.id) n FROM nguoi_dung u JOIN nguoi_dung_vai_tro uv ON uv.user_id=u.id JOIN vai_tro v ON v.id=uv.role_id WHERE v.name='admin' AND u.active=1",
-      ).n;
-      assert(
-        count > 1,
-        409,
-        'Không thể khóa hoặc hạ quyền quản trị viên hoạt động cuối cùng.',
-      );
-    }
-    assert(
-      !(u.id === req.user.id && !active),
-      409,
-      'Không thể tự khóa tài khoản đang đăng nhập.',
-    );
-    if (u.active && !active)
-      assert(
-        lockReason.length >= 5,
-        400,
-        'Nhập lý do khóa tài khoản ít nhất 5 ký tự.',
-      );
-    const name =
-      req.body.name === undefined ? u.name : text(req.body.name, 100);
-    const phone =
-      req.body.phone === undefined ? u.phone : text(req.body.phone, 15) || null;
-    assert(
-      name.length >= 2 && (!phone || /^0\d{9}$/.test(phone)),
-      400,
-      'Họ tên hoặc số điện thoại không hợp lệ.',
-    );
-    assert(
-      !phone ||
-        !d.one(
-          'SELECT id FROM nguoi_dung WHERE phone=? AND id!=?',
-          phone,
-          u.id,
-        ),
-      409,
-      'Số điện thoại đã được dùng.',
-    );
-    if (req.body.permissions !== undefined) {
-      assert(
-        Array.isArray(req.body.permissions) &&
-          req.body.permissions.every((p) => Object.hasOwn(permissionNames, p)),
-        400,
-        'Danh sách quyền không hợp lệ.',
-      );
-      assert(
-        !req.body.permissions.includes('prescriptions') ||
-          title === 'pharmacist',
-        400,
-        'Quyền duyệt đơn thuốc chỉ dành cho người có chức danh dược sĩ.',
-      );
-      assert(
-        u.id !== req.user.id || req.body.permissions.includes('users'),
-        409,
-        'Không thể tự bỏ quyền quản trị tài khoản.',
-      );
-    }
-    d.transaction(() => {
-      d.update(
-        'nguoi_dung',
-        { name, phone, active: active ? 1 : 0, updated_at: now() },
-        u.id,
-      );
-      if (role !== u.role) {
-        d.run('DELETE FROM nguoi_dung_vai_tro WHERE user_id=?', u.id);
-        d.insert('nguoi_dung_vai_tro', {
-          user_id: u.id,
-          role_id: d.one('SELECT id FROM vai_tro WHERE name=?', role).id,
-        });
-      }
-      if (role === 'customer')
-        d.run('INSERT OR IGNORE INTO khach_hang(id) VALUES(?)', u.id);
-      if (role === 'admin')
-        d.run('INSERT OR IGNORE INTO quan_tri_vien(id) VALUES(?)', u.id);
-      if (role === 'staff' || title) {
-        d.run(
-          'INSERT OR IGNORE INTO nhan_vien(id,job_title) VALUES(?,?)',
-          u.id,
-          title || 'sales',
-        );
-        d.update('nhan_vien', { job_title: title || 'sales' }, u.id);
-      } else d.run('DELETE FROM nhan_vien WHERE id=?', u.id);
-      if (req.body.permissions !== undefined) {
-        d.run('DELETE FROM phan_quyen WHERE user_id=?', u.id);
-        for (const p of d.all('SELECT id,code FROM quyen'))
-          d.insert('phan_quyen', {
-            user_id: u.id,
-            permission_id: p.id,
-            allowed: req.body.permissions.includes(p.code) ? 1 : 0,
-          });
-      }
-      if (!active) d.run('DELETE FROM sessions WHERE user_id=?', u.id);
-      assert(
-        d
-          .all('SELECT id FROM nguoi_dung WHERE active=1 AND verified=1')
-          .some(({ id }) => {
-            const adminUser = publicUser(d, id);
-            return (
-              adminUser.role === 'admin' &&
-              adminUser.permissions.includes('users')
-            );
-          }),
-        409,
-        'Cần giữ ít nhất một quản trị viên hoạt động có quyền quản lý tài khoản.',
-      );
-      audit(d, req.user.id, 'user.permissions', 'user', u.id, {
-        role,
-        active,
-        jobTitle: title,
-        lockReason: lockReason || undefined,
-        permissions: req.body.permissions,
-      });
-    });
-    res.json({ data: publicUser(d, u.id) });
-  });
-  app.get('/api/admin/settings', admin, permission('settings'), (req, res) =>
-    res.json({
+    res.status(201).json({
       data: {
-        ...getSettings(d),
-        demoMode: options.demo,
-        geminiConfigured: !!process.env.GEMINI_API_KEY,
-        smtpConfigured: !!process.env.SMTP_HOST,
-        emailConfigured: !!process.env.SMTP_HOST,
-        paymentConfigured: Boolean(options.vnpay),
-        googleConfigured: Boolean(options.google),
-        paymentProvider: options.vnpay
-          ? 'vnpay'
-          : options.demo
-            ? 'demo'
-            : 'cod',
+        user: await publicUser(d, id),
+        demoCode: demoCode || undefined,
       },
-    }),
+    });
+  });
+  app.patch(
+    '/api/admin/users/:id',
+    admin,
+    permission('users'),
+    async (req, res) => {
+      const u = await publicUser(d, req.params.id);
+      assert(u, 404, 'Không tìm thấy tài khoản.');
+      const role = req.body.role ?? u.role,
+        active = req.body.active === undefined ? u.active : !!req.body.active,
+        title =
+          req.body.jobTitle === undefined ? u.jobTitle : req.body.jobTitle;
+      const lockReason = text(req.body.reason, 500);
+      assert(
+        ['customer', 'staff', 'admin'].includes(role),
+        400,
+        'Vai trò không hợp lệ.',
+      );
+      assert(
+        !title || ['pharmacist', 'sales', 'warehouse'].includes(title),
+        400,
+        'Chức danh không hợp lệ.',
+      );
+      if (u.role === 'admin' && (!active || role !== 'admin')) {
+        const count = (
+          await d.one(
+            "SELECT COUNT(DISTINCT u.id) n FROM nguoi_dung u JOIN nguoi_dung_vai_tro uv ON uv.user_id=u.id JOIN vai_tro v ON v.id=uv.role_id WHERE v.name='admin' AND u.active=1",
+          )
+        ).n;
+        assert(
+          count > 1,
+          409,
+          'Không thể khóa hoặc hạ quyền quản trị viên hoạt động cuối cùng.',
+        );
+      }
+      assert(
+        !(u.id === req.user.id && !active),
+        409,
+        'Không thể tự khóa tài khoản đang đăng nhập.',
+      );
+      if (u.active && !active)
+        assert(
+          lockReason.length >= 5,
+          400,
+          'Nhập lý do khóa tài khoản ít nhất 5 ký tự.',
+        );
+      const name =
+        req.body.name === undefined ? u.name : text(req.body.name, 100);
+      const phone =
+        req.body.phone === undefined
+          ? u.phone
+          : text(req.body.phone, 15) || null;
+      assert(
+        name.length >= 2 && (!phone || /^0\d{9}$/.test(phone)),
+        400,
+        'Họ tên hoặc số điện thoại không hợp lệ.',
+      );
+      assert(
+        !phone ||
+          !(await d.one(
+            'SELECT id FROM nguoi_dung WHERE phone=? AND id!=?',
+            phone,
+            u.id,
+          )),
+        409,
+        'Số điện thoại đã được dùng.',
+      );
+      if (req.body.permissions !== undefined) {
+        assert(
+          Array.isArray(req.body.permissions) &&
+            req.body.permissions.every((p) =>
+              Object.hasOwn(permissionNames, p),
+            ),
+          400,
+          'Danh sách quyền không hợp lệ.',
+        );
+        assert(
+          !req.body.permissions.includes('prescriptions') ||
+            title === 'pharmacist',
+          400,
+          'Quyền duyệt đơn thuốc chỉ dành cho người có chức danh dược sĩ.',
+        );
+        assert(
+          u.id !== req.user.id || req.body.permissions.includes('users'),
+          409,
+          'Không thể tự bỏ quyền quản trị tài khoản.',
+        );
+      }
+      await d.transaction(async () => {
+        await d.update(
+          'nguoi_dung',
+          {
+            name,
+            phone,
+            active: active ? 1 : 0,
+            updated_at: now(),
+          },
+          u.id,
+        );
+        if (role !== u.role) {
+          await d.run('DELETE FROM nguoi_dung_vai_tro WHERE user_id=?', u.id);
+          await d.insert('nguoi_dung_vai_tro', {
+            user_id: u.id,
+            role_id: (await d.one('SELECT id FROM vai_tro WHERE name=?', role))
+              .id,
+          });
+        }
+        if (role === 'customer')
+          await d.run('INSERT OR IGNORE INTO khach_hang(id) VALUES(?)', u.id);
+        if (role === 'admin')
+          await d.run(
+            'INSERT OR IGNORE INTO quan_tri_vien(id) VALUES(?)',
+            u.id,
+          );
+        if (role === 'staff' || title) {
+          await d.run(
+            'INSERT OR IGNORE INTO nhan_vien(id,job_title) VALUES(?,?)',
+            u.id,
+            title || 'sales',
+          );
+          await d.update(
+            'nhan_vien',
+            {
+              job_title: title || 'sales',
+            },
+            u.id,
+          );
+        } else await d.run('DELETE FROM nhan_vien WHERE id=?', u.id);
+        if (req.body.permissions !== undefined) {
+          await d.run('DELETE FROM phan_quyen WHERE user_id=?', u.id);
+          for (const p of await d.all('SELECT id,code FROM quyen'))
+            await d.insert('phan_quyen', {
+              user_id: u.id,
+              permission_id: p.id,
+              allowed: req.body.permissions.includes(p.code) ? 1 : 0,
+            });
+        }
+        if (!active) await d.run('DELETE FROM sessions WHERE user_id=?', u.id);
+        assert(
+          (
+            await Promise.all(
+              (
+                await d.all(
+                  'SELECT id FROM nguoi_dung WHERE active=1 AND verified=1',
+                )
+              ).map(async ({ id }) => {
+                const adminUser = await publicUser(d, id);
+                return (
+                  adminUser.role === 'admin' &&
+                  adminUser.permissions.includes('users')
+                );
+              }),
+            )
+          ).some(Boolean),
+          409,
+          'Cần giữ ít nhất một quản trị viên hoạt động có quyền quản lý tài khoản.',
+        );
+        await audit(d, req.user.id, 'user.permissions', 'user', u.id, {
+          role,
+          active,
+          jobTitle: title,
+          lockReason: lockReason || undefined,
+          permissions: req.body.permissions,
+        });
+      });
+      res.json({
+        data: await publicUser(d, u.id),
+      });
+    },
+  );
+  app.get(
+    '/api/admin/settings',
+    admin,
+    permission('settings'),
+    async (req, res) =>
+      res.json({
+        data: {
+          ...(await getSettings(d)),
+          demoMode: options.demo,
+          geminiConfigured: !!process.env.GEMINI_API_KEY,
+          smtpConfigured: !!process.env.SMTP_HOST,
+          emailConfigured: !!process.env.SMTP_HOST,
+          paymentConfigured: Boolean(options.vnpay),
+          googleConfigured: Boolean(options.google),
+          paymentProvider: options.vnpay
+            ? 'vnpay'
+            : options.demo
+              ? 'demo'
+              : 'cod',
+        },
+      }),
   );
   app.patch(
     '/api/admin/settings',
     admin,
     permission('settings'),
-    (req, res) => {
+    async (req, res) => {
       const allowed = [
         'storeName',
         'shippingFee',
@@ -880,57 +1036,68 @@ export function installAdmin(
           values[key] = Number(val);
         }
       }
-      d.transaction(() => {
+      await d.transaction(async () => {
         for (const [k, v] of Object.entries(values))
-          d.run(
+          await d.run(
             'INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
             k,
             JSON.stringify(v),
           );
-        audit(d, req.user.id, 'settings.update', 'settings', '', values);
+        await audit(d, req.user.id, 'settings.update', 'settings', '', values);
       });
-      res.json({ data: { ...getSettings(d), demoMode: options.demo } });
+      res.json({
+        data: {
+          ...(await getSettings(d)),
+          demoMode: options.demo,
+        },
+      });
     },
   );
-  app.get('/api/admin/audit', admin, permission('audit'), (req, res) =>
+  app.get('/api/admin/audit', admin, permission('audit'), async (req, res) =>
     res.json({
-      data: d
-        .all(
+      data: (
+        await d.all(
           'SELECT l.*,u.name user_name FROM nhat_ky_hoat_dong l LEFT JOIN nguoi_dung u ON u.id=l.user_id ORDER BY l.id DESC LIMIT 500',
         )
-        .map(camel),
+      ).map(camel),
     }),
   );
-  app.get('/api/admin/reports', permission('reports'), (req, res) =>
-    res.json({ data: reports(d, req.query) }),
+  app.get('/api/admin/reports', permission('reports'), async (req, res) =>
+    res.json({
+      data: await reports(d, req.query),
+    }),
   );
-  app.get('/api/admin/reports/export', permission('reports'), (req, res) => {
-    const report = reports(d, req.query),
-      escape = (v) => `"${String(v).replace(/"/g, '""')}"`,
-      csv =
-        '\uFEFF' +
-        [
-          ['Ngày', 'Doanh thu đơn đã giao và thu tiền (VND)', 'Số đơn'],
-          ...report.dailyRevenue.map((x) => [x.date, x.revenue, x.orders]),
-        ]
-          .map((row) => row.map(escape).join(','))
-          .join('\r\n');
-    audit(
-      d,
-      req.user.id,
-      'report.export',
-      'report',
-      '',
-      `${report.from} → ${report.to}`,
-    );
-    res
-      .set({
-        'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="antam-revenue-${report.from}-${report.to}.csv"`,
-      })
-      .send(csv);
-  });
-  app.get('/api/admin/knowledge', auth, (req, res) => {
+  app.get(
+    '/api/admin/reports/export',
+    permission('reports'),
+    async (req, res) => {
+      const report = await reports(d, req.query),
+        escape = (v) => `"${String(v).replace(/"/g, '""')}"`,
+        csv =
+          '\uFEFF' +
+          [
+            ['Ngày', 'Doanh thu đơn đã giao và thu tiền (VND)', 'Số đơn'],
+            ...report.dailyRevenue.map((x) => [x.date, x.revenue, x.orders]),
+          ]
+            .map((row) => row.map(escape).join(','))
+            .join('\r\n');
+      await audit(
+        d,
+        req.user.id,
+        'report.export',
+        'report',
+        '',
+        `${report.from} → ${report.to}`,
+      );
+      res
+        .set({
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="antam-revenue-${report.from}-${report.to}.csv"`,
+        })
+        .send(csv);
+    },
+  );
+  app.get('/api/admin/knowledge', auth, async (req, res) => {
     assert(
       req.user.permissions.some((code) =>
         ['knowledge', 'prescriptions'].includes(code),
@@ -939,9 +1106,12 @@ export function installAdmin(
       'Bạn không có quyền xem tri thức chatbot.',
     );
     return res.json({
-      data: d
-        .all('SELECT * FROM tri_thuc_chatbot ORDER BY id DESC')
-        .map((x) => ({ ...camel(x), active: !!x.active })),
+      data: (
+        await d.all('SELECT * FROM tri_thuc_chatbot ORDER BY id DESC')
+      ).map((x) => ({
+        ...camel(x),
+        active: !!x.active,
+      })),
     });
   });
   const knowledgeValues = (b, old = {}) => {
@@ -976,30 +1146,46 @@ export function installAdmin(
     }
     return values;
   };
-  app.post('/api/admin/knowledge', permission('knowledge'), (req, res) => {
-    const id = d.insert('tri_thuc_chatbot', knowledgeValues(req.body));
-    audit(d, req.user.id, 'knowledge.create', 'knowledge', id);
-    res.status(201).json({
-      data: camel(d.one('SELECT * FROM tri_thuc_chatbot WHERE id=?', id)),
-    });
-  });
-  app.patch('/api/admin/knowledge/:id', permission('knowledge'), (req, res) => {
-    const old = d.one(
-      'SELECT * FROM tri_thuc_chatbot WHERE id=?',
-      req.params.id,
-    );
-    assert(old, 404, 'Không tìm thấy tri thức.');
-    d.update('tri_thuc_chatbot', knowledgeValues(req.body, old), old.id);
-    audit(d, req.user.id, 'knowledge.update', 'knowledge', old.id);
-    res.json({
-      data: camel(d.one('SELECT * FROM tri_thuc_chatbot WHERE id=?', old.id)),
-    });
-  });
+  app.post(
+    '/api/admin/knowledge',
+    permission('knowledge'),
+    async (req, res) => {
+      const id = await d.insert('tri_thuc_chatbot', knowledgeValues(req.body));
+      await audit(d, req.user.id, 'knowledge.create', 'knowledge', id);
+      res.status(201).json({
+        data: camel(
+          await d.one('SELECT * FROM tri_thuc_chatbot WHERE id=?', id),
+        ),
+      });
+    },
+  );
+  app.patch(
+    '/api/admin/knowledge/:id',
+    permission('knowledge'),
+    async (req, res) => {
+      const old = await d.one(
+        'SELECT * FROM tri_thuc_chatbot WHERE id=?',
+        req.params.id,
+      );
+      assert(old, 404, 'Không tìm thấy tri thức.');
+      await d.update(
+        'tri_thuc_chatbot',
+        knowledgeValues(req.body, old),
+        old.id,
+      );
+      await audit(d, req.user.id, 'knowledge.update', 'knowledge', old.id);
+      res.json({
+        data: camel(
+          await d.one('SELECT * FROM tri_thuc_chatbot WHERE id=?', old.id),
+        ),
+      });
+    },
+  );
   app.post(
     '/api/admin/knowledge/:id/review',
     permission('prescriptions'),
-    (req, res) => {
-      const entry = d.one(
+    async (req, res) => {
+      const entry = await d.one(
         'SELECT * FROM tri_thuc_chatbot WHERE id=?',
         req.params.id,
       );
@@ -1008,15 +1194,18 @@ export function installAdmin(
         400,
         'Tri thức cần có nguồn và đang bật để được duyệt.',
       );
-      d.update(
+      await d.update(
         'tri_thuc_chatbot',
-        { reviewed_at: now(), reviewed_by: req.user.id },
+        {
+          reviewed_at: now(),
+          reviewed_by: req.user.id,
+        },
         entry.id,
       );
-      audit(d, req.user.id, 'knowledge.review', 'knowledge', entry.id);
+      await audit(d, req.user.id, 'knowledge.review', 'knowledge', entry.id);
       res.json({
         data: camel(
-          d.one('SELECT * FROM tri_thuc_chatbot WHERE id=?', entry.id),
+          await d.one('SELECT * FROM tri_thuc_chatbot WHERE id=?', entry.id),
         ),
       });
     },
@@ -1024,32 +1213,59 @@ export function installAdmin(
   app.delete(
     '/api/admin/knowledge/:id',
     permission('knowledge'),
-    (req, res) => {
+    async (req, res) => {
       assert(
-        d.one('SELECT id FROM tri_thuc_chatbot WHERE id=?', req.params.id),
+        await d.one(
+          'SELECT id FROM tri_thuc_chatbot WHERE id=?',
+          req.params.id,
+        ),
         404,
         'Không tìm thấy tri thức.',
       );
-      d.update('tri_thuc_chatbot', { active: 0 }, req.params.id);
-      audit(d, req.user.id, 'knowledge.deactivate', 'knowledge', req.params.id);
-      res.json({ data: { deactivated: true } });
+      await d.update(
+        'tri_thuc_chatbot',
+        {
+          active: 0,
+        },
+        req.params.id,
+      );
+      await audit(
+        d,
+        req.user.id,
+        'knowledge.deactivate',
+        'knowledge',
+        req.params.id,
+      );
+      res.json({
+        data: {
+          deactivated: true,
+        },
+      });
     },
   );
-  app.get('/api/admin/safety-rules', permission('knowledge'), (req, res) =>
-    res.json({
-      data: d.all('SELECT * FROM quy_tac_an_toan').map((x) => ({
-        ...camel(x),
-        keywords: d
-          .all('SELECT keyword FROM tu_khoa_canh_bao WHERE rule_id=?', x.id)
-          .map((k) => k.keyword),
-      })),
-    }),
+  app.get(
+    '/api/admin/safety-rules',
+    permission('knowledge'),
+    async (req, res) =>
+      res.json({
+        data: await Promise.all(
+          (await d.all('SELECT * FROM quy_tac_an_toan')).map(async (x) => ({
+            ...camel(x),
+            keywords: (
+              await d.all(
+                'SELECT keyword FROM tu_khoa_canh_bao WHERE rule_id=?',
+                x.id,
+              )
+            ).map((k) => k.keyword),
+          })),
+        ),
+      }),
   );
   app.patch(
     '/api/admin/safety-rules/:id',
     permission('knowledge'),
-    (req, res) => {
-      const old = d.one(
+    async (req, res) => {
+      const old = await d.one(
         'SELECT * FROM quy_tac_an_toan WHERE id=?',
         req.params.id,
       );
@@ -1059,8 +1275,8 @@ export function installAdmin(
         400,
         'Nội dung cảnh báo không được trống.',
       );
-      d.transaction(() => {
-        d.update(
+      await d.transaction(async () => {
+        await d.update(
           'quy_tac_an_toan',
           {
             name: text(req.body.name || old.name, 200),
@@ -1083,79 +1299,98 @@ export function installAdmin(
             400,
             'Cần 1–100 từ khóa.',
           );
-          d.run('DELETE FROM tu_khoa_canh_bao WHERE rule_id=?', old.id);
+          await d.run('DELETE FROM tu_khoa_canh_bao WHERE rule_id=?', old.id);
           for (const k of req.body.keywords) {
             assert(text(k, 100), 400, 'Từ khóa không hợp lệ.');
-            d.insert('tu_khoa_canh_bao', {
+            await d.insert('tu_khoa_canh_bao', {
               rule_id: old.id,
               keyword: text(k, 100),
             });
           }
         }
-        audit(d, req.user.id, 'safety_rule.update', 'rule', old.id);
+        await audit(d, req.user.id, 'safety_rule.update', 'rule', old.id);
       });
       res.json({
-        data: camel(d.one('SELECT * FROM quy_tac_an_toan WHERE id=?', old.id)),
+        data: camel(
+          await d.one('SELECT * FROM quy_tac_an_toan WHERE id=?', old.id),
+        ),
       });
     },
   );
-  app.get('/api/admin/support', permission('support'), (req, res) =>
+  app.get('/api/admin/support', permission('support'), async (req, res) =>
     res.json({
-      data: d
-        .all(
+      data: (
+        await d.all(
           'SELECT s.*,u.name user_name FROM yeu_cau_ho_tro s JOIN nguoi_dung u ON u.id=s.user_id ORDER BY s.id DESC',
         )
-        .map(camel),
+      ).map(camel),
     }),
   );
   app.get(
     '/api/admin/support/:id/messages',
     permission('support'),
-    (req, res) => {
-      const s = d.one('SELECT * FROM yeu_cau_ho_tro WHERE id=?', req.params.id);
+    async (req, res) => {
+      const s = await d.one(
+        'SELECT * FROM yeu_cau_ho_tro WHERE id=?',
+        req.params.id,
+      );
       assert(s, 404, 'Không tìm thấy yêu cầu.');
       res.json({
-        data: d
-          .all(
+        data: (
+          await d.all(
             'SELECT * FROM tin_nhan WHERE session_id=? ORDER BY id',
             s.session_id,
           )
-          .map(camel),
+        ).map(camel),
       });
     },
   );
-  app.patch('/api/admin/support/:id', permission('support'), (req, res) => {
-    const s = d.one('SELECT * FROM yeu_cau_ho_tro WHERE id=?', req.params.id);
-    assert(s, 404, 'Không tìm thấy yêu cầu.');
-    const status = req.body.status || s.status,
-      reply = text(req.body.reply, 5000);
-    assert(
-      ['pending', 'in_progress', 'resolved'].includes(status),
-      400,
-      'Trạng thái hỗ trợ không hợp lệ.',
-    );
-    assert(
-      status !== 'resolved' || reply,
-      400,
-      'Cần nội dung trả lời trước khi kết thúc hỗ trợ.',
-    );
-    d.transaction(() => {
-      d.update(
-        'yeu_cau_ho_tro',
-        { status, reply, handler_id: req.user.id, updated_at: now() },
-        s.id,
+  app.patch(
+    '/api/admin/support/:id',
+    permission('support'),
+    async (req, res) => {
+      const s = await d.one(
+        'SELECT * FROM yeu_cau_ho_tro WHERE id=?',
+        req.params.id,
       );
-      if (reply)
-        d.insert('tin_nhan', {
-          session_id: s.session_id,
-          role: 'assistant',
-          content: `Dược sĩ/nhân viên ${req.user.name}: ${reply}`,
-          mode: 'pharmacist',
-        });
-      audit(d, req.user.id, 'support.reply', 'support', s.id);
-    });
-    res.json({
-      data: camel(d.one('SELECT * FROM yeu_cau_ho_tro WHERE id=?', s.id)),
-    });
-  });
+      assert(s, 404, 'Không tìm thấy yêu cầu.');
+      const status = req.body.status || s.status,
+        reply = text(req.body.reply, 5000);
+      assert(
+        ['pending', 'in_progress', 'resolved'].includes(status),
+        400,
+        'Trạng thái hỗ trợ không hợp lệ.',
+      );
+      assert(
+        status !== 'resolved' || reply,
+        400,
+        'Cần nội dung trả lời trước khi kết thúc hỗ trợ.',
+      );
+      await d.transaction(async () => {
+        await d.update(
+          'yeu_cau_ho_tro',
+          {
+            status,
+            reply,
+            handler_id: req.user.id,
+            updated_at: now(),
+          },
+          s.id,
+        );
+        if (reply)
+          await d.insert('tin_nhan', {
+            session_id: s.session_id,
+            role: 'assistant',
+            content: `Dược sĩ/nhân viên ${req.user.name}: ${reply}`,
+            mode: 'pharmacist',
+          });
+        await audit(d, req.user.id, 'support.reply', 'support', s.id);
+      });
+      res.json({
+        data: camel(
+          await d.one('SELECT * FROM yeu_cau_ho_tro WHERE id=?', s.id),
+        ),
+      });
+    },
+  );
 }

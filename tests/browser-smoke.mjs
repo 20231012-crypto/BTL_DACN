@@ -9,7 +9,7 @@ const puppeteer = (await import(process.env.PUPPETEER_MODULE || 'puppeteer'))
 const origin = 'http://127.0.0.1:39117';
 process.env.APP_ORIGIN = origin;
 const scratch = mkdtempSync(path.join(os.tmpdir(), 'antam-browser-'));
-const app = createApp({
+const app = await createApp({
   dbPath: ':memory:',
   storagePath: scratch,
   testing: true,
@@ -269,7 +269,7 @@ try {
   await textOnPage(admin, '[role=dialog] h2', 'Đã tạo tài khoản nhân viên');
   await admin.click('[role=dialog] button[aria-label="Đóng"]');
   assert.ok(
-    app.locals.store.one(
+    await app.locals.store.one(
       'SELECT id FROM nguoi_dung WHERE email=?',
       'qa.staff@antam.test',
     ),
@@ -292,6 +292,6 @@ try {
   await browser?.close();
   server.closeAllConnections();
   await new Promise((resolve) => server.close(resolve));
-  app.locals.store.close();
+  await app.locals.store.close();
   rmSync(scratch, { recursive: true, force: true });
 }

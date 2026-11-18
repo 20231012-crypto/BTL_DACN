@@ -29,18 +29,25 @@ export const permissionNames = {
   audit: 'Xem nhật ký',
   backup: 'Sao lưu dữ liệu',
 };
-export function seedDatabase(d, { demoData = true } = {}) {
+export async function seedDatabase(
+  d,
+  { demoData = true, sampleCatalogOwnerId = null } = {},
+) {
   for (const [key, value] of Object.entries(defaultSettings))
-    d.run(
+    await d.run(
       'INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)',
       key,
       JSON.stringify(value),
     );
   for (const name of ['customer', 'staff', 'admin'])
-    d.run('INSERT OR IGNORE INTO vai_tro(name) VALUES(?)', name);
+    await d.run('INSERT OR IGNORE INTO vai_tro(name) VALUES(?)', name);
   for (const [code, name] of Object.entries(permissionNames))
-    d.run('INSERT OR IGNORE INTO quyen(code,name) VALUES(?,?)', code, name);
-  for (const role of d.all('SELECT * FROM vai_tro')) {
+    await d.run(
+      'INSERT OR IGNORE INTO quyen(code,name) VALUES(?,?)',
+      code,
+      name,
+    );
+  for (const role of await d.all('SELECT * FROM vai_tro')) {
     const permitted =
       role.name === 'admin'
         ? Object.keys(permissionNames)
@@ -56,79 +63,94 @@ export function seedDatabase(d, { demoData = true } = {}) {
             ]
           : [];
     for (const code of permitted)
-      d.run(
+      await d.run(
         'INSERT OR IGNORE INTO quyen_vai_tro(role_id,permission_id) VALUES(?,?)',
         role.id,
-        d.one('SELECT id FROM quyen WHERE code=?', code).id,
+        (await d.one('SELECT id FROM quyen WHERE code=?', code)).id,
       );
   }
-  if (!demoData || d.one('SELECT COUNT(*) n FROM nguoi_dung').n) return;
-  d.transaction(() => {
-    const hash = bcrypt.hashSync('Demo@123', 10);
-    const users = [
-      ['Nguyễn Minh Anh', 'khach@antam.vn', '0901234567', 'customer', null],
-      [
-        'Dược sĩ Trần Thanh Hà',
-        'duocsi@antam.vn',
-        '0902223344',
-        'staff',
-        'pharmacist',
-      ],
-      ['Quản trị An Tâm', 'admin@antam.vn', '0903334455', 'admin', null],
-      ['Lê Thu Hương', 'huong@antam.vn', '0904445566', 'customer', null],
-      [
-        'Nhân viên kho Minh',
-        'kho@antam.vn',
-        '0905556677',
-        'staff',
-        'warehouse',
-      ],
-    ];
-    for (const [name, email, phone, role, title] of users) {
-      const id = d.insert('nguoi_dung', {
-        name,
-        email,
-        phone,
-        password_hash: hash,
-        active: 1,
-        verified: 1,
-        created_at: now(),
-      });
-      d.insert('nguoi_dung_vai_tro', {
-        user_id: id,
-        role_id: d.one('SELECT id FROM vai_tro WHERE name=?', role).id,
-      });
-      d.insert(
-        role === 'customer'
-          ? 'khach_hang'
-          : role === 'staff'
-            ? 'nhan_vien'
-            : 'quan_tri_vien',
-        role === 'staff' ? { id, job_title: title } : { id },
-      );
-      if (title === 'warehouse')
-        d.insert('phan_quyen', {
-          user_id: id,
-          permission_id: d.one(
-            'SELECT id FROM quyen WHERE code=?',
-            'prescriptions',
-          ).id,
-          allowed: 0,
-        });
-      if (role === 'customer') {
-        d.insert('gio_hang', { user_id: id });
-        d.insert('dia_chi_giao_hang', {
-          user_id: id,
-          recipient: name,
+  if (!demoData && !sampleCatalogOwnerId) return;
+  await d.transaction(async () => {
+    if (demoData && (await d.one('SELECT COUNT(*) n FROM nguoi_dung')).n)
+      return;
+    if (!demoData && (await d.one('SELECT id FROM thuoc LIMIT 1'))) return;
+    if (demoData) {
+      const hash = bcrypt.hashSync('Demo@123', 10);
+      const users = [
+        ['Nguyễn Minh Anh', 'khach@antam.vn', '0901234567', 'customer', null],
+        [
+          'Dược sĩ Trần Thanh Hà',
+          'duocsi@antam.vn',
+          '0902223344',
+          'staff',
+          'pharmacist',
+        ],
+        ['Quản trị An Tâm', 'admin@antam.vn', '0903334455', 'admin', null],
+        ['Lê Thu Hương', 'huong@antam.vn', '0904445566', 'customer', null],
+        [
+          'Nhân viên kho Minh',
+          'kho@antam.vn',
+          '0905556677',
+          'staff',
+          'warehouse',
+        ],
+      ];
+      for (const [name, email, phone, role, title] of users) {
+        const id = await d.insert('nguoi_dung', {
+          name,
+          email,
           phone,
-          line1: id === 1 ? '24 Nguyễn Văn Cừ' : '18 Lý Thường Kiệt',
-          ward: 'Phường Võ Cường',
-          district: 'Thành phố Bắc Ninh',
-          city: 'Bắc Ninh',
-          is_default: 1,
+          password_hash: hash,
+          active: 1,
+          verified: 1,
+          created_at: now(),
         });
+        await d.insert('nguoi_dung_vai_tro', {
+          user_id: id,
+          role_id: (await d.one('SELECT id FROM vai_tro WHERE name=?', role))
+            .id,
+        });
+        await d.insert(
+          role === 'customer'
+            ? 'khach_hang'
+            : role === 'staff'
+              ? 'nhan_vien'
+              : 'quan_tri_vien',
+          role === 'staff'
+            ? {
+                id,
+                job_title: title,
+              }
+            : {
+                id,
+              },
+        );
+        if (title === 'warehouse')
+          await d.insert('phan_quyen', {
+            user_id: id,
+            permission_id: (
+              await d.one('SELECT id FROM quyen WHERE code=?', 'prescriptions')
+            ).id,
+            allowed: 0,
+          });
+        if (role === 'customer') {
+          await d.insert('gio_hang', {
+            user_id: id,
+          });
+          await d.insert('dia_chi_giao_hang', {
+            user_id: id,
+            recipient: name,
+            phone,
+            line1: id === 1 ? '24 Nguyễn Văn Cừ' : '18 Lý Thường Kiệt',
+            ward: 'Phường Võ Cường',
+            district: 'Thành phố Bắc Ninh',
+            city: 'Bắc Ninh',
+            is_default: 1,
+          });
+        }
       }
     }
+    const operatorId = demoData ? 2 : sampleCatalogOwnerId;
     const cats = [
       [
         'Thuốc không kê đơn',
@@ -145,27 +167,53 @@ export function seedDatabase(d, { demoData = true } = {}) {
       ['Thuốc kê đơn', 'thuoc-ke-don', 'Cần đơn thuốc và dược sĩ kiểm duyệt'],
       ['Mẹ & bé', 'me-va-be', 'Chăm sóc mẹ và bé'],
     ];
-    for (const [name, slug, description] of cats)
-      d.insert('danh_muc', { name, slug, description });
+    const categoryIds = [];
+    for (const [name, slug, description] of cats) {
+      const row = await d.one(
+        'SELECT id FROM danh_muc WHERE slug=? OR name=?',
+        slug,
+        name,
+      );
+      categoryIds.push(
+        row?.id ?? (await d.insert('danh_muc', { name, slug, description })),
+      );
+    }
+    const manufacturerIds = [];
     for (const [name, country] of [
       ['An Tâm Pharma', 'Việt Nam'],
       ['An Khang Healthcare', 'Việt Nam'],
       ['Wellness Labs', 'Đức'],
       ['Healthy Life', 'Úc'],
-    ])
-      d.insert('nha_san_xuat', { name, country });
-    d.insert('nha_cung_cap', {
-      name: 'Công ty Dược phẩm An Khang',
-      email: 'kho@example.test',
-      phone: '0243555666',
-      address: 'Bắc Ninh',
-    });
-    d.insert('nha_cung_cap', {
-      name: 'Thiết bị Y tế Bình An',
-      email: 'vat-tu@example.test',
-      phone: '0243666777',
-      address: 'Hà Nội',
-    });
+    ]) {
+      const row = await d.one('SELECT id FROM nha_san_xuat WHERE name=?', name);
+      manufacturerIds.push(
+        row?.id ?? (await d.insert('nha_san_xuat', { name, country })),
+      );
+    }
+    const primaryName = 'Công ty Dược phẩm An Khang';
+    const secondaryName = 'Thiết bị Y tế Bình An';
+    const supplier = await d.one(
+      'SELECT id FROM nha_cung_cap WHERE name=?',
+      primaryName,
+    );
+    const supplierId =
+      supplier?.id ??
+      (await d.insert('nha_cung_cap', {
+        name: primaryName,
+        email: 'kho@example.test',
+        phone: '0243555666',
+        address: 'Bắc Ninh',
+      }));
+    if (
+      !(await d.one('SELECT id FROM nha_cung_cap WHERE name=?', secondaryName))
+    ) {
+      await d.insert('nha_cung_cap', {
+        name: secondaryName,
+        email: 'vat-tu@example.test',
+        phone: '0243666777',
+        address: 'Hà Nội',
+      });
+    }
     const products = [
       [
         'Vitamin C 1000mg',
@@ -392,12 +440,13 @@ export function seedDatabase(d, { demoData = true } = {}) {
         0,
       ],
     ];
-    const receipt = d.insert('phieu_nhap_kho', {
+    const receipt = await d.insert('phieu_nhap_kho', {
       code: 'PN-DEMO-001',
-      supplier_id: 1,
-      user_id: 2,
+      supplier_id: supplierId,
+      user_id: operatorId,
       total: 8500000,
     });
+    const productIds = [];
     for (const [
       name,
       category_id,
@@ -412,10 +461,10 @@ export function seedDatabase(d, { demoData = true } = {}) {
       featured,
       stock,
     ] of products) {
-      const id = d.insert('thuoc', {
+      const id = await d.insert('thuoc', {
         name,
-        category_id,
-        manufacturer_id,
+        category_id: categoryIds[category_id - 1],
+        manufacturer_id: manufacturerIds[manufacturer_id - 1],
         slug: slugify(name),
         ingredient,
         description,
@@ -430,6 +479,7 @@ export function seedDatabase(d, { demoData = true } = {}) {
         warning:
           'Dữ liệu mẫu cho đồ án. Không tự ý dùng thuốc kê đơn hoặc thay đổi điều trị. Sản phẩm bổ sung không thay thế thuốc chữa bệnh.',
       });
+      productIds.push(id);
       if (stock > 0) {
         const early = Math.floor(stock * 0.3),
           late = stock - early;
@@ -437,7 +487,7 @@ export function seedDatabase(d, { demoData = true } = {}) {
           ['A', early, daysFromNow(id === 11 ? 35 : 240)],
           ['B', late, daysFromNow(540)],
         ]) {
-          const batch = d.insert('lo_thuoc', {
+          const batch = await d.insert('lo_thuoc', {
             product_id: id,
             receipt_id: receipt,
             batch_number: `MA${String(id).padStart(3, '0')}${suffix}`,
@@ -446,10 +496,10 @@ export function seedDatabase(d, { demoData = true } = {}) {
             manufactured_at: daysFromNow(-180),
             expires_at: expiry,
           });
-          d.insert('lich_su_ton_kho', {
+          await d.insert('lich_su_ton_kho', {
             product_id: id,
             batch_id: batch,
-            user_id: 2,
+            user_id: operatorId,
             type: 'receipt',
             quantity,
             reason: 'Nhập dữ liệu mẫu',
@@ -458,8 +508,8 @@ export function seedDatabase(d, { demoData = true } = {}) {
       }
     }
     // Expired batch exists for alert QA, excluded from all sellable quantities.
-    const expired = d.insert('lo_thuoc', {
-      product_id: 3,
+    const expired = await d.insert('lo_thuoc', {
+      product_id: productIds[2],
       receipt_id: receipt,
       batch_number: 'MA003-HH',
       quantity: 8,
@@ -467,15 +517,15 @@ export function seedDatabase(d, { demoData = true } = {}) {
       manufactured_at: daysFromNow(-700),
       expires_at: daysFromNow(-5),
     });
-    d.insert('lich_su_ton_kho', {
-      product_id: 3,
+    await d.insert('lich_su_ton_kho', {
+      product_id: productIds[2],
       batch_id: expired,
-      user_id: 2,
+      user_id: operatorId,
       type: 'receipt',
       quantity: 8,
       reason: 'Lô mẫu đã hết hạn, không bán',
     });
-    d.insert('khuyen_mai', {
+    await d.insert('khuyen_mai', {
       code: 'KHOEMANH10',
       name: 'Chăm sức khỏe, nhận ưu đãi 10%',
       type: 'percent',
@@ -486,7 +536,7 @@ export function seedDatabase(d, { demoData = true } = {}) {
       start_date: daysFromNow(-30),
       end_date: daysFromNow(120),
     });
-    d.insert('khuyen_mai', {
+    await d.insert('khuyen_mai', {
       code: 'ANTAM30',
       name: 'Giảm 30.000đ cho đơn từ 299.000đ',
       type: 'fixed',
@@ -497,10 +547,13 @@ export function seedDatabase(d, { demoData = true } = {}) {
       start_date: daysFromNow(-10),
       end_date: daysFromNow(60),
     });
-    const address = d.one('SELECT * FROM dia_chi_giao_hang WHERE user_id=1');
+    if (!demoData) return;
+    const address = await d.one(
+      'SELECT * FROM dia_chi_giao_hang WHERE user_id=1',
+    );
     for (let i = 0; i < 10; i++) {
       const age = 9 - i,
-        product = d.one('SELECT * FROM thuoc WHERE id=?', (i % 8) + 1),
+        product = await d.one('SELECT * FROM thuoc WHERE id=?', (i % 8) + 1),
         qty = (i % 2) + 1,
         subtotal = product.price * qty,
         ship = subtotal >= 299000 ? 0 : 25000;
@@ -515,7 +568,7 @@ export function seedDatabase(d, { demoData = true } = {}) {
       const created = new Date(
         Date.now() - age * 86400000 - 3600000,
       ).toISOString();
-      const id = d.insert('don_hang', {
+      const id = await d.insert('don_hang', {
         user_id: i % 3 === 0 ? 4 : 1,
         code: `MA${new Date().getFullYear()}${String(100 + i).padStart(5, '0')}`,
         status,
@@ -535,7 +588,7 @@ export function seedDatabase(d, { demoData = true } = {}) {
         created_at: created,
         stock_deducted: status === 'pending' ? 0 : 1,
       });
-      d.insert('chi_tiet_don_hang', {
+      await d.insert('chi_tiet_don_hang', {
         order_id: id,
         product_id: product.id,
         name: product.name,
@@ -545,7 +598,7 @@ export function seedDatabase(d, { demoData = true } = {}) {
         quantity: qty,
         prescription_required: 0,
       });
-      d.insert('order_status_history', {
+      await d.insert('order_status_history', {
         order_id: id,
         status,
         user_id: 2,
@@ -553,7 +606,7 @@ export function seedDatabase(d, { demoData = true } = {}) {
         created_at: created,
       });
       if (i < 7 || i % 2 === 0)
-        d.insert('giao_dich_thanh_toan', {
+        await d.insert('giao_dich_thanh_toan', {
           order_id: id,
           reference: `DEMO-SEED-${id}`,
           type: 'payment',
@@ -563,22 +616,22 @@ export function seedDatabase(d, { demoData = true } = {}) {
           created_at: created,
         });
       if (status !== 'pending') {
-        const batch = d.one(
+        const batch = await d.one(
           'SELECT * FROM lo_thuoc WHERE product_id=? AND expires_at>? ORDER BY expires_at,id LIMIT 1',
           product.id,
           daysFromNow(0),
         );
-        d.run(
+        await d.run(
           'UPDATE lo_thuoc SET quantity=quantity-? WHERE id=?',
           qty,
           batch.id,
         );
-        d.insert('stock_allocations', {
+        await d.insert('stock_allocations', {
           order_id: id,
           batch_id: batch.id,
           quantity: qty,
         });
-        d.insert('lich_su_ton_kho', {
+        await d.insert('lich_su_ton_kho', {
           product_id: product.id,
           batch_id: batch.id,
           order_id: id,
@@ -589,24 +642,24 @@ export function seedDatabase(d, { demoData = true } = {}) {
           created_at: created,
         });
       } else {
-        const batch = d.one(
+        const batch = await d.one(
           'SELECT * FROM lo_thuoc WHERE product_id=? AND expires_at>? ORDER BY expires_at,id LIMIT 1',
           product.id,
           daysFromNow(0),
         );
-        d.run(
+        await d.run(
           'UPDATE lo_thuoc SET reserved=reserved+? WHERE id=?',
           qty,
           batch.id,
         );
-        d.insert('stock_allocations', {
+        await d.insert('stock_allocations', {
           order_id: id,
           batch_id: batch.id,
           quantity: qty,
         });
       }
     }
-    d.insert('danh_gia', {
+    await d.insert('danh_gia', {
       order_id: 2,
       product_id: 2,
       user_id: 1,
@@ -640,7 +693,7 @@ export function seedDatabase(d, { demoData = true } = {}) {
         'Tôi hỗ trợ thông tin sản phẩm và quy trình mua hàng. Về liều dùng, tương tác hoặc lựa chọn điều trị, hãy yêu cầu dược sĩ tư vấn hoặc thăm khám bác sĩ. Không tự ý dùng thuốc kê đơn.',
       ],
     ])
-      d.insert('tri_thuc_chatbot', {
+      await d.insert('tri_thuc_chatbot', {
         title,
         keywords,
         content,
@@ -648,7 +701,7 @@ export function seedDatabase(d, { demoData = true } = {}) {
         reviewed_at: now(),
         reviewed_by: 2,
       });
-    const rule = d.insert('quy_tac_an_toan', {
+    const rule = await d.insert('quy_tac_an_toan', {
       name: 'Dấu hiệu nguy hiểm',
       pattern: 'khó thở,đau ngực,bất tỉnh,co giật,ngất,phản vệ',
       response:
@@ -662,8 +715,11 @@ export function seedDatabase(d, { demoData = true } = {}) {
       'ngất',
       'phản vệ',
     ])
-      d.insert('tu_khoa_canh_bao', { rule_id: rule, keyword });
-    d.insert('nhat_ky_hoat_dong', {
+      await d.insert('tu_khoa_canh_bao', {
+        rule_id: rule,
+        keyword,
+      });
+    await d.insert('nhat_ky_hoat_dong', {
       user_id: 3,
       action: 'system.seed',
       entity: 'system',

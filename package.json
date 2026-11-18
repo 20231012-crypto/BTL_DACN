@@ -14,9 +14,11 @@
     "build": "vite build",
     "start": "node backend/server.js",
     "init:admin": "node backend/init-admin.js",
+    "db:setup": "node backend/setup-postgres.js",
     "test": "node --test --test-concurrency=1 tests/*.test.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.119.0",
     "bcryptjs": "^3.0.2",
     "cookie-parser": "^1.4.7",
     "express": "^5.1.0",
@@ -24,6 +26,7 @@
     "lucide-react": "^0.468.0",
     "multer": "^2.0.2",
     "nodemailer": "^10.6.0",
+    "pg": "^8.23.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

@@ -46,7 +46,14 @@ import {
 } from 'lucide-react';
 import Admin from './Admin.jsx';
 import { LogoIcon } from './Logo.jsx';
-import { api, money, dateTime, label, uploadPrescription } from './lib.js';
+import {
+  api,
+  money,
+  dateTime,
+  label,
+  uploadPrescription,
+  uploadToStorage,
+} from './lib.js';
 
 const AppContext = createContext(null);
 const useApp = () => useContext(AppContext);
@@ -1294,7 +1301,7 @@ function Checkout() {
     setUploading(true);
     setError('');
     try {
-      const result = await uploadPrescription(file);
+      const result = await uploadPrescription(file, config?.uploadMode);
       setPrescription({ ...result, fileName: file.name });
     } catch (e) {
       setError(e.message);
@@ -1787,7 +1794,7 @@ function OrderDetail({ id }) {
     });
   const replacePrescription = (file) =>
     perform(async () => {
-      const attachment = await uploadPrescription(file);
+      const attachment = await uploadPrescription(file, config?.uploadMode);
       setOrder(
         await api(`/orders/${id}/prescription`, {
           method: 'POST',
@@ -1837,10 +1844,14 @@ function OrderDetail({ id }) {
         ) {
           throw new Error('Chọn ảnh JPG hoặc PNG của sản phẩm, tối đa 5 MB.');
         }
-        payload = new FormData();
-        payload.append('type', request);
-        payload.append('reason', reason);
-        payload.append('evidence', returnEvidence);
+        if (config?.uploadMode === 'signed') {
+          payload.uploadId = await uploadToStorage(returnEvidence, 'return');
+        } else {
+          payload = new FormData();
+          payload.append('type', request);
+          payload.append('reason', reason);
+          payload.append('evidence', returnEvidence);
+        }
       }
       const result = await api(`/orders/${id}/requests`, {
         method: 'POST',

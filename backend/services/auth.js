@@ -22,10 +22,10 @@ export const passwordValid = (p) =>
 export function installAuth(app, d, options) {
   const demo = options.demo;
   const sessionCookie = 'antam_session';
-  const login = (res, userId) => {
+  const login = async (res, userId) => {
     const token = randomToken(),
       expires = new Date(Date.now() + 7 * 86400000);
-    d.insert('sessions', {
+    await d.insert('sessions', {
       token_hash: hash(token),
       user_id: userId,
       expires_at: expires.toISOString(),
@@ -37,18 +37,18 @@ export function installAuth(app, d, options) {
       maxAge: 7 * 86400000,
       path: '/',
     });
-    return publicUser(d, userId);
+    return await publicUser(d, userId);
   };
-  app.use('/api', (req, res, next) => {
+  app.use('/api', async (req, res, next) => {
     const token = req.cookies?.[sessionCookie];
     if (token) {
-      const s = d.one(
+      const s = await d.one(
         'SELECT * FROM sessions WHERE token_hash=? AND expires_at>?',
         hash(token),
         now(),
       );
       if (s) {
-        const u = publicUser(d, s.user_id);
+        const u = await publicUser(d, s.user_id);
         if (u?.active && u.verified) req.user = u;
       }
     }
@@ -86,17 +86,19 @@ export function installAuth(app, d, options) {
       assert(user.email, 400, 'Tài khoản cần email để nhận mã xác thực.');
     }
     const code = String(randomInt(100000, 1000000)),
-      ttl = getSettings(d).otpTtlMinutes;
-    d.run(
-      'UPDATE ma_otp SET consumed=1 WHERE user_id=? AND purpose=?',
-      user.id,
-      purpose,
-    );
-    d.insert('ma_otp', {
-      user_id: user.id,
-      code_hash: hash(code),
-      purpose,
-      expires_at: new Date(Date.now() + Number(ttl) * 60000).toISOString(),
+      ttl = (await getSettings(d)).otpTtlMinutes;
+    await d.transaction(async () => {
+      await d.run(
+        'UPDATE ma_otp SET consumed=1 WHERE user_id=? AND purpose=?',
+        user.id,
+        purpose,
+      );
+      await d.insert('ma_otp', {
+        user_id: user.id,
+        code_hash: hash(code),
+        purpose,
+        expires_at: new Date(Date.now() + Number(ttl) * 60000).toISOString(),
+      });
     });
     if (demo) return code;
     const transport = nodemailer.createTransport({
@@ -122,32 +124,35 @@ export function installAuth(app, d, options) {
     });
     return null;
   };
-  const checkOtp = (user, purpose, code) => {
-    const otp = d.one(
-      'SELECT * FROM ma_otp WHERE user_id=? AND purpose=? AND consumed=0 ORDER BY id DESC LIMIT 1',
-      user.id,
-      purpose,
-    );
-    assert(
-      otp && otp.expires_at > now() && otp.attempts < 5,
-      400,
-      'Mã xác thực đã hết hạn hoặc bị khóa. Vui lòng yêu cầu mã mới.',
-    );
-    d.run('UPDATE ma_otp SET attempts=attempts+1 WHERE id=?', otp.id);
-    assert(
-      hash(text(code, 10)) === otp.code_hash,
-      400,
-      'Mã xác thực không đúng.',
-    );
-    d.update('ma_otp', { consumed: 1 }, otp.id);
+  const checkOtp = async (user, purpose, code) => {
+    const correct = await d.transaction(async () => {
+      const otp = await d.one(
+        'SELECT * FROM ma_otp WHERE user_id=? AND purpose=? AND consumed=0 ORDER BY id DESC LIMIT 1',
+        user.id,
+        purpose,
+      );
+      assert(
+        otp && otp.expires_at > now() && otp.attempts < 5,
+        400,
+        'Mã xác thực đã hết hạn hoặc bị khóa. Vui lòng yêu cầu mã mới.',
+      );
+      const correct = hash(text(code, 10)) === otp.code_hash;
+      await d.update(
+        'ma_otp',
+        { attempts: otp.attempts + 1, consumed: correct ? 1 : 0 },
+        otp.id,
+      );
+      return correct;
+    });
+    assert(correct, 400, 'Mã xác thực không đúng.');
   };
   app.get('/api/auth/me', (req, res) => res.json({ data: req.user || null }));
-  app.post('/api/auth/login', (req, res) => {
+  app.post('/api/auth/login', async (req, res) => {
     const identifier = text(
       req.body.email || req.body.phone,
       100,
     ).toLowerCase();
-    const user = d.one(
+    const user = await d.one(
       'SELECT * FROM nguoi_dung WHERE lower(email)=? OR phone=?',
       identifier,
       identifier,
@@ -168,8 +173,10 @@ export function installAuth(app, d, options) {
       403,
       'Tài khoản chưa xác thực OTP. Vui lòng xác thực trước khi đăng nhập.',
     );
-    audit(d, user.id, 'auth.login', 'user', user.id);
-    res.json({ data: login(res, user.id) });
+    await audit(d, user.id, 'auth.login', 'user', user.id);
+    res.json({
+      data: await login(res, user.id),
+    });
   });
   app.post('/api/auth/register', async (req, res) => {
     const name = text(req.body.name, 100),
@@ -200,35 +207,42 @@ export function installAuth(app, d, options) {
       'Mật khẩu cần ít nhất 8 ký tự, gồm chữ hoa, chữ thường và chữ số.',
     );
     assert(
-      !d.one(
+      !(await d.one(
         'SELECT id FROM nguoi_dung WHERE (email IS NOT NULL AND email=?) OR (phone IS NOT NULL AND phone=?)',
         email,
         phone,
-      ),
+      )),
       409,
       'Email hoặc số điện thoại đã được sử dụng.',
     );
-    const id = d.transaction(() => {
-      const uid = d.insert('nguoi_dung', {
+    const id = await d.transaction(async () => {
+      const uid = await d.insert('nguoi_dung', {
         name,
         email,
         phone,
         password_hash: bcrypt.hashSync(password, 10),
         verified: 0,
       });
-      d.insert('khach_hang', { id: uid });
-      d.insert('nguoi_dung_vai_tro', {
-        user_id: uid,
-        role_id: d.one("SELECT id FROM vai_tro WHERE name='customer'").id,
+      await d.insert('khach_hang', {
+        id: uid,
       });
-      d.insert('gio_hang', { user_id: uid });
+      await d.insert('nguoi_dung_vai_tro', {
+        user_id: uid,
+        role_id: (await d.one("SELECT id FROM vai_tro WHERE name='customer'"))
+          .id,
+      });
+      await d.insert('gio_hang', {
+        user_id: uid,
+      });
       return uid;
     });
     const code = await sendOtp(
-      { ...d.one('SELECT * FROM nguoi_dung WHERE id=?', id) },
+      {
+        ...(await d.one('SELECT * FROM nguoi_dung WHERE id=?', id)),
+      },
       'verify',
     );
-    audit(d, id, 'auth.register', 'user', id);
+    await audit(d, id, 'auth.register', 'user', id);
     res.status(201).json({
       data: {
         email: email || phone,
@@ -240,9 +254,9 @@ export function installAuth(app, d, options) {
       },
     });
   });
-  app.post('/api/auth/verify', (req, res) => {
+  app.post('/api/auth/verify', async (req, res) => {
     const key = text(req.body.email || req.body.phone, 100).toLowerCase();
-    const u = d.one(
+    const u = await d.one(
       'SELECT * FROM nguoi_dung WHERE email=? OR phone=?',
       key,
       key,
@@ -256,16 +270,22 @@ export function installAuth(app, d, options) {
         400,
         'Mật khẩu cần ít nhất 8 ký tự, gồm chữ hoa, chữ thường và chữ số.',
       );
-    checkOtp(u, 'verify', req.body.code);
+    await checkOtp(u, 'verify', req.body.code);
     const values = { verified: 1, updated_at: now() };
     if (password !== undefined)
       values.password_hash = bcrypt.hashSync(password, 10);
-    d.update('nguoi_dung', values, u.id);
-    res.json({ data: login(res, u.id) });
+    await d.update('nguoi_dung', values, u.id);
+    res.json({
+      data: await login(res, u.id),
+    });
   });
   app.post('/api/auth/resend-otp', async (req, res) => {
     const key = text(req.body.email, 100).toLowerCase(),
-      u = d.one('SELECT * FROM nguoi_dung WHERE email=? OR phone=?', key, key);
+      u = await d.one(
+        'SELECT * FROM nguoi_dung WHERE email=? OR phone=?',
+        key,
+        key,
+      );
     assert(
       u && !u.verified && u.active,
       400,
@@ -281,7 +301,11 @@ export function installAuth(app, d, options) {
   });
   app.post('/api/auth/forgot-password', async (req, res) => {
     const key = text(req.body.email || req.body.phone, 100).toLowerCase(),
-      u = d.one('SELECT * FROM nguoi_dung WHERE email=? OR phone=?', key, key);
+      u = await d.one(
+        'SELECT * FROM nguoi_dung WHERE email=? OR phone=?',
+        key,
+        key,
+      );
     let code = null;
     if (u?.active && u.verified) code = await sendOtp(u, 'reset');
     res.json({
@@ -292,9 +316,13 @@ export function installAuth(app, d, options) {
       },
     });
   });
-  app.post('/api/auth/reset-password', (req, res) => {
+  app.post('/api/auth/reset-password', async (req, res) => {
     const key = text(req.body.email || req.body.phone, 100).toLowerCase(),
-      u = d.one('SELECT * FROM nguoi_dung WHERE email=? OR phone=?', key, key);
+      u = await d.one(
+        'SELECT * FROM nguoi_dung WHERE email=? OR phone=?',
+        key,
+        key,
+      );
     assert(
       u && u.active && u.verified,
       400,
@@ -305,8 +333,8 @@ export function installAuth(app, d, options) {
       400,
       'Mật khẩu cần ít nhất 8 ký tự, gồm chữ hoa, chữ thường và chữ số.',
     );
-    checkOtp(u, 'reset', req.body.code);
-    d.update(
+    await checkOtp(u, 'reset', req.body.code);
+    await d.update(
       'nguoi_dung',
       {
         password_hash: bcrypt.hashSync(req.body.password, 10),
@@ -314,13 +342,13 @@ export function installAuth(app, d, options) {
       },
       u.id,
     );
-    d.run('DELETE FROM sessions WHERE user_id=?', u.id);
-    audit(d, u.id, 'auth.reset_password', 'user', u.id);
+    await d.run('DELETE FROM sessions WHERE user_id=?', u.id);
+    await audit(d, u.id, 'auth.reset_password', 'user', u.id);
     res.json({ data: { message: 'Đã đặt lại mật khẩu. Vui lòng đăng nhập.' } });
   });
-  app.post('/api/auth/logout', (req, res) => {
+  app.post('/api/auth/logout', async (req, res) => {
     if (req.cookies?.[sessionCookie])
-      d.run(
+      await d.run(
         'DELETE FROM sessions WHERE token_hash=?',
         hash(req.cookies[sessionCookie]),
       );
@@ -328,7 +356,7 @@ export function installAuth(app, d, options) {
     res.json({ data: { message: 'Đã đăng xuất.' } });
   });
   app.get('/api/profile', auth, (req, res) => res.json({ data: req.user }));
-  app.patch('/api/profile', auth, (req, res) => {
+  app.patch('/api/profile', auth, async (req, res) => {
     const values = { updated_at: now() };
     if (req.body.name !== undefined) {
       assert(text(req.body.name, 100).length >= 2, 400, 'Họ tên quá ngắn.');
@@ -341,22 +369,24 @@ export function installAuth(app, d, options) {
         'Số điện thoại không hợp lệ.',
       );
       assert(
-        !d.one(
+        !(await d.one(
           'SELECT id FROM nguoi_dung WHERE phone=? AND id!=?',
           req.body.phone,
           req.user.id,
-        ),
+        )),
         409,
         'Số điện thoại đã được sử dụng.',
       );
       values.phone = req.body.phone;
     }
-    d.update('nguoi_dung', values, req.user.id);
-    audit(d, req.user.id, 'profile.update', 'user', req.user.id);
-    res.json({ data: publicUser(d, req.user.id) });
+    await d.update('nguoi_dung', values, req.user.id);
+    await audit(d, req.user.id, 'profile.update', 'user', req.user.id);
+    res.json({
+      data: await publicUser(d, req.user.id),
+    });
   });
-  app.post('/api/profile/password', auth, (req, res) => {
-    const u = d.one('SELECT * FROM nguoi_dung WHERE id=?', req.user.id);
+  app.post('/api/profile/password', auth, async (req, res) => {
+    const u = await d.one('SELECT * FROM nguoi_dung WHERE id=?', req.user.id);
     assert(
       bcrypt.compareSync(
         String(req.body.currentPassword || ''),
@@ -378,7 +408,7 @@ export function installAuth(app, d, options) {
       400,
       'Mật khẩu mới phải khác mật khẩu hiện tại.',
     );
-    d.update(
+    await d.update(
       'nguoi_dung',
       {
         password_hash: bcrypt.hashSync(
@@ -389,17 +419,20 @@ export function installAuth(app, d, options) {
       },
       u.id,
     );
-    d.run('DELETE FROM sessions WHERE user_id=?', u.id);
+    await d.run('DELETE FROM sessions WHERE user_id=?', u.id);
     res.json({ data: { message: 'Đã đổi mật khẩu. Vui lòng đăng nhập lại.' } });
   });
-  app.get('/api/addresses', auth, (req, res) =>
+  app.get('/api/addresses', auth, async (req, res) =>
     res.json({
-      data: d
-        .all(
+      data: (
+        await d.all(
           'SELECT * FROM dia_chi_giao_hang WHERE user_id=? ORDER BY is_default DESC,id',
           req.user.id,
         )
-        .map((x) => ({ ...camel(x), isDefault: !!x.is_default })),
+      ).map((x) => ({
+        ...camel(x),
+        isDefault: !!x.is_default,
+      })),
     }),
   );
   const addressValues = (b) => {
@@ -427,28 +460,35 @@ export function installAuth(app, d, options) {
       is_default: b.isDefault ? 1 : 0,
     };
   };
-  app.post('/api/addresses', auth, (req, res) => {
-    const count = d.one(
-      'SELECT COUNT(*) n FROM dia_chi_giao_hang WHERE user_id=?',
-      req.user.id,
+  app.post('/api/addresses', auth, async (req, res) => {
+    const count = (
+      await d.one(
+        'SELECT COUNT(*) n FROM dia_chi_giao_hang WHERE user_id=?',
+        req.user.id,
+      )
     ).n;
     assert(count < 10, 400, 'Sổ địa chỉ tối đa 10 địa chỉ.');
     const values = addressValues(req.body);
     if (!count) values.is_default = 1;
-    const id = d.transaction(() => {
+    const id = await d.transaction(async () => {
       if (values.is_default)
-        d.run(
+        await d.run(
           'UPDATE dia_chi_giao_hang SET is_default=0 WHERE user_id=?',
           req.user.id,
         );
-      return d.insert('dia_chi_giao_hang', { user_id: req.user.id, ...values });
+      return await d.insert('dia_chi_giao_hang', {
+        user_id: req.user.id,
+        ...values,
+      });
     });
     res.status(201).json({
-      data: camel(d.one('SELECT * FROM dia_chi_giao_hang WHERE id=?', id)),
+      data: camel(
+        await d.one('SELECT * FROM dia_chi_giao_hang WHERE id=?', id),
+      ),
     });
   });
-  app.patch('/api/addresses/:id', auth, (req, res) => {
-    const old = d.one(
+  app.patch('/api/addresses/:id', auth, async (req, res) => {
+    const old = await d.one(
       'SELECT * FROM dia_chi_giao_hang WHERE id=? AND user_id=?',
       req.params.id,
       req.user.id,
@@ -456,33 +496,42 @@ export function installAuth(app, d, options) {
     assert(old, 404, 'Không tìm thấy địa chỉ.');
     const values = addressValues({ ...camel(old), ...req.body });
     if (old.is_default && !values.is_default) values.is_default = 1;
-    d.transaction(() => {
+    await d.transaction(async () => {
       if (values.is_default)
-        d.run(
+        await d.run(
           'UPDATE dia_chi_giao_hang SET is_default=0 WHERE user_id=?',
           req.user.id,
         );
-      d.update('dia_chi_giao_hang', values, old.id);
+      await d.update('dia_chi_giao_hang', values, old.id);
     });
     res.json({
-      data: camel(d.one('SELECT * FROM dia_chi_giao_hang WHERE id=?', old.id)),
+      data: camel(
+        await d.one('SELECT * FROM dia_chi_giao_hang WHERE id=?', old.id),
+      ),
     });
   });
-  app.delete('/api/addresses/:id', auth, (req, res) => {
-    const a = d.one(
+  app.delete('/api/addresses/:id', auth, async (req, res) => {
+    const a = await d.one(
       'SELECT * FROM dia_chi_giao_hang WHERE id=? AND user_id=?',
       req.params.id,
       req.user.id,
     );
     assert(a, 404, 'Không tìm thấy địa chỉ.');
-    d.transaction(() => {
-      d.run('DELETE FROM dia_chi_giao_hang WHERE id=?', a.id);
+    await d.transaction(async () => {
+      await d.run('DELETE FROM dia_chi_giao_hang WHERE id=?', a.id);
       if (a.is_default) {
-        const first = d.one(
+        const first = await d.one(
           'SELECT id FROM dia_chi_giao_hang WHERE user_id=? ORDER BY id LIMIT 1',
           req.user.id,
         );
-        if (first) d.update('dia_chi_giao_hang', { is_default: 1 }, first.id);
+        if (first)
+          await d.update(
+            'dia_chi_giao_hang',
+            {
+              is_default: 1,
+            },
+            first.id,
+          );
       }
     });
     res.json({ data: { deleted: true } });

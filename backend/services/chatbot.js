@@ -9,8 +9,8 @@ import {
 } from './shared.js';
 import { generateAnswer } from '../integrations/gemini.js';
 export function installChatbot(app, d, { auth }, options) {
-  const sessionFor = (id, userId) => {
-    const s = d.one(
+  const sessionFor = async (id, userId) => {
+    const s = await d.one(
       'SELECT * FROM cuoc_hoi_thoai WHERE id=? AND user_id=?',
       Number(id),
       userId,
@@ -18,63 +18,66 @@ export function installChatbot(app, d, { auth }, options) {
     assert(s, 404, 'Không tìm thấy cuộc trò chuyện.');
     return s;
   };
-  const handoff = (session, userId, message) => {
-    let item = d.one(
+  const handoff = async (session, userId, message) => {
+    let item = await d.one(
       "SELECT * FROM yeu_cau_ho_tro WHERE session_id=? AND status!='resolved'",
       session.id,
     );
     if (!item) {
-      const id = d.insert('yeu_cau_ho_tro', {
+      const id = await d.insert('yeu_cau_ho_tro', {
         session_id: session.id,
         user_id: userId,
         message: text(message, 2000) || 'Khách hàng yêu cầu dược sĩ hỗ trợ.',
       });
-      item = d.one('SELECT * FROM yeu_cau_ho_tro WHERE id=?', id);
-      d.update(
+      item = await d.one('SELECT * FROM yeu_cau_ho_tro WHERE id=?', id);
+      await d.update(
         'cuoc_hoi_thoai',
-        { status: 'handoff', updated_at: now() },
+        {
+          status: 'handoff',
+          updated_at: now(),
+        },
         session.id,
       );
     }
     return camel(item);
   };
-  app.get('/api/chat/sessions', auth, (req, res) =>
+  app.get('/api/chat/sessions', auth, async (req, res) =>
     res.json({
-      data: d
-        .all(
+      data: (
+        await d.all(
           'SELECT * FROM cuoc_hoi_thoai WHERE user_id=? ORDER BY id DESC',
           req.user.id,
         )
-        .map(camel),
+      ).map(camel),
     }),
   );
-  app.post('/api/chat/sessions', auth, (req, res) => {
-    const id = d.insert('cuoc_hoi_thoai', {
+  app.post('/api/chat/sessions', auth, async (req, res) => {
+    const id = await d.insert('cuoc_hoi_thoai', {
       user_id: req.user.id,
       title: text(req.body.title, 100) || 'Cuộc trò chuyện mới',
     });
     res.status(201).json({
-      data: camel(d.one('SELECT * FROM cuoc_hoi_thoai WHERE id=?', id)),
+      data: camel(await d.one('SELECT * FROM cuoc_hoi_thoai WHERE id=?', id)),
     });
   });
-  app.get('/api/chat/sessions/:id/messages', auth, (req, res) => {
-    sessionFor(req.params.id, req.user.id);
+  app.get('/api/chat/sessions/:id/messages', auth, async (req, res) => {
+    await sessionFor(req.params.id, req.user.id);
     res.json({
-      data: d
-        .all(
+      data: (
+        await d.all(
           'SELECT * FROM tin_nhan WHERE session_id=? ORDER BY id',
           req.params.id,
         )
-        .map(camel),
+      ).map(camel),
     });
   });
-  app.post('/api/chat/sessions/:id/handoff', auth, (req, res) => {
-    const session = sessionFor(req.params.id, req.user.id),
-      result = handoff(session, req.user.id, req.body?.message);
+  app.post('/api/chat/sessions/:id/handoff', auth, async (req, res) => {
+    const session = await sessionFor(req.params.id, req.user.id),
+      result = await handoff(session, req.user.id, req.body?.message);
     res.json({ data: result });
   });
   app.post('/api/chat', async (req, res) => {
-    const settings = getSettings(d);
+    const settings = await getSettings(d);
     assert(
       settings.chatbotEnabled,
       503,
@@ -85,26 +88,34 @@ export function installChatbot(app, d, { auth }, options) {
     let session = null;
     if (req.user) {
       if (req.body.sessionId)
-        session = sessionFor(req.body.sessionId, req.user.id);
+        session = await sessionFor(req.body.sessionId, req.user.id);
       else {
-        const id = d.insert('cuoc_hoi_thoai', {
+        const id = await d.insert('cuoc_hoi_thoai', {
           user_id: req.user.id,
           title: message.slice(0, 80),
         });
-        session = d.one('SELECT * FROM cuoc_hoi_thoai WHERE id=?', id);
+        session = await d.one('SELECT * FROM cuoc_hoi_thoai WHERE id=?', id);
       }
-      d.insert('tin_nhan', {
+      await d.insert('tin_nhan', {
         session_id: session.id,
         role: 'user',
         content: message,
         mode: 'user',
       });
-      d.update('cuoc_hoi_thoai', { updated_at: now() }, session.id);
+      await d.update(
+        'cuoc_hoi_thoai',
+        {
+          updated_at: now(),
+        },
+        session.id,
+      );
     }
-    const requestSupport = () =>
+    const requestSupport = async () =>
       session
-        ? handoff(session, req.user.id, message)
-        : { requiresLogin: true };
+        ? await handoff(session, req.user.id, message)
+        : {
+            requiresLogin: true,
+          };
     const normalized = normalize(message);
     let reply,
       mode = 'knowledge',
@@ -119,7 +130,7 @@ export function installChatbot(app, d, { auth }, options) {
       'qua lieu',
       'ngat',
     ];
-    const rules = d.all(
+    const rules = await d.all(
       'SELECT r.*,k.keyword FROM quy_tac_an_toan r JOIN tu_khoa_canh_bao k ON k.rule_id=r.id WHERE r.active=1',
     );
     const rule = rules.find((r) => normalized.includes(normalize(r.keyword)));
@@ -129,12 +140,12 @@ export function installChatbot(app, d, { auth }, options) {
         (!urgent && rule?.response) ||
         'Dấu hiệu bạn mô tả cần được nhân viên y tế đánh giá khẩn cấp. Hãy đến cơ sở y tế gần nhất hoặc liên hệ cấp cứu tại địa phương. Không chờ tư vấn qua chatbot.';
       mode = 'safety';
-      support = requestSupport();
+      support = await requestSupport();
     } else if (/tu tu|tu hai|tu sat/.test(normalized)) {
       reply =
         'Mình rất tiếc vì bạn đang gặp khó khăn. Hãy ở cạnh một người bạn tin tưởng và đến cơ sở y tế gần nhất nếu bạn có nguy cơ làm tổn thương bản thân.';
       mode = 'safety';
-      support = requestSupport();
+      support = await requestSupport();
     } else if (
       /co thai|mang thai|cho con bu|tre so sinh|di ung|lieu dung|uong may|bao nhieu vien|ke don cho|khang sinh|tuong tac/.test(
         normalized,
@@ -143,7 +154,7 @@ export function installChatbot(app, d, { auth }, options) {
       reply =
         'Trường hợp này cần dược sĩ hoặc bác sĩ đánh giá trực tiếp. Tôi có thể kết nối bạn với dược sĩ để trao đổi về thuốc và cách sử dụng an toàn. Thông tin chatbot chỉ để tham khảo.';
       mode = 'safety';
-      support = requestSupport();
+      support = await requestSupport();
     } else if (
       /phi giao|phi ship|mien phi.*giao|phi van chuyen/.test(normalized)
     ) {
@@ -170,16 +181,16 @@ export function installChatbot(app, d, { auth }, options) {
     ) {
       const code = message.match(/MA[A-Z0-9]{6,}/i)?.[0]?.toUpperCase();
       let order = code
-        ? d.one(
+        ? await d.one(
             'SELECT id FROM don_hang WHERE upper(code)=? AND user_id=?',
             code,
             req.user.id,
           )
-        : d.one(
+        : await d.one(
             'SELECT id FROM don_hang WHERE user_id=? ORDER BY id DESC LIMIT 1',
             req.user.id,
           );
-      const o = order ? orderView(d, order.id) : null;
+      const o = order ? await orderView(d, order.id) : null;
       const labels = {
         pending: 'Chờ xác nhận',
         pending_prescription: 'Chờ dược sĩ duyệt đơn thuốc',
@@ -196,7 +207,7 @@ export function installChatbot(app, d, { auth }, options) {
         ? `Đơn ${o.code} của bạn: ${labels[o.status] || o.status}. Tổng tiền ${o.total.toLocaleString('vi-VN')}đ. Bạn có thể mở Đơn hàng để xem tiến trình và gửi yêu cầu hỗ trợ.`
         : 'Tôi chưa tìm thấy đơn hàng phù hợp trong tài khoản của bạn. Hãy kiểm tra mã đơn tại mục Đơn hàng.';
     } else {
-      const knowledge = d.all(
+      const knowledge = await d.all(
         'SELECT * FROM tri_thuc_chatbot WHERE active=1 AND reviewed_at IS NOT NULL',
       );
       const matching = knowledge
@@ -229,7 +240,7 @@ export function installChatbot(app, d, { auth }, options) {
       const words = normalized
         .split(/[^a-z0-9]+/)
         .filter((word) => word.length >= 3 && !ignoredWords.has(word));
-      products = productList(d)
+      products = (await productList(d))
         .filter(
           (p) =>
             !p.prescriptionRequired &&
@@ -274,7 +285,7 @@ export function installChatbot(app, d, { auth }, options) {
             mode = 'gemini';
           } catch {
             mode = 'knowledge_fallback';
-            audit(
+            await audit(
               d,
               req.user?.id,
               'chatbot.provider_unavailable',
@@ -290,7 +301,7 @@ export function installChatbot(app, d, { auth }, options) {
       }
     }
     const id = session
-      ? d.insert('tin_nhan', {
+      ? await d.insert('tin_nhan', {
           session_id: session.id,
           role: 'assistant',
           content: reply,

@@ -10,8 +10,7 @@ import {
   validPrescriptionName,
   prescriptionMimes,
   imageMimes,
-} from './orders.js';
-
+} from './attachments.js';
 const tables = [
   'nguoi_dung',
   'khach_hang',
@@ -55,7 +54,6 @@ const format = 'antam-backup-v1';
 const algorithm = 'aes-256-gcm';
 const key = (passphrase, salt) =>
   scryptSync(passphrase, salt, 32, { N: 32768, maxmem: 64 * 1024 * 1024 });
-
 function validatePassphrase(passphrase) {
   assert(
     typeof passphrase === 'string' &&
@@ -65,7 +63,6 @@ function validatePassphrase(passphrase) {
     'Cụm mật khẩu sao lưu cần từ 12 đến 256 ký tự.',
   );
 }
-
 function encrypt(data, passphrase) {
   validatePassphrase(passphrase);
   const salt = randomBytes(16);
@@ -83,7 +80,6 @@ function encrypt(data, passphrase) {
     ciphertext: ciphertext.toString('base64'),
   };
 }
-
 function decrypt(backup, passphrase) {
   validatePassphrase(passphrase);
   assert(
@@ -115,26 +111,29 @@ function decrypt(backup, passphrase) {
     fail(400, 'Cụm mật khẩu không đúng hoặc tệp sao lưu đã bị hỏng.');
   }
 }
-
 export function installBackup(app, d, { admin, permission }) {
   const allowed = [admin, permission('backup')];
-  app.post('/api/admin/backup', ...allowed, (req, res) => {
+  app.post('/api/admin/backup', ...allowed, async (req, res) => {
     const backup = encrypt(
       {
         savedAt: now(),
         tables: Object.fromEntries(
-          tables.map((table) => [table, d.all(`SELECT * FROM ${table}`)]),
+          await Promise.all(
+            tables.map(async (table) => [
+              table,
+              await d.all(`SELECT * FROM ${table}`),
+            ]),
+          ),
         ),
       },
       req.body.passphrase,
     );
-    audit(d, req.user.id, 'backup.export', 'database', '', {
+    await audit(d, req.user.id, 'backup.export', 'database', '', {
       bytes: Buffer.byteLength(backup.ciphertext),
     });
     res.attachment(`antam-backup-${today()}.json`).json({ data: backup });
   });
-
-  app.post('/api/admin/backup/restore', ...allowed, (req, res) => {
+  app.post('/api/admin/backup/restore', ...allowed, async (req, res) => {
     assert(
       req.body.confirm === 'RESTORE_ANTAM',
       400,
@@ -148,7 +147,7 @@ export function installBackup(app, d, { admin, permission }) {
     );
     for (const table of tables) {
       const columns = new Set(
-        d.all(`PRAGMA table_info(${table})`).map((column) => column.name),
+        (await d.columns(table)).map((column) => column.name),
       );
       assert(snapshot[table].length <= 100000, 400, 'Bản sao lưu quá lớn.');
       for (const row of snapshot[table]) {
@@ -186,35 +185,38 @@ export function installBackup(app, d, { admin, permission }) {
       400,
       'Tên tệp ảnh đổi trả không hợp lệ.',
     );
-
-    d.transaction(() => {
-      d.db.exec('PRAGMA defer_foreign_keys=ON');
-      for (const table of [
-        'sessions',
-        'ma_otp',
-        'oauth_states',
-        ...tables.toReversed(),
-      ])
-        d.run(`DELETE FROM ${table}`);
+    await d.transaction(async () => {
+      await d.deferConstraints();
+      const transient = ['sessions', 'ma_otp', 'oauth_states'];
+      if (d.kind === 'postgres') transient.push('upload_intents');
+      for (const table of [...transient, ...tables.toReversed()])
+        await d.run(`DELETE FROM ${table}`);
       for (const table of tables)
-        for (const row of snapshot[table]) d.insert(table, row);
+        for (const row of snapshot[table]) await d.insert(table, row);
       assert(
-        !d.all('PRAGMA foreign_key_check').length,
+        !(await d.foreignKeyViolations()).length,
         400,
         'Bản sao lưu vi phạm quan hệ khóa ngoại.',
       );
-      const ids = d.all(
+      const ids = await d.all(
         'SELECT id FROM nguoi_dung WHERE active=1 AND verified=1',
       );
       assert(
-        ids.some(({ id }) => {
-          const user = publicUser(d, id);
-          return user.role === 'admin' && user.permissions.includes('users');
-        }),
+        (
+          await Promise.all(
+            ids.map(async ({ id }) => {
+              const user = await publicUser(d, id);
+              return (
+                user.role === 'admin' && user.permissions.includes('users')
+              );
+            }),
+          )
+        ).some(Boolean),
         400,
         'Bản sao lưu cần quản trị viên đang hoạt động và có quyền quản trị tài khoản.',
       );
-      audit(d, null, 'backup.restore', 'database', '');
+      await audit(d, null, 'backup.restore', 'database', '');
+      await d.resetSequences();
     });
     res.clearCookie('antam_session', { path: '/' });
     res.json({
