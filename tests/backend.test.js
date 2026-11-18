@@ -1,0 +1,908 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { createHmac } from 'node:crypto';
+import { createApp } from '../backend/app.js';
+async function fixture(t, options = {}) {
+  const storage = mkdtempSync(path.join(os.tmpdir(), 'minhan-test-'));
+  const app = createApp({
+      dbPath: ':memory:',
+      testing: true,
+      storagePath: storage,
+      ...options,
+    }),
+    server = app.listen(0, '127.0.0.1');
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${server.address().port}/api`;
+  t.after(async () => {
+    server.closeAllConnections();
+    await new Promise((r) => server.close(r));
+    app.locals.store.close();
+    rmSync(storage, { recursive: true, force: true });
+  });
+  const client = () => {
+    let cookie = '';
+    return async (route, method = 'GET', body, extra = {}) => {
+      const form = body instanceof FormData;
+      const response = await fetch(base + route, {
+        method,
+        headers: {
+          ...(body && !form ? { 'Content-Type': 'application/json' } : {}),
+          ...(cookie ? { Cookie: cookie } : {}),
+          ...extra,
+        },
+        ...(body ? { body: form ? body : JSON.stringify(body) } : {}),
+      });
+      const setCookie = response.headers.get('set-cookie');
+      if (setCookie) cookie = setCookie.split(';')[0];
+      const content = response.headers.get('content-type') || '';
+      const json = content.includes('application/json')
+        ? await response.json()
+        : await response.text();
+      return {
+        status: response.status,
+        data: json?.data,
+        body: json,
+        headers: response.headers,
+      };
+    };
+  };
+  const login = async (email = 'khach@minhan.vn') => {
+    const c = client();
+    const r = await c('/auth/login', 'POST', { email, password: 'Demo@123' });
+    assert.equal(r.status, 200);
+    return c;
+  };
+  return { app, d: app.locals.store, client, login };
+}
+
+test('VNPay Sandbox updates an order only after a signed IPN for its exact amount', async (t) => {
+  const vnpay = {
+    merchant: 'MINHANQA',
+    secret: 'sandbox-test-fixture-only',
+    returnUrl: 'http://localhost:3001/api/payments/vnpay/return',
+  };
+  const { d, login, client } = await fixture(t, { vnpay });
+  const customer = await login();
+  await add(customer, 1);
+  const created = await order(customer, { paymentMethod: 'vnpay' });
+  assert.equal(created.status, 201);
+  const attempt = await customer(
+    `/orders/${created.data.id}/vnpay`,
+    'POST',
+    {},
+  );
+  assert.equal(attempt.status, 200);
+  const payment = new URL(attempt.data.url);
+  assert.equal(payment.hostname, 'sandbox.vnpayment.vn');
+  const reference = payment.searchParams.get('vnp_TxnRef');
+  const params = {
+    vnp_Amount: String(created.data.total * 100),
+    vnp_ResponseCode: '00',
+    vnp_TmnCode: vnpay.merchant,
+    vnp_TransactionNo: '123456789',
+    vnp_TransactionStatus: '00',
+    vnp_TxnRef: reference,
+  };
+  const signed = (values) => {
+    const payload = new URLSearchParams(
+      Object.entries(values).sort(([left], [right]) =>
+        left.localeCompare(right),
+      ),
+    ).toString();
+    return `${payload}&vnp_SecureHash=${createHmac('sha512', vnpay.secret).update(payload).digest('hex')}`;
+  };
+  const ipn = '/payments/vnpay/ipn';
+  const callback = client();
+  assert.equal(
+    (await callback(`${ipn}?vnp_TxnRef=${reference}`)).body.RspCode,
+    '97',
+  );
+  assert.equal(
+    (await callback(`${ipn}?${signed({ ...params, vnp_Amount: '100' })}`)).body
+      .RspCode,
+    '04',
+  );
+  assert.equal(
+    (await customer(`/orders/${created.data.id}`)).data.paymentStatus,
+    'unpaid',
+  );
+  assert.equal((await callback(`${ipn}?${signed(params)}`)).body.RspCode, '00');
+  assert.equal((await callback(`${ipn}?${signed(params)}`)).body.RspCode, '02');
+  assert.equal(
+    (await customer(`/orders/${created.data.id}`)).data.paymentStatus,
+    'paid',
+  );
+  assert.equal(
+    d.one(
+      "SELECT COUNT(*) n FROM giao_dich_thanh_toan WHERE order_id=? AND status='success'",
+      created.data.id,
+    ).n,
+    1,
+  );
+});
+
+test('partial prescription review allows only the approved items and restores reservations for excluded drugs', async (t) => {
+  const { login } = await fixture(t);
+  const customer = await login();
+  const pharmacist = await login('duocsi@minhan.vn');
+  const [allowed, excluded] = (await customer('/products?prescription=true'))
+    .data;
+  await add(customer, allowed.id);
+  await add(customer, excluded.id);
+  const rx = await upload(customer);
+  const created = (await order(customer, { prescriptionId: rx.id })).data;
+  const decision = await pharmacist(`/admin/prescriptions/${rx.id}`, 'PATCH', {
+    status: 'partial',
+    productIds: [allowed.id],
+    note: 'Đã đối chiếu một thuốc trong đơn.',
+  });
+  assert.equal(decision.status, 200);
+  assert.equal(
+    (
+      await pharmacist(`/admin/orders/${created.id}/status`, 'PATCH', {
+        status: 'confirmed',
+      })
+    ).status,
+    409,
+  );
+  const adjusted = await customer(
+    `/orders/${created.id}/rx-adjustment`,
+    'POST',
+    { mode: 'approved_only' },
+  );
+  assert.equal(adjusted.status, 200);
+  assert.deepEqual(
+    adjusted.data.items.map((item) => item.productId),
+    [allowed.id],
+  );
+  assert.equal(adjusted.data.prescriptionStatus, 'approved');
+  assert.equal(adjusted.data.subtotal, allowed.price);
+  assert.equal(
+    (await customer(`/products/${excluded.id}`)).data.stock,
+    excluded.stock,
+  );
+});
+
+test('encrypted backup rejects the wrong passphrase and restores data in a transaction', async (t) => {
+  const { login, d } = await fixture(t);
+  const admin = await login('admin@minhan.vn');
+  const passphrase = 'demo-fixture-restore-only';
+  const backup = await admin('/admin/backup', 'POST', { passphrase });
+  assert.equal(backup.status, 200);
+  assert.equal(backup.data.format, 'minhan-backup-v1');
+  assert.equal(backup.data.tables, undefined);
+  assert.ok(!JSON.stringify(backup.data).includes('khach@minhan.vn'));
+  await admin('/admin/categories', 'POST', {
+    name: 'Danh mục tạo sau sao lưu',
+    slug: 'after-backup',
+  });
+  const incorrect = await admin('/admin/backup/restore', 'POST', {
+    confirm: 'RESTORE_MINHAN',
+    passphrase: 'incorrect-passphrase',
+    backup: backup.data,
+  });
+  assert.equal(incorrect.status, 400);
+  assert.ok(d.one('SELECT id FROM danh_muc WHERE slug=?', 'after-backup'));
+  const restore = await admin('/admin/backup/restore', 'POST', {
+    confirm: 'RESTORE_MINHAN',
+    passphrase,
+    backup: backup.data,
+  });
+  assert.equal(restore.status, 200);
+  assert.equal(
+    d.one('SELECT id FROM danh_muc WHERE slug=?', 'after-backup'),
+    undefined,
+  );
+  assert.equal((await admin('/auth/me')).data, null);
+});
+
+test('staff activation sets a password and account lock requires a reason and revokes sessions', async (t) => {
+  const { login, client } = await fixture(t);
+  const admin = await login('admin@minhan.vn');
+  const staff = client();
+  const email = 'qa.staff@minhan.test';
+  const invite = await admin('/admin/users', 'POST', {
+    name: 'Nhân viên kiểm thử',
+    email,
+    jobTitle: 'pharmacist',
+  });
+  assert.equal(invite.status, 201);
+  assert.equal(invite.data.user.verified, false);
+  const verified = await staff('/auth/verify', 'POST', {
+    email,
+    code: invite.data.demoCode,
+    password: 'Strong@1234',
+  });
+  assert.equal(verified.status, 200);
+  assert.ok(verified.data.permissions.includes('prescriptions'));
+  const endpoint = `/admin/users/${verified.data.id}`;
+  assert.equal((await admin(endpoint, 'PATCH', { active: false })).status, 400);
+  assert.equal(
+    (
+      await admin(endpoint, 'PATCH', {
+        active: false,
+        reason: 'Kiểm tra khóa tài khoản',
+      })
+    ).status,
+    200,
+  );
+  assert.equal((await staff('/auth/me')).data, null);
+});
+
+test('new chatbot knowledge becomes available after a pharmacist reviews it', async (t) => {
+  const { login } = await fixture(t);
+  const admin = await login('admin@minhan.vn');
+  const pharmacist = await login('duocsi@minhan.vn');
+  const customer = await login();
+  const knowledge = await admin('/admin/knowledge', 'POST', {
+    title: 'Lịch hỗ trợ demo',
+    keywords: 'lichphucvu',
+    content: 'Giờ hỗ trợ demo từ 8 giờ.',
+    source: 'Lịch phục vụ thử nghiệm',
+  });
+  assert.equal(knowledge.status, 201);
+  const ask = () =>
+    customer('/chat', 'POST', { message: 'Cho tôi hỏi lichphucvu' });
+  assert.doesNotMatch((await ask()).data.reply, /Giờ hỗ trợ demo/);
+  assert.equal(
+    (await admin(`/admin/knowledge/${knowledge.data.id}/review`, 'POST', {}))
+      .status,
+    403,
+  );
+  assert.equal(
+    (
+      await pharmacist(
+        `/admin/knowledge/${knowledge.data.id}/review`,
+        'POST',
+        {},
+      )
+    ).status,
+    200,
+  );
+  assert.match((await ask()).data.reply, /Giờ hỗ trợ demo/);
+});
+
+test('guest chat answers store information without storing a personal history', async (t) => {
+  const { d, client } = await fixture(t);
+  const guest = client();
+  const before = d.one('SELECT COUNT(*) n FROM cuoc_hoi_thoai').n;
+  const publicInfo = await guest('/chat', 'POST', {
+    message: 'Phí giao hàng bao nhiêu?',
+  });
+  assert.equal(publicInfo.status, 200);
+  assert.equal(publicInfo.data.sessionId, null);
+  assert.match(publicInfo.data.reply, /25.000/);
+  assert.match(
+    (await guest('/chat', 'POST', { message: 'Theo dõi đơn hàng của tôi' }))
+      .data.reply,
+    /đăng nhập/,
+  );
+  assert.equal(d.one('SELECT COUNT(*) n FROM cuoc_hoi_thoai').n, before);
+});
+
+test('return requires private photo evidence and stores stock only when inspected', async (t) => {
+  const { login } = await fixture(t);
+  const customer = await login();
+  const other = await login('huong@minhan.vn');
+  const staff = await login('duocsi@minhan.vn');
+  const cartItem = 1;
+  await add(customer, cartItem);
+  const created = (await order(customer)).data;
+  for (const status of ['confirmed', 'packing', 'shipping', 'delivered']) {
+    assert.equal(
+      (
+        await staff(`/admin/orders/${created.id}/status`, 'PATCH', {
+          status,
+          collected: true,
+        })
+      ).status,
+      200,
+    );
+  }
+  const endpoint = `/orders/${created.id}/requests`;
+  assert.equal(
+    (
+      await customer(endpoint, 'POST', {
+        type: 'return',
+        reason: 'Tình trạng sản phẩm cần kiểm tra',
+      })
+    ).status,
+    400,
+  );
+  const form = new FormData();
+  form.append('type', 'return');
+  form.append('reason', 'Tình trạng sản phẩm cần kiểm tra');
+  form.append(
+    'evidence',
+    new Blob(
+      [
+        Buffer.from(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X35sAAAAASUVORK5CYII=',
+          'base64',
+        ),
+      ],
+      { type: 'image/png' },
+    ),
+    'tinh-trang.png',
+  );
+  const evidenceRequest = await customer(endpoint, 'POST', form);
+  assert.equal(evidenceRequest.status, 201);
+  assert.equal(evidenceRequest.data.evidenceAvailable, true);
+  const id = evidenceRequest.data.id;
+  assert.equal((await other(`${endpoint}/${id}/evidence`)).status, 404);
+  assert.equal(
+    (await staff(`${endpoint}/${id}/evidence`)).headers.get('content-type'),
+    'image/png',
+  );
+  assert.equal(
+    (
+      await staff(`/admin/requests/${id}`, 'PATCH', {
+        status: 'approved',
+        restock: true,
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await staff(`/admin/requests/${id}`, 'PATCH', {
+        status: 'approved',
+        restock: true,
+        sealed: true,
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await staff(`/admin/requests/${id}/refund`, 'POST', {})).data
+      .paymentStatus,
+    'refunded',
+  );
+});
+const address = {
+  recipient: 'Khách kiểm thử',
+  phone: '0901234567',
+  line1: '24 Nguyễn Văn Cừ',
+  ward: 'Võ Cường',
+  district: 'Bắc Ninh',
+  city: 'Bắc Ninh',
+};
+async function add(c, productId, quantity = 1) {
+  const r = await c('/cart', 'POST', { productId, quantity });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+}
+async function order(c, extra = {}) {
+  return c('/orders', 'POST', { address, paymentMethod: 'cod', ...extra });
+}
+async function upload(c) {
+  const form = new FormData();
+  form.append(
+    'file',
+    new Blob(['%PDF-1.7\nDemo prescription\n%%EOF'], {
+      type: 'application/pdf',
+    }),
+    'don-thuoc.pdf',
+  );
+  const r = await c('/prescriptions', 'POST', form);
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  return r.data;
+}
+
+test('API enforces sessions, role permission, CSRF origin and accent-insensitive search', async (t) => {
+  const { client, login } = await fixture(t),
+    anonymous = client();
+  assert.equal((await anonymous('/cart')).status, 401);
+  const customer = await login();
+  assert.equal((await customer('/admin/users')).status, 403);
+  assert.equal((await customer('/admin/inventory')).status, 403);
+  assert.equal(
+    (
+      await customer(
+        '/cart',
+        'POST',
+        { productId: 1, quantity: 1 },
+        { Origin: 'https://evil.example' },
+      )
+    ).status,
+    403,
+  );
+  const found = await anonymous('/products?search=nuoc%20muoi');
+  assert.equal(found.status, 200);
+  assert.ok(found.data.some((p) => p.name.includes('Nước muối')));
+  const warehouse = await login('kho@minhan.vn');
+  assert.equal((await warehouse('/admin/prescriptions')).status, 403);
+  const admin = await login('admin@minhan.vn');
+  assert.equal((await admin('/admin/prescriptions')).status, 403);
+});
+
+test('registration verifies single-use OTP, resets password and revokes sessions', async (t) => {
+  const { client } = await fixture(t),
+    c = client();
+  assert.equal(
+    (
+      await c('/auth/register', 'POST', {
+        name: 'Tester',
+        email: 'tester@example.test',
+        password: 'weak',
+      })
+    ).status,
+    400,
+  );
+  const reg = await c('/auth/register', 'POST', {
+    name: 'Tester',
+    email: 'tester@example.test',
+    phone: '0909998877',
+    password: 'Strong@123',
+  });
+  assert.equal(reg.status, 201);
+  assert.match(reg.data.demoCode, /^\d{6}$/);
+  assert.equal(
+    (
+      await c('/auth/login', 'POST', {
+        email: 'tester@example.test',
+        password: 'Strong@123',
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await c('/auth/verify', 'POST', {
+        email: 'tester@example.test',
+        code: '000000',
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await c('/auth/verify', 'POST', {
+        email: 'tester@example.test',
+        code: reg.data.demoCode,
+      })
+    ).status,
+    200,
+  );
+  assert.equal((await c('/auth/me')).data.email, 'tester@example.test');
+  assert.equal(
+    (
+      await c('/auth/verify', 'POST', {
+        email: 'tester@example.test',
+        code: reg.data.demoCode,
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await c('/profile/password', 'POST', {
+        currentPassword: 'Strong@123',
+        newPassword: 'Strong@123',
+      })
+    ).status,
+    400,
+  );
+  const forgot = await c('/auth/forgot-password', 'POST', {
+    email: 'tester@example.test',
+  });
+  assert.ok(forgot.data.demoCode);
+  assert.equal(
+    (
+      await c('/auth/reset-password', 'POST', {
+        email: 'tester@example.test',
+        code: forgot.data.demoCode,
+        password: 'Changed@123',
+      })
+    ).status,
+    200,
+  );
+  assert.equal((await c('/auth/me')).data, null);
+  assert.equal(
+    (
+      await c('/auth/login', 'POST', {
+        email: 'tester@example.test',
+        password: 'Changed@123',
+      })
+    ).status,
+    200,
+  );
+});
+
+test('prescription files are private and matched to actual order before pharmacist approval', async (t) => {
+  const { login } = await fixture(t),
+    customer = await login(),
+    other = await login('huong@minhan.vn'),
+    staff = await login('duocsi@minhan.vn');
+  const rx = await upload(customer);
+  assert.equal((await other(`/prescriptions/${rx.id}/file`)).status, 404);
+  assert.equal(
+    (
+      await staff(`/admin/prescriptions/${rx.id}`, 'PATCH', {
+        status: 'approved',
+      })
+    ).status,
+    409,
+  );
+  await add(customer, 10);
+  assert.equal((await order(customer, { paymentMethod: 'demo' })).status, 400);
+  const created = await order(customer, {
+    paymentMethod: 'demo',
+    prescriptionId: rx.id,
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.data.status, 'pending_prescription');
+  assert.equal(
+    (
+      await customer(`/orders/${created.data.id}/payment`, 'POST', {
+        result: 'success',
+      })
+    ).status,
+    409,
+  );
+  assert.equal(
+    (
+      await staff(`/admin/orders/${created.data.id}/status`, 'PATCH', {
+        status: 'confirmed',
+      })
+    ).status,
+    409,
+  );
+  assert.equal(
+    (
+      await staff(`/admin/prescriptions/${rx.id}`, 'PATCH', {
+        status: 'approved',
+        note: 'Đã đối chiếu thuốc và đơn',
+      })
+    ).status,
+    200,
+  );
+  const paid = await customer(`/orders/${created.data.id}/payment`, 'POST', {
+    result: 'success',
+  });
+  assert.equal(paid.status, 200);
+  assert.equal(paid.data.paymentStatus, 'paid');
+  assert.equal(
+    (
+      await staff(`/admin/orders/${created.data.id}/status`, 'PATCH', {
+        status: 'confirmed',
+      })
+    ).status,
+    200,
+  );
+});
+
+test('checkout reserves FEFO stock, confirmation deducts once, cancellation restores once', async (t) => {
+  const { login, d } = await fixture(t),
+    customer = await login(),
+    staff = await login('duocsi@minhan.vn');
+  const p = (await customer('/products/11')).data,
+    early = d.one(
+      'SELECT * FROM lo_thuoc WHERE product_id=11 ORDER BY expires_at LIMIT 1',
+    );
+  await add(customer, 11, 2);
+  const created = await order(customer);
+  assert.equal(created.status, 201);
+  const id = created.data.id;
+  assert.equal(
+    d.one('SELECT quantity FROM lo_thuoc WHERE id=?', early.id).quantity,
+    early.quantity,
+  );
+  assert.equal(
+    d.one('SELECT reserved FROM lo_thuoc WHERE id=?', early.id).reserved,
+    early.reserved + 2,
+  );
+  assert.equal((await customer('/products/11')).data.stock, p.stock - 2);
+  assert.equal(
+    (
+      await staff(`/admin/orders/${id}/status`, 'PATCH', {
+        status: 'confirmed',
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    d.one('SELECT quantity FROM lo_thuoc WHERE id=?', early.id).quantity,
+    early.quantity - 2,
+  );
+  assert.equal(
+    d.one('SELECT reserved FROM lo_thuoc WHERE id=?', early.id).reserved,
+    early.reserved,
+  );
+  assert.equal(
+    (
+      await staff(`/admin/orders/${id}/status`, 'PATCH', {
+        status: 'confirmed',
+      })
+    ).status,
+    409,
+  );
+  assert.equal(
+    (
+      await staff(`/admin/orders/${id}/status`, 'PATCH', {
+        status: 'cancelled',
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    d.one('SELECT quantity FROM lo_thuoc WHERE id=?', early.id).quantity,
+    early.quantity,
+  );
+  assert.equal(
+    (
+      await staff(`/admin/orders/${id}/status`, 'PATCH', {
+        status: 'cancelled',
+      })
+    ).status,
+    409,
+  );
+});
+
+test('concurrent orders cannot oversell and a failed checkout preserves cart', async (t) => {
+  const { login, d } = await fixture(t),
+    a = await login(),
+    b = await login('huong@minhan.vn');
+  const batches = d.all('SELECT * FROM lo_thuoc WHERE product_id=11');
+  for (const row of batches)
+    d.update(
+      'lo_thuoc',
+      { quantity: row.id === batches[0].id ? 3 : 0, reserved: 0 },
+      row.id,
+    );
+  await add(a, 11, 2);
+  await add(b, 11, 2);
+  const results = await Promise.all([order(a), order(b)]);
+  assert.deepEqual(results.map((r) => r.status).sort(), [201, 409]);
+  assert.equal(
+    d.one('SELECT SUM(reserved) n FROM lo_thuoc WHERE product_id=11').n,
+    2,
+  );
+  const loser = results[0].status === 409 ? a : b;
+  assert.equal((await loser('/cart')).data.length, 1);
+});
+
+test('expired batches never count as sellable and receipt rejects expired/future invalid dates', async (t) => {
+  const { login, d } = await fixture(t),
+    c = await login(),
+    staff = await login('duocsi@minhan.vn');
+  const stock = (await c('/products/3')).data.stock,
+    actual = d.one(
+      "SELECT SUM(quantity-reserved) n FROM lo_thuoc WHERE product_id=3 AND expires_at>date('now')",
+    ).n;
+  assert.equal(stock, actual);
+  assert.ok(
+    d.one(
+      "SELECT quantity n FROM lo_thuoc WHERE product_id=3 AND expires_at<=date('now')",
+    ).n > 0,
+  );
+  assert.equal(
+    (
+      await staff('/admin/inventory/receipts', 'POST', {
+        supplierId: 1,
+        items: [
+          {
+            productId: 3,
+            batchNumber: 'EXPIRED-TEST',
+            quantity: 10,
+            cost: 1000,
+            manufacturedAt: '2020-01-01',
+            expiresAt: '2021-01-01',
+          },
+        ],
+      })
+    ).status,
+    400,
+  );
+  const inv = await staff('/admin/inventory');
+  assert.ok(inv.data.alerts.some((a) => a.type === 'expired'));
+});
+
+test('server computes immutable totals and coupon usage, ignores forged client prices', async (t) => {
+  const { login } = await fixture(t),
+    c = await login();
+  await add(c, 2, 2);
+  const created = await order(c, {
+    promotionCode: 'KHOEMANH10',
+    total: 1,
+    discount: 999999,
+    price: 1,
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.data.subtotal, 430000);
+  assert.equal(created.data.discount, 43000);
+  assert.equal(created.data.shippingFee, 0);
+  assert.equal(created.data.total, 387000);
+});
+
+test('demo payment is idempotent, refund cannot repeat and order transitions enforce COD collection', async (t) => {
+  const { login, d } = await fixture(t),
+    c = await login(),
+    staff = await login('duocsi@minhan.vn');
+  await add(c, 1);
+  const created = await order(c, { paymentMethod: 'demo' }),
+    id = created.data.id;
+  assert.equal(
+    (
+      await staff(`/admin/orders/${id}/status`, 'PATCH', {
+        status: 'confirmed',
+      })
+    ).status,
+    409,
+  );
+  assert.equal(
+    (await c(`/orders/${id}/payment`, 'POST', { result: 'failed' })).data
+      .paymentStatus,
+    'failed',
+  );
+  assert.equal(
+    (await c(`/orders/${id}/payment`, 'POST', { result: 'success' })).data
+      .paymentStatus,
+    'paid',
+  );
+  assert.equal(
+    (await c(`/orders/${id}/payment`, 'POST', { result: 'success' })).status,
+    200,
+  );
+  assert.equal(
+    d.one(
+      "SELECT COUNT(*) n FROM giao_dich_thanh_toan WHERE order_id=? AND status='success' AND type='payment'",
+      id,
+    ).n,
+    1,
+  );
+  const request = await c(`/orders/${id}/requests`, 'POST', {
+    type: 'cancel',
+    reason: 'Tôi muốn hủy đơn hàng này',
+  });
+  assert.equal(request.status, 201);
+  assert.equal(
+    (
+      await staff(`/admin/requests/${request.data.id}`, 'PATCH', {
+        status: 'approved',
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await staff(`/admin/requests/${request.data.id}/refund`, 'POST', {
+        amount: created.data.total + 1,
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (await staff(`/admin/requests/${request.data.id}/refund`, 'POST', {})).data
+      .paymentStatus,
+    'refunded',
+  );
+  assert.equal(
+    (await staff(`/admin/requests/${request.data.id}/refund`, 'POST', {}))
+      .status,
+    409,
+  );
+  await add(c, 1);
+  const cod = (await order(c)).data;
+  for (const status of ['confirmed', 'packing', 'shipping'])
+    assert.equal(
+      (await staff(`/admin/orders/${cod.id}/status`, 'PATCH', { status }))
+        .status,
+      200,
+    );
+  assert.equal(
+    (
+      await staff(`/admin/orders/${cod.id}/status`, 'PATCH', {
+        status: 'delivered',
+      })
+    ).status,
+    409,
+  );
+  assert.equal(
+    (
+      await staff(`/admin/orders/${cod.id}/status`, 'PATCH', {
+        status: 'delivered',
+        collected: true,
+      })
+    ).data.paymentStatus,
+    'paid',
+  );
+});
+
+test('review requires ownership, delivered purchase and is unique per product/order', async (t) => {
+  const { login } = await fixture(t),
+    c = await login();
+  await add(c, 11);
+  const o = (await order(c)).data;
+  assert.equal(
+    (
+      await c('/reviews', 'POST', {
+        orderId: o.id,
+        productId: 11,
+        rating: 5,
+        comment: 'Sản phẩm tốt',
+      })
+    ).status,
+    403,
+  );
+  const review = {
+    orderId: 2,
+    productId: 2,
+    rating: 4,
+    comment: 'Giao hàng nhanh và cẩn thận',
+  };
+  assert.equal((await c('/reviews', 'POST', review)).status, 409);
+  assert.equal(
+    (
+      await c('/reviews', 'POST', {
+        orderId: 3,
+        productId: 3,
+        rating: 5,
+        comment: 'Đóng gói cẩn thận',
+      })
+    ).status,
+    201,
+  );
+  assert.equal(
+    (
+      await c('/reviews', 'POST', {
+        orderId: 3,
+        productId: 3,
+        rating: 5,
+        comment: 'Đóng gói cẩn thận',
+      })
+    ).status,
+    409,
+  );
+});
+
+test('chat safety runs before provider and conversations are isolated by account', async (t) => {
+  const { login } = await fixture(t),
+    a = await login(),
+    b = await login('huong@minhan.vn');
+  const chat = await a('/chat', 'POST', {
+    message: 'Tôi bị khó thở và đau ngực',
+  });
+  assert.equal(chat.status, 200);
+  assert.equal(chat.data.mode, 'safety');
+  assert.ok(chat.data.handoff);
+  assert.equal(chat.data.products.length, 0);
+  assert.equal(
+    (await b(`/chat/sessions/${chat.data.sessionId}/messages`)).status,
+    404,
+  );
+  const knowledge = await a('/chat', 'POST', {
+    message: 'Phí giao hàng bao nhiêu?',
+  });
+  assert.equal(knowledge.data.mode, 'knowledge');
+  assert.match(knowledge.data.reply, /25.000/);
+});
+
+test('last admin is protected and permission deny overrides role default grants', async (t) => {
+  const { login } = await fixture(t),
+    admin = await login('admin@minhan.vn');
+  assert.equal(
+    (await admin('/admin/users/3', 'PATCH', { active: false })).status,
+    409,
+  );
+  assert.equal(
+    (await admin('/admin/users/3', 'PATCH', { role: 'customer' })).status,
+    409,
+  );
+  const staff = (await admin('/admin/users')).data.find(
+    (u) => u.email === 'duocsi@minhan.vn',
+  );
+  assert.equal(
+    (
+      await admin(`/admin/users/${staff.id}`, 'PATCH', {
+        permissions: staff.permissions.filter((p) => p !== 'reports'),
+      })
+    ).status,
+    200,
+  );
+  const pharmacy = await login('duocsi@minhan.vn');
+  assert.equal((await pharmacy('/admin/reports')).status, 403);
+  assert.equal((await pharmacy('/admin/inventory')).status, 200);
+});

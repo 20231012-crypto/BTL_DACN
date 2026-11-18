@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+.DS_Store
+backend/storage/
+coverage/
+artifacts/
+docs/source/
+*.backup.json
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.log
