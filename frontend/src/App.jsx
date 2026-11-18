@@ -329,9 +329,6 @@ function Header() {
           <span>
             <ShieldCheck size={13} /> Chăm sóc tận tâm, an tâm mỗi ngày
           </span>
-          <span className="top-right">
-            Đồ án Nhóm 11 <i /> Môi trường trình diễn
-          </span>
         </div>
       </div>
       <header className="site-header">
