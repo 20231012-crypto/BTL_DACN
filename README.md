@@ -1,4 +1,4 @@
-# Nhà thuốc Minh An
+# Nhà thuốc An Tâm
 
 Ứng dụng web chạy local cho đề tài bán thuốc trực tuyến tích hợp chatbot của Nhóm 11. Báo cáo đã được đọc bằng bot service account và dùng để đối chiếu chức năng. Bản sao tài liệu nguồn nằm trong `docs/source`. Ứng dụng dùng React, Node.js, Express và SQLite. Schema MySQL 8.0 của báo cáo nằm trong `database/schema.mysql.sql` để mở bằng MySQL Workbench.
 
