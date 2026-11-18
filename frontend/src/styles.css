@@ -874,20 +874,13 @@ svg {
 .care-icon {
   height: 79px;
   width: 79px;
-  border: 1px solid #64816d;
-  border-radius: 50%;
+  border: none;
+  background: transparent;
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #d6e7b5;
   flex-shrink: 0;
-}
-.care-icon > svg:last-child {
-  position: absolute;
-  right: 9px;
-  top: 10px;
-  background: #1b4c40;
 }
 .care-banner .eyebrow {
   color: #a5bd94;

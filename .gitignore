@@ -11,3 +11,4 @@ docs/source/
 *.sqlite-shm
 *.sqlite-wal
 *.log
+.vscode/

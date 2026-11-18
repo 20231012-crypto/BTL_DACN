@@ -118,6 +118,24 @@ export function createApp(options = {}) {
     next();
   });
   const guards = installAuth(app, d, config);
+  app.get('/favicon.ico', (req, res) => {
+    const p = existsSync(path.join(root, 'dist/favicon.ico'))
+      ? path.join(root, 'dist/favicon.ico')
+      : path.join(root, 'frontend/public/favicon.ico');
+    res.type('image/x-icon').sendFile(p);
+  });
+  app.get('/favicon.svg', (req, res) => {
+    const p = existsSync(path.join(root, 'dist/favicon.svg'))
+      ? path.join(root, 'dist/favicon.svg')
+      : path.join(root, 'frontend/public/favicon.svg');
+    res.type('image/svg+xml').sendFile(p);
+  });
+  app.get(['/favicon.png', '/apple-touch-icon.png'], (req, res) => {
+    const p = existsSync(path.join(root, 'dist/favicon.png'))
+      ? path.join(root, 'dist/favicon.png')
+      : path.join(root, 'frontend/public/favicon.png');
+    res.type('image/png').sendFile(p);
+  });
   app.get('/api/health', (req, res) =>
     res.json({
       data: {

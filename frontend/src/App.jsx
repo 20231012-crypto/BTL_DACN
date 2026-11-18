@@ -280,7 +280,7 @@ export default function App() {
           onClick={() => setChatOpen(!chatOpen)}
           aria-label={chatOpen ? 'Đóng tư vấn' : 'Mở tư vấn'}
         >
-          {chatOpen ? <X size={23} /> : <MessageCircle size={23} />}
+          {chatOpen ? <X size={23} /> : <LogoIcon size={24} />}
           <span>{chatOpen ? 'Đóng' : 'Tư vấn cùng An Tâm'}</span>
           {!chatOpen && <i />}
         </button>
@@ -571,18 +571,16 @@ function Home() {
       </section>
       <section className="container care-banner">
         <div className="care-icon">
-          <MessageCircle size={43} strokeWidth={1.1} />
-          <Plus size={21} />
+          <LogoIcon size={64} />
         </div>
         <div>
-          <span className="eyebrow">MỘT LỜI HỎI, THÊM AN TÂM</span>
+          <span className="eyebrow">CHĂM SÓC KHÁCH HÀNG & TƯ VẤN SỨC KHỎE</span>
           <h2>Chưa biết bắt đầu từ đâu?</h2>
           <p>Trợ lý An Tâm giúp bạn tìm thông tin và kết nối với dược sĩ.</p>
         </div>
         <button className="btn btn-light" onClick={() => setChatOpen(true)}>
           Trò chuyện cùng An Tâm <ArrowUpRight size={18} />
         </button>
-        <span className="care-decoration">+</span>
       </section>
       <section className="container story-section">
         <div className="story-visual">
