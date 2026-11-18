@@ -45,6 +45,7 @@ import {
   CircleHelp,
 } from 'lucide-react';
 import Admin from './Admin.jsx';
+import { LogoIcon } from './Logo.jsx';
 import { api, money, dateTime, label, uploadPrescription } from './lib.js';
 
 const AppContext = createContext(null);
@@ -341,8 +342,7 @@ function Header() {
             aria-label="Nhà thuốc An Tâm, trang chủ"
           >
             <span className="brand-mark">
-              <Plus size={30} strokeWidth={3} />
-              <i />
+              <LogoIcon size={44} />
             </span>
             <span>
               <small>NHÀ THUỐC</small>
@@ -3244,8 +3244,8 @@ function ChatPanel({ onClose, full = false }) {
   return (
     <section className={`chat-panel ${full ? 'chat-full' : ''}`}>
       <div className="chat-header">
-        <span className="chat-avatar">
-          <Plus size={23} />
+        <span className="chat-avatar" style={{ background: 'transparent', padding: 0 }}>
+          <LogoIcon size={36} />
         </span>
         <div>
           <strong>An Tâm luôn lắng nghe</strong>
@@ -3424,7 +3424,7 @@ function Footer() {
         <div className="footer-brand">
           <Link to="/" className="brand">
             <span className="brand-mark">
-              <Plus size={28} strokeWidth={3} />
+              <LogoIcon size={37} />
             </span>
             <span>
               <small>NHÀ THUỐC</small>

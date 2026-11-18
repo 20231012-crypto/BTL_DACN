@@ -32,6 +32,7 @@ import {
   ShieldCheck,
   Pill,
 } from 'lucide-react';
+import { LogoIcon } from './Logo.jsx';
 import { api, money, dateTime, statusLabel } from './lib.js';
 import './admin.css';
 
@@ -3241,7 +3242,7 @@ export default function Admin({ user, onExit, onLogout, config }) {
       <aside className={`adm-sidebar ${menuOpen ? 'is-open' : ''}`}>
         <button className="adm-brand" onClick={onExit}>
           <span className="adm-brand-icon">
-            <Plus size={27} strokeWidth={3} />
+            <LogoIcon size={39} />
           </span>
           <span>
             an tâm<small>QUẢN TRỊ NHÀ THUỐC</small>

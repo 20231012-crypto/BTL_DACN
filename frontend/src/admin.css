@@ -98,7 +98,7 @@
   width: 39px;
   display: grid;
   place-items: center;
-  background: #d4eadf;
+  background: transparent;
   color: #1b5a4b;
   border-radius: 12px;
 }
