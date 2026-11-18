@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import pg from 'pg';
+import { openPostgres } from '../backend/repositories/postgres.js';
+import { initializePostgresSchema } from '../backend/repositories/postgres-migrations.js';
 
 // Opt-in integration suite against a disposable PostgreSQL instance on this computer.
 export async function createTestDatabase() {
@@ -24,18 +25,11 @@ export async function createTestDatabase() {
     created = true;
     origin.pathname = `/${name}`;
     const databaseUrl = origin.href;
-    const target = new pg.Pool({ connectionString: databaseUrl });
+    const target = openPostgres(databaseUrl);
     try {
-      const sql = await readFile(
-        new URL(
-          '../supabase/migrations/20261118000100_minhan.sql',
-          import.meta.url,
-        ),
-        'utf8',
-      );
-      await target.query(sql);
+      await initializePostgresSchema(target);
     } finally {
-      await target.end();
+      await target.close();
     }
     return { databaseUrl, cleanup };
   } catch (error) {

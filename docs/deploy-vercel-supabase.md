@@ -6,7 +6,7 @@ Vercel phục vụ giao diện React và API Express trên cùng tên miền. Su
 
 1. Tạo project Supabase. Trong **Connect**, lấy URL **Transaction pooler** trên cổng `6543`. Giữ đúng username có project ref và thay mật khẩu bằng mật khẩu cơ sở dữ liệu đã mã hóa theo URL. [Kết nối PostgreSQL trên Supabase](https://supabase.com/docs/guides/database/connecting-to-postgres)
 2. Sao chép `.env.example` sang `.env`. Đặt `DATABASE_URL`, `SUPABASE_URL` và `SUPABASE_SECRET_KEY` ở máy. Dùng khóa **secret** phía máy chủ. Khóa `service_role` cũ cũng được đọc từ `SUPABASE_SERVICE_ROLE_KEY`. `SUPABASE_ATTACHMENTS_BUCKET` mặc định là `minhan-private`.
-3. Chạy `npm ci` rồi `npm run db:setup`. Lệnh áp dụng migration trong `supabase/migrations`, khởi tạo cấu hình và vai trò, đồng thời tạo bucket riêng tư giới hạn JPG, PNG, PDF và 5 MB. Có thể chạy lại lệnh trong quá trình cấu hình.
+3. Chạy `npm ci` rồi `npm run db:setup`. Lệnh áp dụng migration trong `supabase/migrations`, khởi tạo schema `antam`, cấu hình và vai trò, đồng thời tạo bucket riêng tư giới hạn JPG, PNG, PDF và 5 MB. Trong Supabase **Database → Tables**, chọn schema `antam` để xem các bảng.
 4. Đặt `INITIAL_ADMIN_EMAIL` và `INITIAL_ADMIN_PASSWORD` trong `.env`, rồi chạy `npm run init:admin`. Nếu cần danh mục, lô và khuyến mãi mẫu, đặt `SEED_SAMPLE_CATALOG=true` trước khi tạo quản trị viên. Tài khoản quản trị dùng mật khẩu riêng bạn chọn. Xóa `INITIAL_ADMIN_PASSWORD` khỏi `.env` sau khi tạo.
 
 ## Thiết lập Vercel

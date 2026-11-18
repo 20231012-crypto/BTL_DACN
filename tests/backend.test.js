@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHmac } from 'node:crypto';
 import { createApp } from '../backend/app.js';
+import { openPostgres } from '../backend/repositories/postgres.js';
+import { initializePostgresSchema } from '../backend/repositories/postgres-migrations.js';
 import { createTestDatabase } from './postgres-fixture.js';
 import { resolveApiUrl } from '../api/index.js';
 async function fixture(t, options = {}) {
@@ -85,6 +87,43 @@ test('Vercel rewrites preserve the path and business query parameters', () => {
     '/api/index',
   );
 });
+
+test(
+  'a running PostgreSQL store follows the schema rename and retains existing rows',
+  { skip: !process.env.MINHAN_TEST_POSTGRES_URL },
+  async () => {
+    const database = await createTestDatabase();
+    const migrator = openPostgres(database.databaseUrl);
+    const running = openPostgres(database.databaseUrl);
+    try {
+      await migrator.migrate('ALTER SCHEMA antam RENAME TO minhan');
+      const id = await running.insert('danh_muc', {
+        name: 'Danh mục trước khi đổi schema',
+        slug: 'danh-muc-cu',
+      });
+      const before = await running.one('SELECT * FROM danh_muc WHERE id=?', id);
+      const oid = await running.one("SELECT 'minhan.danh_muc'::regclass::oid AS table_id");
+
+      await initializePostgresSchema(migrator);
+      await initializePostgresSchema(migrator);
+
+      const after = await running.one('SELECT * FROM danh_muc WHERE id=?', id);
+      assert.deepEqual(after, before);
+      assert.deepEqual(
+        await running.one("SELECT 'antam.danh_muc'::regclass::oid AS table_id"),
+        oid,
+      );
+      assert.equal(
+        (await running.one("SELECT to_regnamespace('minhan') IS NULL AS removed")).removed,
+        true,
+      );
+    } finally {
+      await running.close();
+      await migrator.close();
+      await database.cleanup();
+    }
+  },
+);
 
 test(
   'signed attachments are scoped to the uploader and consumed after use',

@@ -1,7 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import pg from 'pg';
 
-const schema = 'minhan';
+const schema = 'antam';
+const previousSchema = 'minhan';
 const tables = new Set([
   'nguoi_dung',
   'khach_hang',
@@ -65,7 +66,7 @@ const identityTables = new Set(
 );
 
 // The services use parameterized SQL shared with SQLite. These are the three dialect differences.
-export function postgresSql(statement) {
+export function postgresSql(statement, activeSchema = schema) {
   const ignoreDuplicates = /^\s*INSERT OR IGNORE INTO /i.test(statement);
   let parameter = 0;
   const sql = statement
@@ -82,7 +83,7 @@ export function postgresSql(statement) {
     .replace(
       /\b(FROM|JOIN|INTO|UPDATE)\s+([a-z_][a-z0-9_]*)\b/gi,
       (match, keyword, table) =>
-        tables.has(table) ? `${keyword} ${schema}.${table}` : match,
+        tables.has(table) ? `${keyword} ${activeSchema}.${table}` : match,
     )
     .replace(/\?/g, () => `$${++parameter}`);
   return ignoreDuplicates ? `${sql} ON CONFLICT DO NOTHING` : sql;
@@ -126,15 +127,44 @@ export function openPostgres(connectionString) {
     console.error('PostgreSQL pool error:', error.code || 'connection'),
   );
   const context = new AsyncLocalStorage();
-  const query = (sql, params = []) => {
-    const statement = postgresSql(sql);
-    const transaction = context.getStore();
-    if (!transaction) return pool.query(statement, params);
+  let renamed = false;
+  const selectSchema = async (executor) => {
+    if (!renamed) {
+      const { rows } = await executor.query(
+        'SELECT to_regnamespace($1) IS NOT NULL AS renamed',
+        [schema],
+      );
+      renamed ||= rows[0].renamed;
+    }
+    return renamed ? schema : previousSchema;
+  };
+  const queue = (transaction, statement, params) => {
     const result = transaction.tail.then(() =>
       transaction.client.query(statement, params),
     );
     transaction.tail = result.catch(() => {});
     return result;
+  };
+  const query = async (sql, params = []) => {
+    const statement = (name) =>
+      postgresSql(typeof sql === 'function' ? sql(name) : sql, name);
+    const transaction = context.getStore();
+    if (transaction)
+      return queue(transaction, statement(transaction.schema), params);
+    const activeSchema = await selectSchema(pool);
+    try {
+      return await pool.query(statement(activeSchema), params);
+    } catch (error) {
+      // A statement that could not resolve its relation has no changes to replay.
+      if (
+        activeSchema === previousSchema &&
+        error.code === '42P01' &&
+        (await selectSchema(pool)) === schema
+      ) {
+        return pool.query(statement(schema), params);
+      }
+      throw error;
+    }
   };
   const one = async (sql, ...params) => (await query(sql, params)).rows[0];
   const all = async (sql, ...params) => (await query(sql, params)).rows;
@@ -174,6 +204,7 @@ export function openPostgres(connectionString) {
       await client.query('BEGIN');
       // Match SQLite's single-writer behavior for stock reservations and order/payment state.
       await client.query('SELECT pg_advisory_xact_lock(1040354273)');
+      state.schema = await selectSchema(client);
       const result = await context.run(state, work);
       await state.tail;
       await client.query('COMMIT');
@@ -194,11 +225,13 @@ export function openPostgres(connectionString) {
     insert,
     update,
     transaction,
-    migrate: (sql) => pool.query(sql),
+    migrate: (sql) => {
+      const transaction = context.getStore();
+      return transaction ? queue(transaction, sql) : pool.query(sql);
+    },
     columns: (table) =>
       all(
-        'SELECT column_name AS name FROM information_schema.columns WHERE table_schema=? AND table_name=?',
-        schema,
+        (name) => `SELECT column_name AS name FROM information_schema.columns WHERE table_schema='${name}' AND table_name=?`,
         table,
       ),
     deferConstraints: () => query('SET CONSTRAINTS ALL DEFERRED'),
@@ -209,7 +242,7 @@ export function openPostgres(connectionString) {
     resetSequences: async () => {
       for (const table of identityTables) {
         await query(
-          `SELECT setval(pg_get_serial_sequence('${schema}.${table}','id'), COALESCE(MAX(id),1), MAX(id) IS NOT NULL) FROM ${table}`,
+          (name) => `SELECT setval(pg_get_serial_sequence('${name}.${table}','id'), COALESCE(MAX(id),1), MAX(id) IS NOT NULL) FROM ${table}`,
         );
       }
     },

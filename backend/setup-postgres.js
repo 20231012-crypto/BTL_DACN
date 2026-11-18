@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
 import { openPostgres } from './repositories/postgres.js';
+import { initializePostgresSchema } from './repositories/postgres-migrations.js';
 import { seedDatabase } from './repositories/seed.js';
 import { supabaseStorage } from './services/attachments.js';
 
@@ -12,11 +12,7 @@ if (!process.env.DATABASE_URL) {
 
 const store = openPostgres(process.env.DATABASE_URL);
 try {
-  const source = new URL(
-    '../supabase/migrations/20261118000100_minhan.sql',
-    import.meta.url,
-  );
-  await store.migrate(await readFile(source, 'utf8'));
+  await initializePostgresSchema(store);
   await seedDatabase(store, { demoData: false });
   const storage = supabaseStorage();
   if (storage) await storage.setup();
@@ -27,7 +23,7 @@ try {
   );
 } catch (error) {
   console.error(
-    'Khởi tạo chưa thành công. Kiểm tra cấu hình kết nối và quyền tạo schema minhan.',
+    'Khởi tạo chưa thành công. Kiểm tra cấu hình kết nối và quyền tạo schema antam.',
     error.code || 'CONFIG',
   );
   process.exitCode = 1;
