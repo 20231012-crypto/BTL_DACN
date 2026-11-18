@@ -34,7 +34,7 @@ try {
     throw new Error('Email đã có tài khoản trong cơ sở dữ liệu.');
   store.transaction(() => {
     const id = store.insert('nguoi_dung', {
-      name: 'Quản trị Minh An',
+      name: 'Quản trị An Tâm',
       email,
       password_hash: bcrypt.hashSync(password, 12),
       active: 1,

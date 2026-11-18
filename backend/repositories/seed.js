@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { daysFromNow, now, slugify } from './database.js';
 export const defaultSettings = {
-  storeName: 'Nhà thuốc Minh An',
+  storeName: 'Nhà thuốc An Tâm',
   shippingFee: 25000,
   freeShippingThreshold: 299000,
   lowStockThreshold: 15,
@@ -66,19 +66,19 @@ export function seedDatabase(d, { demoData = true } = {}) {
   d.transaction(() => {
     const hash = bcrypt.hashSync('Demo@123', 10);
     const users = [
-      ['Nguyễn Minh Anh', 'khach@minhan.vn', '0901234567', 'customer', null],
+      ['Nguyễn Minh Anh', 'khach@antam.vn', '0901234567', 'customer', null],
       [
         'Dược sĩ Trần Thanh Hà',
-        'duocsi@minhan.vn',
+        'duocsi@antam.vn',
         '0902223344',
         'staff',
         'pharmacist',
       ],
-      ['Quản trị Minh An', 'admin@minhan.vn', '0903334455', 'admin', null],
-      ['Lê Thu Hương', 'huong@minhan.vn', '0904445566', 'customer', null],
+      ['Quản trị An Tâm', 'admin@antam.vn', '0903334455', 'admin', null],
+      ['Lê Thu Hương', 'huong@antam.vn', '0904445566', 'customer', null],
       [
         'Nhân viên kho Minh',
-        'kho@minhan.vn',
+        'kho@antam.vn',
         '0905556677',
         'staff',
         'warehouse',
@@ -148,7 +148,7 @@ export function seedDatabase(d, { demoData = true } = {}) {
     for (const [name, slug, description] of cats)
       d.insert('danh_muc', { name, slug, description });
     for (const [name, country] of [
-      ['Minh An Pharma', 'Việt Nam'],
+      ['An Tâm Pharma', 'Việt Nam'],
       ['An Khang Healthcare', 'Việt Nam'],
       ['Wellness Labs', 'Đức'],
       ['Healthy Life', 'Úc'],
@@ -487,7 +487,7 @@ export function seedDatabase(d, { demoData = true } = {}) {
       end_date: daysFromNow(120),
     });
     d.insert('khuyen_mai', {
-      code: 'MINHAN30',
+      code: 'ANTAM30',
       name: 'Giảm 30.000đ cho đơn từ 299.000đ',
       type: 'fixed',
       value: 30000,

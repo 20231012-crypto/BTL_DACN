@@ -121,7 +121,7 @@ export async function vnpayRefund(
     vnp_Amount: amount * 100,
     vnp_TransactionNo: payment.provider_reference,
     vnp_TransactionDate: gatewayDate(payment.created_at),
-    vnp_CreateBy: `minhan-${userId}`,
+    vnp_CreateBy: `antam-${userId}`,
     vnp_CreateDate: gatewayDate(Date.now()),
     vnp_IpAddr: ip,
     vnp_OrderInfo: `Hoan tien ${payment.reference}`,

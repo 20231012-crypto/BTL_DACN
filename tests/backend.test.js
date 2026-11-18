@@ -6,7 +6,7 @@ import path from 'node:path';
 import { createHmac } from 'node:crypto';
 import { createApp } from '../backend/app.js';
 async function fixture(t, options = {}) {
-  const storage = mkdtempSync(path.join(os.tmpdir(), 'minhan-test-'));
+  const storage = mkdtempSync(path.join(os.tmpdir(), 'antam-test-'));
   const app = createApp({
       dbPath: ':memory:',
       testing: true,
@@ -49,7 +49,7 @@ async function fixture(t, options = {}) {
       };
     };
   };
-  const login = async (email = 'khach@minhan.vn') => {
+  const login = async (email = 'khach@antam.vn') => {
     const c = client();
     const r = await c('/auth/login', 'POST', { email, password: 'Demo@123' });
     assert.equal(r.status, 200);
@@ -60,7 +60,7 @@ async function fixture(t, options = {}) {
 
 test('VNPay Sandbox updates an order only after a signed IPN for its exact amount', async (t) => {
   const vnpay = {
-    merchant: 'MINHANQA',
+    merchant: 'ANTAMQA',
     secret: 'sandbox-test-fixture-only',
     returnUrl: 'http://localhost:3001/api/payments/vnpay/return',
   };
@@ -127,7 +127,7 @@ test('VNPay Sandbox updates an order only after a signed IPN for its exact amoun
 test('partial prescription review allows only the approved items and restores reservations for excluded drugs', async (t) => {
   const { login } = await fixture(t);
   const customer = await login();
-  const pharmacist = await login('duocsi@minhan.vn');
+  const pharmacist = await login('duocsi@antam.vn');
   const [allowed, excluded] = (await customer('/products?prescription=true'))
     .data;
   await add(customer, allowed.id);
@@ -168,26 +168,26 @@ test('partial prescription review allows only the approved items and restores re
 
 test('encrypted backup rejects the wrong passphrase and restores data in a transaction', async (t) => {
   const { login, d } = await fixture(t);
-  const admin = await login('admin@minhan.vn');
+  const admin = await login('admin@antam.vn');
   const passphrase = 'demo-fixture-restore-only';
   const backup = await admin('/admin/backup', 'POST', { passphrase });
   assert.equal(backup.status, 200);
-  assert.equal(backup.data.format, 'minhan-backup-v1');
+  assert.equal(backup.data.format, 'antam-backup-v1');
   assert.equal(backup.data.tables, undefined);
-  assert.ok(!JSON.stringify(backup.data).includes('khach@minhan.vn'));
+  assert.ok(!JSON.stringify(backup.data).includes('khach@antam.vn'));
   await admin('/admin/categories', 'POST', {
     name: 'Danh mục tạo sau sao lưu',
     slug: 'after-backup',
   });
   const incorrect = await admin('/admin/backup/restore', 'POST', {
-    confirm: 'RESTORE_MINHAN',
+    confirm: 'RESTORE_ANTAM',
     passphrase: 'incorrect-passphrase',
     backup: backup.data,
   });
   assert.equal(incorrect.status, 400);
   assert.ok(d.one('SELECT id FROM danh_muc WHERE slug=?', 'after-backup'));
   const restore = await admin('/admin/backup/restore', 'POST', {
-    confirm: 'RESTORE_MINHAN',
+    confirm: 'RESTORE_ANTAM',
     passphrase,
     backup: backup.data,
   });
@@ -201,9 +201,9 @@ test('encrypted backup rejects the wrong passphrase and restores data in a trans
 
 test('staff activation sets a password and account lock requires a reason and revokes sessions', async (t) => {
   const { login, client } = await fixture(t);
-  const admin = await login('admin@minhan.vn');
+  const admin = await login('admin@antam.vn');
   const staff = client();
-  const email = 'qa.staff@minhan.test';
+  const email = 'qa.staff@antam.test';
   const invite = await admin('/admin/users', 'POST', {
     name: 'Nhân viên kiểm thử',
     email,
@@ -234,8 +234,8 @@ test('staff activation sets a password and account lock requires a reason and re
 
 test('new chatbot knowledge becomes available after a pharmacist reviews it', async (t) => {
   const { login } = await fixture(t);
-  const admin = await login('admin@minhan.vn');
-  const pharmacist = await login('duocsi@minhan.vn');
+  const admin = await login('admin@antam.vn');
+  const pharmacist = await login('duocsi@antam.vn');
   const customer = await login();
   const knowledge = await admin('/admin/knowledge', 'POST', {
     title: 'Lịch hỗ trợ demo',
@@ -286,8 +286,8 @@ test('guest chat answers store information without storing a personal history', 
 test('return requires private photo evidence and stores stock only when inspected', async (t) => {
   const { login } = await fixture(t);
   const customer = await login();
-  const other = await login('huong@minhan.vn');
-  const staff = await login('duocsi@minhan.vn');
+  const other = await login('huong@antam.vn');
+  const staff = await login('duocsi@antam.vn');
   const cartItem = 1;
   await add(customer, cartItem);
   const created = (await order(customer)).data;
@@ -412,9 +412,9 @@ test('API enforces sessions, role permission, CSRF origin and accent-insensitive
   const found = await anonymous('/products?search=nuoc%20muoi');
   assert.equal(found.status, 200);
   assert.ok(found.data.some((p) => p.name.includes('Nước muối')));
-  const warehouse = await login('kho@minhan.vn');
+  const warehouse = await login('kho@antam.vn');
   assert.equal((await warehouse('/admin/prescriptions')).status, 403);
-  const admin = await login('admin@minhan.vn');
+  const admin = await login('admin@antam.vn');
   assert.equal((await admin('/admin/prescriptions')).status, 403);
 });
 
@@ -514,8 +514,8 @@ test('registration verifies single-use OTP, resets password and revokes sessions
 test('prescription files are private and matched to actual order before pharmacist approval', async (t) => {
   const { login } = await fixture(t),
     customer = await login(),
-    other = await login('huong@minhan.vn'),
-    staff = await login('duocsi@minhan.vn');
+    other = await login('huong@antam.vn'),
+    staff = await login('duocsi@antam.vn');
   const rx = await upload(customer);
   assert.equal((await other(`/prescriptions/${rx.id}/file`)).status, 404);
   assert.equal(
@@ -577,7 +577,7 @@ test('prescription files are private and matched to actual order before pharmaci
 test('checkout reserves FEFO stock, confirmation deducts once, cancellation restores once', async (t) => {
   const { login, d } = await fixture(t),
     customer = await login(),
-    staff = await login('duocsi@minhan.vn');
+    staff = await login('duocsi@antam.vn');
   const p = (await customer('/products/11')).data,
     early = d.one(
       'SELECT * FROM lo_thuoc WHERE product_id=11 ORDER BY expires_at LIMIT 1',
@@ -644,7 +644,7 @@ test('checkout reserves FEFO stock, confirmation deducts once, cancellation rest
 test('concurrent orders cannot oversell and a failed checkout preserves cart', async (t) => {
   const { login, d } = await fixture(t),
     a = await login(),
-    b = await login('huong@minhan.vn');
+    b = await login('huong@antam.vn');
   const batches = d.all('SELECT * FROM lo_thuoc WHERE product_id=11');
   for (const row of batches)
     d.update(
@@ -667,7 +667,7 @@ test('concurrent orders cannot oversell and a failed checkout preserves cart', a
 test('expired batches never count as sellable and receipt rejects expired/future invalid dates', async (t) => {
   const { login, d } = await fixture(t),
     c = await login(),
-    staff = await login('duocsi@minhan.vn');
+    staff = await login('duocsi@antam.vn');
   const stock = (await c('/products/3')).data.stock,
     actual = d.one(
       "SELECT SUM(quantity-reserved) n FROM lo_thuoc WHERE product_id=3 AND expires_at>date('now')",
@@ -720,7 +720,7 @@ test('server computes immutable totals and coupon usage, ignores forged client p
 test('demo payment is idempotent, refund cannot repeat and order transitions enforce COD collection', async (t) => {
   const { login, d } = await fixture(t),
     c = await login(),
-    staff = await login('duocsi@minhan.vn');
+    staff = await login('duocsi@antam.vn');
   await add(c, 1);
   const created = await order(c, { paymentMethod: 'demo' }),
     id = created.data.id;
@@ -861,7 +861,7 @@ test('review requires ownership, delivered purchase and is unique per product/or
 test('chat safety runs before provider and conversations are isolated by account', async (t) => {
   const { login } = await fixture(t),
     a = await login(),
-    b = await login('huong@minhan.vn');
+    b = await login('huong@antam.vn');
   const chat = await a('/chat', 'POST', {
     message: 'Tôi bị khó thở và đau ngực',
   });
@@ -882,7 +882,7 @@ test('chat safety runs before provider and conversations are isolated by account
 
 test('last admin is protected and permission deny overrides role default grants', async (t) => {
   const { login } = await fixture(t),
-    admin = await login('admin@minhan.vn');
+    admin = await login('admin@antam.vn');
   assert.equal(
     (await admin('/admin/users/3', 'PATCH', { active: false })).status,
     409,
@@ -892,7 +892,7 @@ test('last admin is protected and permission deny overrides role default grants'
     409,
   );
   const staff = (await admin('/admin/users')).data.find(
-    (u) => u.email === 'duocsi@minhan.vn',
+    (u) => u.email === 'duocsi@antam.vn',
   );
   assert.equal(
     (
@@ -902,7 +902,7 @@ test('last admin is protected and permission deny overrides role default grants'
     ).status,
     200,
   );
-  const pharmacy = await login('duocsi@minhan.vn');
+  const pharmacy = await login('duocsi@antam.vn');
   assert.equal((await pharmacy('/admin/reports')).status, 403);
   assert.equal((await pharmacy('/admin/inventory')).status, 200);
 });

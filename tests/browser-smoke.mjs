@@ -8,7 +8,7 @@ const puppeteer = (await import(process.env.PUPPETEER_MODULE || 'puppeteer'))
   .default;
 const origin = 'http://127.0.0.1:39117';
 process.env.APP_ORIGIN = origin;
-const scratch = mkdtempSync(path.join(os.tmpdir(), 'minhan-browser-'));
+const scratch = mkdtempSync(path.join(os.tmpdir(), 'antam-browser-'));
 const app = createApp({
   dbPath: ':memory:',
   storagePath: scratch,
@@ -263,7 +263,7 @@ try {
   await setField(
     admin,
     '[role=dialog] input[name=email]',
-    'qa.staff@minhan.test',
+    'qa.staff@antam.test',
   );
   await clickText(admin, '[role=dialog] button[type=submit]', 'Tạo tài khoản');
   await textOnPage(admin, '[role=dialog] h2', 'Đã tạo tài khoản nhân viên');
@@ -271,7 +271,7 @@ try {
   assert.ok(
     app.locals.store.one(
       'SELECT id FROM nguoi_dung WHERE email=?',
-      'qa.staff@minhan.test',
+      'qa.staff@antam.test',
     ),
   );
   await admin.setViewport({

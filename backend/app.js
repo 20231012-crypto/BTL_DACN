@@ -122,7 +122,7 @@ export function createApp(options = {}) {
     res.json({
       data: {
         status: 'ok',
-        name: 'Nhà thuốc Minh An',
+        name: 'Nhà thuốc An Tâm',
         database: 'sqlite',
         demoMode: config.demo,
         geminiConfigured: !!process.env.GEMINI_API_KEY,

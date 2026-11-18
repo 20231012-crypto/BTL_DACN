@@ -1,9 +1,9 @@
 {
-  "name": "minh-an-pharmacy",
+  "name": "an-tam-pharmacy",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Hệ thống nhà thuốc trực tuyến Minh An theo báo cáo Nhóm 11",
+  "description": "Hệ thống nhà thuốc trực tuyến An Tâm theo báo cáo Nhóm 11",
   "engines": {
     "node": ">=24.0.0"
   },

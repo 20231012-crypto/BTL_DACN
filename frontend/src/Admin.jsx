@@ -311,7 +311,7 @@ function Modal({ title, children, onClose, wide = false }) {
       >
         <div className="adm-modal-head">
           <div>
-            <span className="adm-eyebrow">NHÀ THUỐC MINH AN</span>
+            <span className="adm-eyebrow">NHÀ THUỐC AN TÂM</span>
             <h2>{title}</h2>
           </div>
           <button className="adm-icon-btn" onClick={onClose} aria-label="Đóng">
@@ -2600,7 +2600,7 @@ export default function Admin({ user, onExit, onLogout, config }) {
                           ? 'Khách hàng'
                           : m.mode === 'pharmacist'
                             ? 'Nhân viên tư vấn'
-                            : 'Trợ lý Minh An'}
+                            : 'Trợ lý An Tâm'}
                       </strong>
                       <p>{m.content}</p>
                       <small>{dateTime(m.createdAt)}</small>
@@ -2776,7 +2776,7 @@ export default function Admin({ user, onExit, onLogout, config }) {
                 );
                 const anchor = document.createElement('a');
                 anchor.href = url;
-                anchor.download = `minhan-backup-${new Date().toISOString().slice(0, 10)}.json`;
+                anchor.download = `antam-backup-${new Date().toISOString().slice(0, 10)}.json`;
                 anchor.click();
                 setTimeout(() => URL.revokeObjectURL(url), 10000);
                 setModal(null);
@@ -2876,11 +2876,11 @@ export default function Admin({ user, onExit, onLogout, config }) {
                 ],
               ])}
               <Field
-                label="Nhập RESTORE_MINHAN để xác nhận"
+                label="Nhập RESTORE_ANTAM để xác nhận"
                 name="confirm"
                 value={form.confirm}
                 onChange={change}
-                pattern="RESTORE_MINHAN"
+                pattern="RESTORE_ANTAM"
                 required
               />
             </div>
@@ -2895,7 +2895,7 @@ export default function Admin({ user, onExit, onLogout, config }) {
                   saving ||
                   !form.backup ||
                   !form.passphrase ||
-                  form.confirm !== 'RESTORE_MINHAN'
+                  form.confirm !== 'RESTORE_ANTAM'
                 }
               >
                 {saving ? (
@@ -3244,7 +3244,7 @@ export default function Admin({ user, onExit, onLogout, config }) {
             <Plus size={27} strokeWidth={3} />
           </span>
           <span>
-            minh an<small>QUẢN TRỊ NHÀ THUỐC</small>
+            an tâm<small>QUẢN TRỊ NHÀ THUỐC</small>
           </span>
         </button>
         <div className="adm-side-label">KHÔNG GIAN LÀM VIỆC</div>
@@ -3308,7 +3308,7 @@ export default function Admin({ user, onExit, onLogout, config }) {
           <div className="adm-page-head">
             <div>
               <div className="adm-eyebrow">
-                MINH AN / {isAdmin ? 'QUẢN TRỊ VIÊN' : 'NHÂN VIÊN'}
+                AN TÂM / {isAdmin ? 'QUẢN TRỊ VIÊN' : 'NHÂN VIÊN'}
               </div>
               <h1>{TITLES[view]}</h1>
               <p>
@@ -3369,7 +3369,7 @@ export default function Admin({ user, onExit, onLogout, config }) {
             )()
           )}
           <footer className="adm-footer">
-            <span>© {new Date().getFullYear()} Nhà thuốc Minh An</span>
+            <span>© {new Date().getFullYear()} Nhà thuốc An Tâm</span>
             <span>Sức khỏe của bạn, sự tận tâm của chúng tôi.</span>
           </footer>
         </main>

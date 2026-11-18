@@ -51,7 +51,7 @@ const tables = [
   'order_status_history',
   'google_accounts',
 ];
-const format = 'minhan-backup-v1';
+const format = 'antam-backup-v1';
 const algorithm = 'aes-256-gcm';
 const key = (passphrase, salt) =>
   scryptSync(passphrase, salt, 32, { N: 32768, maxmem: 64 * 1024 * 1024 });
@@ -131,14 +131,14 @@ export function installBackup(app, d, { admin, permission }) {
     audit(d, req.user.id, 'backup.export', 'database', '', {
       bytes: Buffer.byteLength(backup.ciphertext),
     });
-    res.attachment(`minhan-backup-${today()}.json`).json({ data: backup });
+    res.attachment(`antam-backup-${today()}.json`).json({ data: backup });
   });
 
   app.post('/api/admin/backup/restore', ...allowed, (req, res) => {
     assert(
-      req.body.confirm === 'RESTORE_MINHAN',
+      req.body.confirm === 'RESTORE_ANTAM',
       400,
-      'Nhập RESTORE_MINHAN để xác nhận phục hồi.',
+      'Nhập RESTORE_ANTAM để xác nhận phục hồi.',
     );
     const snapshot = decrypt(req.body.backup, req.body.passphrase)?.tables;
     assert(
@@ -216,7 +216,7 @@ export function installBackup(app, d, { admin, permission }) {
       );
       audit(d, null, 'backup.restore', 'database', '');
     });
-    res.clearCookie('minhan_session', { path: '/' });
+    res.clearCookie('antam_session', { path: '/' });
     res.json({
       data: {
         message: 'Đã phục hồi dữ liệu. Vui lòng đăng nhập lại.',

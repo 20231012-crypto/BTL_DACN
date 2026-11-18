@@ -5,7 +5,7 @@ const app = createApp();
 const port = Number(process.env.PORT || 3001),
   host = process.env.HOST || '127.0.0.1';
 const server = app.listen(port, host, () =>
-  console.log(`Minh An API & production app: http://${host}:${port}`),
+  console.log(`An Tâm API & production app: http://${host}:${port}`),
 );
 function stop() {
   server.close(() => {

@@ -926,7 +926,7 @@ export function installAdmin(
     res
       .set({
         'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="minhan-revenue-${report.from}-${report.to}.csv"`,
+        'Content-Disposition': `attachment; filename="antam-revenue-${report.from}-${report.to}.csv"`,
       })
       .send(csv);
   });

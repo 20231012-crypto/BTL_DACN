@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { OAuth2Client } from 'google-auth-library';
 import { assert, audit, hash, randomToken, text } from '../services/shared.js';
 
-const cookieName = 'minhan_google_state';
+const cookieName = 'antam_google_state';
 const lifetime = 10 * 60 * 1000;
 
 export function googleConfig(origin) {
@@ -136,7 +136,7 @@ export function installGoogleAuth(app, d, { google, secureCookies }, login) {
           return res.redirect('/login?google=link');
         userId = d.transaction(() => {
           const id = d.insert('nguoi_dung', {
-            name: text(identity.name, 100) || 'Khách hàng Minh An',
+            name: text(identity.name, 100) || 'Khách hàng An Tâm',
             email,
             password_hash: bcrypt.hashSync(randomToken(), 10),
             verified: 1,

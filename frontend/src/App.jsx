@@ -251,7 +251,7 @@ export default function App() {
       <main className="container page-shell">
         <div className="page-heading">
           <span className="eyebrow">LUÔN SẴN SÀNG LẮNG NGHE</span>
-          <h1>Trợ lý sức khỏe Minh An</h1>
+          <h1>Trợ lý sức khỏe An Tâm</h1>
           <p>Tra cứu thông tin và kết nối với dược sĩ của bạn.</p>
         </div>
         <ChatPanel full />
@@ -280,7 +280,7 @@ export default function App() {
           aria-label={chatOpen ? 'Đóng tư vấn' : 'Mở tư vấn'}
         >
           {chatOpen ? <X size={23} /> : <MessageCircle size={23} />}
-          <span>{chatOpen ? 'Đóng' : 'Tư vấn cùng Minh An'}</span>
+          <span>{chatOpen ? 'Đóng' : 'Tư vấn cùng An Tâm'}</span>
           {!chatOpen && <i />}
         </button>
       )}
@@ -338,7 +338,7 @@ function Header() {
           <Link
             to="/"
             className="brand"
-            aria-label="Nhà thuốc Minh An, trang chủ"
+            aria-label="Nhà thuốc An Tâm, trang chủ"
           >
             <span className="brand-mark">
               <Plus size={30} strokeWidth={3} />
@@ -347,7 +347,7 @@ function Header() {
             <span>
               <small>NHÀ THUỐC</small>
               <strong>
-                minh an<span>.</span>
+                an tâm<span>.</span>
               </strong>
             </span>
           </Link>
@@ -459,7 +459,7 @@ function Home() {
           </h1>
           <p>
             Từ những chăm sóc nhỏ, vun đắp sức khỏe dài lâu.
-            <br className="desktop-only" /> Minh An đồng hành cùng bạn và những
+            <br className="desktop-only" /> An Tâm đồng hành cùng bạn và những
             người thân yêu.
           </p>
           <div className="hero-actions">
@@ -474,7 +474,7 @@ function Home() {
         <figure className="hero-photo">
           <img
             src="/assets/pharmacy-hero.webp"
-            alt="Bao bì sản phẩm chăm sóc sức khỏe Minh An minh họa"
+            alt="Bao bì sản phẩm chăm sóc sức khỏe An Tâm minh họa"
             width="1200"
             height="900"
             fetchPriority="high"
@@ -529,7 +529,7 @@ function Home() {
       <section className="container product-section">
         <div className="section-heading">
           <div>
-            <span className="eyebrow">ĐƯỢC QUAN TÂM TẠI MINH AN</span>
+            <span className="eyebrow">ĐƯỢC QUAN TÂM TẠI AN TÂM</span>
             <h2>Lựa chọn cho mỗi ngày khỏe</h2>
           </div>
           <Link to="/products" className="subtle-link">
@@ -577,10 +577,10 @@ function Home() {
         <div>
           <span className="eyebrow">MỘT LỜI HỎI, THÊM AN TÂM</span>
           <h2>Chưa biết bắt đầu từ đâu?</h2>
-          <p>Trợ lý Minh An giúp bạn tìm thông tin và kết nối với dược sĩ.</p>
+          <p>Trợ lý An Tâm giúp bạn tìm thông tin và kết nối với dược sĩ.</p>
         </div>
         <button className="btn btn-light" onClick={() => setChatOpen(true)}>
-          Trò chuyện cùng Minh An <ArrowUpRight size={18} />
+          Trò chuyện cùng An Tâm <ArrowUpRight size={18} />
         </button>
         <span className="care-decoration">+</span>
       </section>
@@ -596,7 +596,7 @@ function Home() {
           <span className="story-line" />
         </div>
         <div className="story-copy">
-          <span className="eyebrow">TINH THẦN MINH AN</span>
+          <span className="eyebrow">TINH THẦN AN TÂM</span>
           <h2>
             Sức khỏe là một hành trình.
             <br />
@@ -620,7 +620,7 @@ function Home() {
             </span>
           </div>
           <Link to="/chat" className="subtle-link">
-            Kết nối với Minh An <ArrowRight size={18} />
+            Kết nối với An Tâm <ArrowRight size={18} />
           </Link>
         </div>
       </section>
@@ -714,7 +714,7 @@ function Catalog() {
       <Breadcrumb current="Sản phẩm" />
       <div className="catalog-title">
         <div>
-          <span className="eyebrow">KHÁM PHÁ TẠI MINH AN</span>
+          <span className="eyebrow">KHÁM PHÁ TẠI AN TÂM</span>
           <h1>Sản phẩm chăm sóc sức khỏe</h1>
           <p>Tra cứu dễ dàng. Lựa chọn an tâm.</p>
         </div>
@@ -1050,7 +1050,7 @@ function ProductDetail({ id }) {
             tin tham khảo và hỗ trợ kết nối dược sĩ.
           </p>
           <button className="btn btn-outline" onClick={() => setChatOpen(true)}>
-            Trao đổi cùng Minh An
+            Trao đổi cùng An Tâm
           </button>
         </aside>
       </section>
@@ -1672,7 +1672,7 @@ function Orders() {
         <div className="page-heading">
           <span className="eyebrow">MỖI ĐƠN HÀNG, MỘT SỰ QUAN TÂM</span>
           <h1>Đơn hàng của tôi</h1>
-          <p>Theo dõi và quản lý đơn hàng tại Minh An.</p>
+          <p>Theo dõi và quản lý đơn hàng tại An Tâm.</p>
         </div>
         <div className="filter-tabs">
           {[
@@ -1941,7 +1941,7 @@ function OrderDetail({ id }) {
                 <div className="order-success">
                   <CheckCircle2 size={31} />
                   <div>
-                    <h2>Minh An đã nhận đơn hàng của bạn</h2>
+                    <h2>An Tâm đã nhận đơn hàng của bạn</h2>
                     <p>
                       {order.prescriptionStatus &&
                       !['approved', 'DaDuyet'].includes(
@@ -2324,7 +2324,7 @@ function OrderDetail({ id }) {
                 {rxAdjustment === 'approved_only'
                   ? 'Giữ thuốc đã duyệt và sản phẩm không cần đơn thuốc.'
                   : 'Chỉ giữ sản phẩm không cần đơn thuốc.'}{' '}
-                Minh An sẽ tính lại phí giao hàng và ưu đãi trên các sản phẩm
+                An Tâm sẽ tính lại phí giao hàng và ưu đãi trên các sản phẩm
                 còn lại.
               </p>
               <button className="btn btn-primary full-width" disabled={busy}>
@@ -2498,7 +2498,7 @@ function AuthPage() {
           ? '/admin'
           : '/',
     );
-    notify(`Chào mừng ${person.name || 'bạn'} đến với Minh An.`);
+    notify(`Chào mừng ${person.name || 'bạn'} đến với An Tâm.`);
   };
   const login = async (em, pw) =>
     signedIn(
@@ -2583,7 +2583,7 @@ function AuthPage() {
   const demoLogin = async (role) => {
     setBusy(true);
     setError('');
-    const em = `${role}@minhan.vn`;
+    const em = `${role}@antam.vn`;
     setEmail(em);
     setPassword('Demo@123');
     try {
@@ -2595,7 +2595,7 @@ function AuthPage() {
     }
   };
   const titles = {
-    login: 'Chào bạn, lại là Minh An.',
+    login: 'Chào bạn, lại là An Tâm.',
     register: 'Bắt đầu hành trình khỏe.',
     verify: 'Xác thực tài khoản',
     forgot: 'Tìm lại mật khẩu',
@@ -2620,12 +2620,12 @@ function AuthPage() {
         <p>
           Tra cứu sản phẩm, theo dõi đơn hàng
           <br />
-          và kết nối cùng dược sĩ Minh An.
+          và kết nối cùng dược sĩ An Tâm.
         </p>
       </section>
       <section className="auth-form-wrap">
         <div className="auth-form">
-          <span className="eyebrow">NHÀ THUỐC MINH AN</span>
+          <span className="eyebrow">NHÀ THUỐC AN TÂM</span>
           <h2>{titles[mode]}</h2>
           <p className="muted">
             {mode === 'login'
@@ -3248,7 +3248,7 @@ function ChatPanel({ onClose, full = false }) {
           <Plus size={23} />
         </span>
         <div>
-          <strong>Minh An luôn lắng nghe</strong>
+          <strong>An Tâm luôn lắng nghe</strong>
           <span>
             <i /> Trợ lý thông tin sức khỏe
           </span>
@@ -3318,7 +3318,7 @@ function ChatPanel({ onClose, full = false }) {
       ) : (
         <div className="chat-messages">
           <div className="chat-bubble assistant">
-            <strong>Chào bạn, Minh An đây 🌿</strong>
+            <strong>Chào bạn, An Tâm đây 🌿</strong>
             <p>
               Mình có thể giúp bạn tìm thông tin sản phẩm, chính sách mua hàng
               hoặc kết nối với dược sĩ. Bạn đang cần hỗ trợ điều gì?
@@ -3429,7 +3429,7 @@ function Footer() {
             <span>
               <small>NHÀ THUỐC</small>
               <strong>
-                minh an<span>.</span>
+                an tâm<span>.</span>
               </strong>
             </span>
           </Link>
@@ -3443,7 +3443,7 @@ function Footer() {
           </span>
         </div>
         <div>
-          <h3>Khám phá Minh An</h3>
+          <h3>Khám phá An Tâm</h3>
           <Link to="/products">Tất cả sản phẩm</Link>
           <Link to="/products?prescription=false">Thuốc không kê đơn</Link>
           <Link to="/chat">Trợ lý thông tin sức khỏe</Link>
@@ -3461,7 +3461,7 @@ function Footer() {
           <p>
             Cần hỗ trợ chọn lựa?
             <br />
-            Hãy trao đổi cùng Minh An.
+            Hãy trao đổi cùng An Tâm.
           </p>
           <button className="footer-consult" onClick={() => setChatOpen(true)}>
             <MessageCircle size={17} /> Bắt đầu trò chuyện{' '}
@@ -3470,7 +3470,7 @@ function Footer() {
         </div>
       </div>
       <div className="container footer-bottom">
-        <span>© 2026 Minh An · Đồ án chuyên ngành, Nhóm 11</span>
+        <span>© 2026 An Tâm · Đồ án chuyên ngành, Nhóm 11</span>
         <span>
           Hệ thống trình diễn · Dữ liệu mẫu · Không giao dịch tiền thật
         </span>

@@ -12,14 +12,14 @@ npm run build
 npm start
 ```
 
-Mở [cửa hàng Minh An](http://127.0.0.1:3001/) hoặc [trang quản trị](http://127.0.0.1:3001/admin). Lần khởi động đầu tiên sẽ tạo dữ liệu mẫu. Khi chỉnh mã nguồn, `npm run dev` mở giao diện tại [cổng 5173](http://127.0.0.1:5173/) với API chạy song song. Dừng phiên đang chiếm cổng 3001 trước khi chuyển sang `npm run dev`.
+Mở [cửa hàng An Tâm](http://127.0.0.1:3001/) hoặc [trang quản trị](http://127.0.0.1:3001/admin). Lần khởi động đầu tiên sẽ tạo dữ liệu mẫu. Khi chỉnh mã nguồn, `npm run dev` mở giao diện tại [cổng 5173](http://127.0.0.1:5173/) với API chạy song song. Dừng phiên đang chiếm cổng 3001 trước khi chuyển sang `npm run dev`.
 
 | Vai trò | Tài khoản demo |
 | --- | --- |
-| Khách hàng | `khach@minhan.vn` |
-| Dược sĩ | `duocsi@minhan.vn` |
-| Quản trị viên | `admin@minhan.vn` |
-| Nhân viên kho | `kho@minhan.vn` |
+| Khách hàng | `khach@antam.vn` |
+| Dược sĩ | `duocsi@antam.vn` |
+| Quản trị viên | `admin@antam.vn` |
+| Nhân viên kho | `kho@antam.vn` |
 
 Mật khẩu chung là `Demo@123`. Trang đăng nhập có nút vào nhanh theo vai trò. Dữ liệu mẫu và thanh toán mô phỏng dùng để trình diễn đồ án.
 

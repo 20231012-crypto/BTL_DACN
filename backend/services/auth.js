@@ -21,7 +21,7 @@ export const passwordValid = (p) =>
   /\d/.test(p);
 export function installAuth(app, d, options) {
   const demo = options.demo;
-  const sessionCookie = 'minhan_session';
+  const sessionCookie = 'antam_session';
   const login = (res, userId) => {
     const token = randomToken(),
       expires = new Date(Date.now() + 7 * 86400000);
@@ -117,7 +117,7 @@ export function installAuth(app, d, options) {
     await transport.sendMail({
       from: process.env.SMTP_FROM,
       to: user.email,
-      subject: 'Mã xác thực Nhà thuốc Minh An',
+      subject: 'Mã xác thực Nhà thuốc An Tâm',
       text: `Mã xác thực của bạn: ${code}. Hết hạn sau ${ttl} phút. Không chia sẻ mã với người khác.${activationPath}`,
     });
     return null;
