@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { LogoIcon } from './Logo.jsx';
 import SupportChat from './SupportChat.jsx';
+import Pagination from './Pagination.jsx';
 import { api, money, dateTime, statusLabel } from './lib.js';
 import './admin.css';
 
@@ -385,8 +386,12 @@ export default function Admin({ user, onExit, onLogout, config }) {
     [manufacturers, setManufacturers] = useState([]);
   const [tab, setTab] = useState('categories'),
     [menuOpen, setMenuOpen] = useState(false);
+  const [page, setPage] = useState(1);
   const [range, setRange] = useState({ from: '', to: '' });
   const isAdmin = user?.role === 'admin';
+  useEffect(() => {
+    setPage(1);
+  }, [view, tab, query, filter]);
   const notify = (message, type = 'success') => {
     setToast({ message, type });
   };
@@ -916,256 +921,286 @@ export default function Admin({ user, onExit, onLogout, config }) {
       </section>
     </>
   );
-  const productsView = () => (
-    <section className="adm-panel">
-      {toolBar(
-        'Tên thuốc, hoạt chất, nhà sản xuất...',
-        selectFilter(['otc', 'rx'], 'Tất cả loại sản phẩm'),
-        addButton('Thêm sản phẩm', 'product', {
-          unit: 'Hộp',
-          price: 0,
-          categoryId: categories[0]?.id,
-          prescriptionRequired: false,
-          active: true,
-        }),
-      )}
-      <Table
-        columns={[
-          'Sản phẩm',
-          'Danh mục',
-          'Giá bán',
-          'Tồn khả dụng',
-          'Phân loại',
-          'Hiển thị',
-          '',
-        ]}
-        rows={filtered(data)}
-      >
-        {filtered(data).map((p) => (
-          <tr key={p.id}>
-            <td>
-              <div className="adm-product-cell">
-                <div className="adm-product-thumb">
-                  {p.image?.startsWith('/') || p.image?.startsWith('http') ? (
-                    <img
-                      src={p.image}
-                      alt=""
-                      onError={(e) => {
-                        e.target.style.display = 'none';
-                      }}
-                    />
-                  ) : (
-                    <Pill size={22} />
-                  )}
-                </div>
-                <div>
-                  <strong>{p.name}</strong>
-                  <small>
-                    {p.manufacturer || p.ingredient || `SP-${p.id}`}
-                  </small>
-                </div>
-              </div>
-            </td>
-            <td>
-              {p.categoryName ||
-                categories.find((c) => c.id === p.categoryId)?.name ||
-                '—'}
-            </td>
-            <td>
-              <strong>{money(p.price)}</strong>
-              <small>/ {p.unit}</small>
-            </td>
-            <td>
-              <span className={`adm-stock ${p.stock < 10 ? 'low' : ''}`}>
-                {count(p.stock)}
-              </span>
-            </td>
-            <td>
-              <Badge
-                value={
-                  p.prescriptionRequired ? 'pending_prescription' : 'active'
-                }
-              >
-                {p.prescriptionRequired ? 'Kê đơn' : 'Không kê đơn'}
-              </Badge>
-            </td>
-            <td>
-              <Badge value={p.active === false ? 'inactive' : 'active'}>
-                {p.active === false ? 'Đã ẩn' : 'Đang bán'}
-              </Badge>
-            </td>
-            <td>{actions(p, 'product')}</td>
-          </tr>
-        ))}
-      </Table>
-    </section>
-  );
-  const inventoryView = () => (
-    <>
-      <div className="adm-inventory-summary">
-        <div className="adm-mini-stat">
-          <Boxes size={22} />
-          <div>
-            <strong>{count(data?.batches?.length)}</strong>
-            <span>Lô thuốc đang quản lý</span>
-          </div>
-        </div>
-        <div className="adm-mini-stat warning">
-          <AlertTriangle size={22} />
-          <div>
-            <strong>
-              {count(data?.alerts?.filter((a) => a.type === 'expiring').length)}
-            </strong>
-            <span>Lô sắp hết hạn</span>
-          </div>
-        </div>
-        <div className="adm-mini-stat danger">
-          <Package size={22} />
-          <div>
-            <strong>
-              {count(
-                data?.alerts?.filter((a) => a.type === 'low_stock').length,
-              )}
-            </strong>
-            <span>Sản phẩm sắp hết</span>
-          </div>
-        </div>
-      </div>
+  const productsView = () => {
+    const rows = filtered(data);
+    const totalPages = Math.max(1, Math.ceil(rows.length / 9));
+    const currentPage = Math.min(page, totalPages);
+    const visible = rows.slice((currentPage - 1) * 9, currentPage * 9);
+    return (
       <section className="adm-panel">
-        <div className="adm-tabs">
-          {[
-            ['batches', 'Danh sách lô thuốc'],
-            ['alerts', 'Cảnh báo tồn kho'],
-            ['movements', 'Lịch sử biến động'],
-          ].map(([key, title]) => (
-            <button
-              className={tab === key ? 'active' : ''}
-              key={key}
-              onClick={() => setTab(key)}
-            >
-              {title}
-              {key === 'alerts' && !!data?.alerts?.length && (
-                <span>{data.alerts.length}</span>
-              )}
-            </button>
-          ))}
-        </div>
         {toolBar(
-          'Tìm thuốc, mã lô...',
-          null,
-          addButton('Nhập kho', 'receipt', {
-            supplierId: suppliers[0]?.id,
-            productId: products[0]?.id,
-            quantity: 1,
-            cost: 0,
-            batchNumber: '',
-            manufacturedAt: new Date().toISOString().slice(0, 10),
-            expiresAt: '',
+          'Tên thuốc, hoạt chất, nhà sản xuất...',
+          selectFilter(['otc', 'rx'], 'Tất cả loại sản phẩm'),
+          addButton('Thêm sản phẩm', 'product', {
+            unit: 'Hộp',
+            price: 0,
+            categoryId: categories[0]?.id,
+            prescriptionRequired: false,
+            active: true,
           }),
         )}
-        {tab === 'alerts' ? (
-          <Table
-            columns={['Mức cảnh báo', 'Sản phẩm', 'Tồn kho', 'Hạn dùng']}
-            rows={filtered(data?.alerts)}
-          >
-            {filtered(data?.alerts).map((a, i) => (
-              <tr key={i}>
-                <td>
-                  <Badge value={a.type} />
-                </td>
-                <td>
-                  <strong>{a.productName}</strong>
-                  <small>{a.batchNumber || `Mã SP: ${a.productId}`}</small>
-                </td>
-                <td>{count(a.quantity)}</td>
-                <td>{fmtDate(a.expiresAt)}</td>
-              </tr>
-            ))}
-          </Table>
-        ) : tab === 'movements' ? (
-          <Table
-            columns={[
-              'Thời gian',
-              'Sản phẩm / Lô',
-              'Loại giao dịch',
-              'Số lượng',
-              'Lý do',
-            ]}
-            rows={filtered(data?.movements)}
-          >
-            {filtered(data?.movements).map((m) => (
-              <tr key={m.id}>
-                <td>{dateTime(m.createdAt)}</td>
-                <td>
-                  <strong>{m.productName}</strong>
-                  <small>{m.batchNumber}</small>
-                </td>
-                <td>
-                  <Badge value={m.type} />
-                </td>
-                <td
-                  className={Number(m.quantity) < 0 ? 'adm-red' : 'adm-green'}
+        <Table
+          columns={[
+            'Sản phẩm',
+            'Danh mục',
+            'Giá bán',
+            'Tồn khả dụng',
+            'Phân loại',
+            'Hiển thị',
+            '',
+          ]}
+          rows={visible}
+        >
+          {visible.map((p) => (
+            <tr key={p.id}>
+              <td>
+                <div className="adm-product-cell">
+                  <div className="adm-product-thumb">
+                    {p.image?.startsWith('/') || p.image?.startsWith('http') ? (
+                      <img
+                        src={p.image}
+                        alt=""
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <Pill size={22} />
+                    )}
+                  </div>
+                  <div>
+                    <strong>{p.name}</strong>
+                    <small>
+                      {p.manufacturer || p.ingredient || `SP-${p.id}`}
+                    </small>
+                  </div>
+                </div>
+              </td>
+              <td>
+                {p.categoryName ||
+                  categories.find((c) => c.id === p.categoryId)?.name ||
+                  '—'}
+              </td>
+              <td>
+                <strong>{money(p.price)}</strong>
+                <small>/ {p.unit}</small>
+              </td>
+              <td>
+                <span className={`adm-stock ${p.stock < 10 ? 'low' : ''}`}>
+                  {count(p.stock)}
+                </span>
+              </td>
+              <td>
+                <Badge
+                  value={
+                    p.prescriptionRequired ? 'pending_prescription' : 'active'
+                  }
                 >
-                  {Number(m.quantity) > 0 ? '+' : ''}
-                  {count(m.quantity)}
-                </td>
-                <td>{m.reason}</td>
-              </tr>
-            ))}
-          </Table>
-        ) : (
-          <Table
-            columns={[
-              'Sản phẩm / Mã lô',
-              'Hạn sử dụng',
-              'Tồn thực tế',
-              'Đang giữ',
-              'Khả dụng',
-              'Trạng thái',
-              '',
-            ]}
-            rows={filtered(data?.batches)}
-          >
-            {filtered(data?.batches).map((b) => (
-              <tr key={b.id}>
-                <td>
-                  <strong>{b.productName}</strong>
-                  <small>{b.batchNumber}</small>
-                </td>
-                <td>{fmtDate(b.expiresAt)}</td>
-                <td>{count(b.quantity)}</td>
-                <td>{count(b.reserved)}</td>
-                <td>
-                  <strong>
-                    {count(b.available ?? b.quantity - b.reserved)}
-                  </strong>
-                </td>
-                <td>
-                  <Badge value={b.status || 'available'} />
-                </td>
-                <td>
-                  <button
-                    className="adm-btn small"
-                    onClick={() =>
-                      open('adjustment', {
-                        batchId: b.id,
-                        productName: b.productName,
-                        batchNumber: b.batchNumber,
-                        quantity: 0,
-                        reason: '',
-                      })
-                    }
-                  >
-                    Điều chỉnh
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </Table>
-        )}
+                  {p.prescriptionRequired ? 'Kê đơn' : 'Không kê đơn'}
+                </Badge>
+              </td>
+              <td>
+                <Badge value={p.active === false ? 'inactive' : 'active'}>
+                  {p.active === false ? 'Đã ẩn' : 'Đang bán'}
+                </Badge>
+              </td>
+              <td>{actions(p, 'product')}</td>
+            </tr>
+          ))}
+        </Table>
+        <Pagination
+          page={currentPage}
+          totalItems={rows.length}
+          perPage={9}
+          onChange={setPage}
+          className="adm-pagination"
+          noun="sản phẩm"
+        />
       </section>
-    </>
-  );
+    );
+  };
+  const inventoryView = () => {
+    const invKey = tab === 'alerts' ? 'alerts' : tab === 'movements' ? 'movements' : 'batches';
+    const invRows = filtered(data?.[invKey]);
+    const invTotalPages = Math.max(1, Math.ceil(invRows.length / 12));
+    const invPage = Math.min(page, invTotalPages);
+    const invVisible = invRows.slice((invPage - 1) * 12, invPage * 12);
+    const invNoun = tab === 'alerts' ? 'cảnh báo' : tab === 'movements' ? 'biến động' : 'lô thuốc';
+    return (
+      <>
+        <div className="adm-inventory-summary">
+          <div className="adm-mini-stat">
+            <Boxes size={22} />
+            <div>
+              <strong>{count(data?.batches?.length)}</strong>
+              <span>Lô thuốc đang quản lý</span>
+            </div>
+          </div>
+          <div className="adm-mini-stat warning">
+            <AlertTriangle size={22} />
+            <div>
+              <strong>
+                {count(data?.alerts?.filter((a) => a.type === 'expiring').length)}
+              </strong>
+              <span>Lô sắp hết hạn</span>
+            </div>
+          </div>
+          <div className="adm-mini-stat danger">
+            <Package size={22} />
+            <div>
+              <strong>
+                {count(
+                  data?.alerts?.filter((a) => a.type === 'low_stock').length,
+                )}
+              </strong>
+              <span>Sản phẩm sắp hết</span>
+            </div>
+          </div>
+        </div>
+        <section className="adm-panel">
+          <div className="adm-tabs">
+            {[
+              ['batches', 'Danh sách lô thuốc'],
+              ['alerts', 'Cảnh báo tồn kho'],
+              ['movements', 'Lịch sử biến động'],
+            ].map(([key, title]) => (
+              <button
+                className={tab === key ? 'active' : ''}
+                key={key}
+                onClick={() => setTab(key)}
+              >
+                {title}
+                {key === 'alerts' && !!data?.alerts?.length && (
+                  <span>{data.alerts.length}</span>
+                )}
+              </button>
+            ))}
+          </div>
+          {toolBar(
+            'Tìm thuốc, mã lô...',
+            null,
+            addButton('Nhập kho', 'receipt', {
+              supplierId: suppliers[0]?.id,
+              productId: products[0]?.id,
+              quantity: 1,
+              cost: 0,
+              batchNumber: '',
+              manufacturedAt: new Date().toISOString().slice(0, 10),
+              expiresAt: '',
+            }),
+          )}
+          {tab === 'alerts' ? (
+            <Table
+              columns={['Mức cảnh báo', 'Sản phẩm', 'Tồn kho', 'Hạn dùng']}
+              rows={invVisible}
+            >
+              {invVisible.map((a, i) => (
+                <tr key={i}>
+                  <td>
+                    <Badge value={a.type} />
+                  </td>
+                  <td>
+                    <strong>{a.productName}</strong>
+                    <small>{a.batchNumber || `Mã SP: ${a.productId}`}</small>
+                  </td>
+                  <td>{count(a.quantity)}</td>
+                  <td>{fmtDate(a.expiresAt)}</td>
+                </tr>
+              ))}
+            </Table>
+          ) : tab === 'movements' ? (
+            <Table
+              columns={[
+                'Thời gian',
+                'Sản phẩm / Lô',
+                'Loại giao dịch',
+                'Số lượng',
+                'Lý do',
+              ]}
+              rows={invVisible}
+            >
+              {invVisible.map((m) => (
+                <tr key={m.id}>
+                  <td>{dateTime(m.createdAt)}</td>
+                  <td>
+                    <strong>{m.productName}</strong>
+                    <small>{m.batchNumber}</small>
+                  </td>
+                  <td>
+                    <Badge value={m.type} />
+                  </td>
+                  <td
+                    className={Number(m.quantity) < 0 ? 'adm-red' : 'adm-green'}
+                  >
+                    {Number(m.quantity) > 0 ? '+' : ''}
+                    {count(m.quantity)}
+                  </td>
+                  <td>{m.reason}</td>
+                </tr>
+              ))}
+            </Table>
+          ) : (
+            <Table
+              columns={[
+                'Sản phẩm / Mã lô',
+                'Hạn sử dụng',
+                'Tồn thực tế',
+                'Đang giữ',
+                'Khả dụng',
+                'Trạng thái',
+                '',
+              ]}
+              rows={invVisible}
+            >
+              {invVisible.map((b) => (
+                <tr key={b.id}>
+                  <td>
+                    <strong>{b.productName}</strong>
+                    <small>{b.batchNumber}</small>
+                  </td>
+                  <td>{fmtDate(b.expiresAt)}</td>
+                  <td>{count(b.quantity)}</td>
+                  <td>{count(b.reserved)}</td>
+                  <td>
+                    <strong>
+                      {count(b.available ?? b.quantity - b.reserved)}
+                    </strong>
+                  </td>
+                  <td>
+                    <Badge value={b.status || 'available'} />
+                  </td>
+                  <td>
+                    <button
+                      className="adm-btn small"
+                      onClick={() =>
+                        open('adjustment', {
+                          batchId: b.id,
+                          productName: b.productName,
+                          batchNumber: b.batchNumber,
+                          quantity: 0,
+                          reason: '',
+                        })
+                      }
+                    >
+                      Điều chỉnh
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </Table>
+          )}
+          <Pagination
+            page={invPage}
+            totalItems={invRows.length}
+            perPage={12}
+            onChange={setPage}
+            className="adm-pagination"
+            noun={invNoun}
+          />
+        </section>
+      </>
+    );
+  };
   const catalogView = () => (
     <section className="adm-panel">
       <div className="adm-tabs">

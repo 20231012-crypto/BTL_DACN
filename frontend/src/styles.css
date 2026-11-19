@@ -749,6 +749,8 @@ svg {
   border: 1px solid var(--border);
   border-radius: 11px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
   transition:
     box-shadow 0.2s,
     border-color 0.2s;
@@ -762,15 +764,17 @@ svg {
 .product-picture {
   position: relative;
   display: block;
-  background: #f8f9f5;
+  background: #ffffff;
+  border-bottom: 1px solid #f0f3ed;
   height: 230px;
   overflow: hidden;
+  flex-shrink: 0;
 }
 .product-picture > img {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  padding: 8px 24px;
+  padding: 12px 20px;
   transition: transform 0.3s;
 }
 .product-card:hover .product-picture > img {
@@ -798,6 +802,9 @@ svg {
 }
 .product-info {
   padding: 18px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 .product-category {
   font-size: 8px;
@@ -823,6 +830,7 @@ svg {
   color: #9aa38e;
   display: block;
   margin-top: 7px;
+  min-height: 15px;
 }
 .price-row {
   display: flex;
@@ -842,6 +850,7 @@ svg {
   color: #a1a994;
 }
 .product-add {
+  margin-top: auto;
   padding: 9px 6px;
   border: 1px solid #dce5d3;
   background: #f7faf1;
@@ -1605,9 +1614,10 @@ svg {
   margin: 10px 0 45px;
 }
 .detail-image {
-  background: #f6f8f1;
+  background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 14px;
+  padding: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5343,3 +5353,80 @@ svg {
 .pharmacist-chat-form textarea { flex: 1; min-width: 0; resize: vertical; padding: 10px 12px; border: 1px solid #cdd9d5; border-radius: 10px; font: inherit; }
 .pharmacist-chat-form .btn { display: inline-flex; align-items: center; gap: 6px; }
 @media (max-width: 680px) { .pharmacist-bubble { max-width: 92%; } .pharmacist-chat-form { flex-direction: column; align-items: stretch; } }
+
+.pagination {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.pagination-info {
+  font-size: 11px;
+  color: #8f9a85;
+}
+.pagination-info strong {
+  color: #4f6944;
+  font-weight: 600;
+}
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.pagination-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 35px;
+  height: 35px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: #5e7452;
+  font-size: 11px;
+  font-weight: 500;
+  transition:
+    background 0.16s,
+    border-color 0.16s,
+    color 0.16s;
+}
+.pagination-btn:hover:not(:disabled) {
+  border-color: #a7b99b;
+  background: #f8faf5;
+}
+.pagination-btn.is-active {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+.pagination-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.pagination-ellipsis {
+  padding: 0 4px;
+  font-size: 12px;
+  color: #9aa38e;
+}
+@media (max-width: 760px) {
+  .pagination {
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin-top: 22px;
+    padding-top: 16px;
+  }
+  .pagination-btn {
+    min-width: 32px;
+    height: 32px;
+    padding: 0 9px;
+    font-size: 10px;
+  }
+}

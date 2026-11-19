@@ -1,5 +1,11 @@
 import bcrypt from 'bcryptjs';
 import { daysFromNow, now, slugify } from './database.js';
+import {
+  seedImageOverrides,
+  extraCategories,
+  extraManufacturers,
+  extraProducts,
+} from './catalog-extra.js';
 export const defaultSettings = {
   storeName: 'Nhà thuốc An Tâm',
   shippingFee: 25000,
@@ -166,6 +172,7 @@ export async function seedDatabase(
       ['Thiết bị y tế', 'thiet-bi-y-te', 'Dụng cụ và vật tư y tế'],
       ['Thuốc kê đơn', 'thuoc-ke-don', 'Cần đơn thuốc và dược sĩ kiểm duyệt'],
       ['Mẹ & bé', 'me-va-be', 'Chăm sóc mẹ và bé'],
+      ...extraCategories,
     ];
     const categoryIds = [];
     for (const [name, slug, description] of cats) {
@@ -184,6 +191,7 @@ export async function seedDatabase(
       ['An Khang Healthcare', 'Việt Nam'],
       ['Wellness Labs', 'Đức'],
       ['Healthy Life', 'Úc'],
+      ...extraManufacturers,
     ]) {
       const row = await d.one('SELECT id FROM nha_san_xuat WHERE name=?', name);
       manufacturerIds.push(
@@ -439,6 +447,7 @@ export async function seedDatabase(
         false,
         0,
       ],
+      ...extraProducts,
     ];
     const receipt = await d.insert('phieu_nhap_kho', {
       code: 'PN-DEMO-001',
@@ -447,20 +456,27 @@ export async function seedDatabase(
       total: 8500000,
     });
     const productIds = [];
-    for (const [
-      name,
-      category_id,
-      manufacturer_id,
-      ingredient,
-      description,
-      unit,
-      price,
-      old_price,
-      asset,
-      rx,
-      featured,
-      stock,
-    ] of products) {
+    for (let index = 0; index < products.length; index++) {
+      const [
+        name,
+        category_id,
+        manufacturer_id,
+        ingredient,
+        description,
+        unit,
+        price,
+        old_price,
+        asset,
+        rx,
+        featured,
+        stock,
+      ] = products[index];
+      const overrideImage = seedImageOverrides[String(index + 1)];
+      const image = overrideImage
+        ? overrideImage
+        : asset.startsWith('/')
+          ? asset
+          : `/assets/products/${asset}.svg`;
       const id = await d.insert('thuoc', {
         name,
         category_id: categoryIds[category_id - 1],
@@ -471,7 +487,7 @@ export async function seedDatabase(
         unit,
         price,
         old_price,
-        image: `/assets/products/${asset}.svg`,
+        image,
         prescription_required: rx ? 1 : 0,
         featured: featured ? 1 : 0,
         usage:

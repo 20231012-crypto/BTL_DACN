@@ -52,6 +52,7 @@ import BankTransfer from './BankTransfer.jsx';
 import PrescriptionCatalog from './PrescriptionCatalog.jsx';
 import PharmacistChat from './PharmacistChat.jsx';
 import ProductSearch from './ProductSearch.jsx';
+import Pagination from './Pagination.jsx';
 import HeroBanner from './HeroBanner.jsx';
 import { LogoIcon } from './Logo.jsx';
 import {
@@ -555,9 +556,13 @@ function Home() {
         <div className="category-grid">
           {categories.slice(0, 6).map((cat, i) => {
             const Icon = categoryIcon(cat.name);
+            const targetUrl =
+              cat.slug === 'thuoc-ke-don'
+                ? `/products?category=${cat.id}&prescription=all`
+                : `/products?category=${cat.id}`;
             return (
               <Link
-                to={`/products?category=${cat.id}`}
+                to={targetUrl}
                 className={`category-tile category-${i}`}
                 key={cat.id}
               >
@@ -725,6 +730,8 @@ function ProductCard({ product: p }) {
   );
 }
 
+const PRODUCTS_PER_PAGE = 9;
+
 function Catalog() {
   const { route, categories, manufacturers, navigate, notify } = useApp();
   const params = new URLSearchParams(route.split('?')[1]);
@@ -741,13 +748,21 @@ function Catalog() {
     minPrice: digitsOnly(params.get('minPrice')),
     maxPrice: digitsOnly(params.get('maxPrice')),
   });
-  const update = (key, value) => {
+  const update = (key, value, extra = {}) => {
     const next = new URLSearchParams(params);
     value ? next.set(key, value) : next.delete(key);
-    navigate(`/products?${next}`);
+    for (const [k, v] of Object.entries(extra)) {
+      v ? next.set(k, v) : next.delete(k);
+    }
+    next.delete('page');
+    const qs = next.toString();
+    navigate(`/products${qs ? `?${qs}` : ''}`);
   };
   useEffect(() => {
-    api(`/products?${params}${params.has('prescription') ? '' : '&prescription=false'}`)
+    const apiParams = new URLSearchParams(params);
+    apiParams.delete('page');
+    if (!apiParams.has('prescription')) apiParams.set('prescription', 'false');
+    api(`/products?${apiParams}`)
       .then((result) =>
         setItems(
           Array.isArray(result)
@@ -757,6 +772,26 @@ function Catalog() {
       )
       .catch((e) => setError(e.message));
   }, []);
+  const rawPage = Number.parseInt(params.get('page') || '1', 10);
+  const totalPages = items
+    ? Math.max(1, Math.ceil(items.length / PRODUCTS_PER_PAGE))
+    : 1;
+  const currentPage = Math.min(
+    Math.max(1, Number.isFinite(rawPage) ? rawPage : 1),
+    totalPages,
+  );
+  const pageStart = (currentPage - 1) * PRODUCTS_PER_PAGE;
+  const pagedItems = items
+    ? items.slice(pageStart, pageStart + PRODUCTS_PER_PAGE)
+    : null;
+  const setPage = (nextPage) => {
+    const next = new URLSearchParams(params);
+    if (nextPage <= 1) next.delete('page');
+    else next.set('page', String(nextPage));
+    const qs = next.toString();
+    navigate(`/products${qs ? `?${qs}` : ''}`);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
   return (
     <main className="container page-shell">
       <Breadcrumb current="Sản phẩm" />
@@ -789,7 +824,15 @@ function Catalog() {
                 params.get('category') === String(cat.id) ? 'chosen' : ''
               }
               key={cat.id}
-              onClick={() => update('category', String(cat.id))}
+              onClick={() =>
+                update(
+                  'category',
+                  String(cat.id),
+                  cat.slug === 'thuoc-ke-don' && !params.has('prescription')
+                    ? { prescription: 'all' }
+                    : {},
+                )
+              }
             >
               {cat.name}
               <ChevronRight size={14} />
@@ -853,7 +896,9 @@ function Catalog() {
               const next = new URLSearchParams(params);
               for (const [key, value] of Object.entries(price))
                 value ? next.set(key, value) : next.delete(key);
-              navigate(`/products?${next}`);
+              next.delete('page');
+              const qs = next.toString();
+              navigate(`/products${qs ? `?${qs}` : ''}`);
             }}
           >
             <Field
@@ -911,6 +956,16 @@ function Catalog() {
             <span>
               {items ? (
                 <>
+                  {totalPages > 1 ? (
+                    <>
+                      Hiển thị{' '}
+                      <strong>
+                        {pageStart + 1}–
+                        {Math.min(pageStart + PRODUCTS_PER_PAGE, items.length)}
+                      </strong>{' '}
+                      /{' '}
+                    </>
+                  ) : null}
                   <strong>{items.length}</strong> sản phẩm{' '}
                   {params.get('search') && <>cho “{params.get('search')}”</>}
                 </>
@@ -938,12 +993,20 @@ function Catalog() {
           <ErrorBox error={error} />
           {!items && !error ? (
             <Spinner />
-          ) : items?.length ? (
-            <div className="product-grid catalog-products">
-              {items.map((p) => (
-                <ProductCard product={p} key={p.id} />
-              ))}
-            </div>
+          ) : pagedItems?.length ? (
+            <>
+              <div className="product-grid catalog-products">
+                {pagedItems.map((p) => (
+                  <ProductCard product={p} key={p.id} />
+                ))}
+              </div>
+              <Pagination
+                page={currentPage}
+                totalItems={items.length}
+                perPage={PRODUCTS_PER_PAGE}
+                onChange={setPage}
+              />
+            </>
           ) : (
             <Empty
               icon={Search}

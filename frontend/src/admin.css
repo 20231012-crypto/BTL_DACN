@@ -2292,6 +2292,68 @@
 .adm-rules-note {
   margin: 0 23px 20px;
 }
+.adm-pagination {
+  padding: 16px 23px 20px;
+  border-top: 1px solid #edf2e8;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.adm-pagination-info {
+  font-size: 10px;
+  color: #849a77;
+}
+.adm-pagination-info strong {
+  color: #4f6f46;
+}
+.adm-pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.adm-pagination-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 31px;
+  height: 31px;
+  padding: 0 9px;
+  border: 1px solid #e2e9df;
+  border-radius: 6px;
+  background: #fff;
+  color: #66805e;
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.adm-pagination-btn:hover:not(:disabled) {
+  border-color: #b4c8aa;
+  background: #f6faf3;
+}
+.adm-pagination-btn.is-active {
+  background: #537b4b;
+  border-color: #537b4b;
+  color: #fff;
+}
+.adm-pagination-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.adm-pagination-ellipsis {
+  padding: 0 3px;
+  font-size: 10px;
+  color: #9aa893;
+}
+@media (max-width: 760px) {
+  .adm-pagination {
+    justify-content: center;
+    padding: 14px 16px 18px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .adm-spin {
     animation: none;
