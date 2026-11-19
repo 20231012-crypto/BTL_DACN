@@ -5436,3 +5436,16 @@ svg {
 .return-shipment p:last-child { margin: 0; }
 .return-shipment-form { display: flex; flex-wrap: wrap; gap: 8px; }
 .return-shipment-form input { flex: 1 1 160px; min-width: 0; padding: 9px 11px; border: 1px solid #cdd9d5; border-radius: 8px; font: inherit; }
+
+.prescription-compare { display: grid; grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); gap: 24px; align-items: start; margin-top: 8px; }
+.prescription-compare:not(:has(.prescription-preview)) { grid-template-columns: minmax(0, 1fr); }
+.prescription-preview { position: sticky; top: 16px; }
+.prescription-preview h2 { margin: 0 0 10px; font-size: 16px; }
+.prescription-preview img { width: 100%; height: auto; border: 1px solid #d9e4e1; border-radius: 10px; background: #fff; }
+.prescription-preview-file { display: grid; gap: 10px; padding: 14px; border: 1px dashed #b8cbc5; border-radius: 10px; overflow-wrap: anywhere; }
+.prescription-row { grid-template-columns: 1.2fr 1fr 1fr; }
+.prescription-row-actions { grid-column: 1 / -1; display: flex; align-items: flex-end; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
+.prescription-qty { display: grid; gap: 4px; font-size: 12px; color: #667772; }
+.prescription-qty input { width: 76px; padding: 8px 10px; border: 1px solid #cdd9d5; border-radius: 8px; font: inherit; }
+.prescription-notice { padding: 12px 16px; border-radius: 10px; background: #e7f5ef; color: #164b43; }
+@media (max-width: 860px) { .prescription-compare { grid-template-columns: 1fr; } .prescription-preview { position: static; } .prescription-row { grid-template-columns: 1fr; } }

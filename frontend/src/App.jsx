@@ -220,8 +220,10 @@ export default function App() {
       await api('/cart', { method: 'POST', body: { productId, quantity } });
       await refreshCart();
       notify('Đã thêm sản phẩm vào giỏ hàng.');
+      return true;
     } catch (e) {
       notify(e.message, 'error');
+      return false;
     }
   };
   const logout = async () => {
@@ -278,6 +280,9 @@ export default function App() {
     content = <AuthPage />;
   else if (path === '/prescription') content = <RequireLogin><PrescriptionCatalog config={config}
     onUpload={(file) => setSelectedPrescription({ ...file, userId: user.id })}
+    onOrder={async (product, quantity) => {
+      if (await addToCart(product.id, quantity)) navigate('/checkout');
+    }}
     renderProduct={(product) => <ProductCard key={product.id} product={product} />} /></RequireLogin>;
   else if (path === '/consultation')
     content = (
