@@ -67,23 +67,28 @@ export async function createApp(options = {}) {
     ? openPostgres(databaseUrl)
     : openDatabase(options.dbPath || process.env.DATABASE_PATH);
   try {
-    if (config.attachmentStorage) await config.attachmentStorage.check();
-    if (d.kind === 'sqlite' || (options.testing && options.seed !== false)) {
-      await seedDatabase(d, {
-        demoData:
-          options.seed !== false &&
-          process.env.SEED_DEMO !== 'false' &&
-          config.demo,
-      });
-    } else {
-      const initialized = await d.one(
-        "SELECT value FROM settings WHERE key='storeName'",
-      );
-      if (!initialized)
-        throw new Error(
-          'Chạy npm run db:setup trước khi khởi động PostgreSQL.',
-        );
-    }
+    // Kiểm tra bucket riêng tư và cơ sở dữ liệu chạy song song để rút ngắn khởi động nguội.
+    await Promise.all([
+      config.attachmentStorage?.check(),
+      (async () => {
+        if (d.kind === 'sqlite' || (options.testing && options.seed !== false)) {
+          await seedDatabase(d, {
+            demoData:
+              options.seed !== false &&
+              process.env.SEED_DEMO !== 'false' &&
+              config.demo,
+          });
+        } else {
+          const initialized = await d.one(
+            "SELECT value FROM settings WHERE key='storeName'",
+          );
+          if (!initialized)
+            throw new Error(
+              'Chạy npm run db:setup trước khi khởi động PostgreSQL.',
+            );
+        }
+      })(),
+    ]);
   } catch (error) {
     await d.close();
     throw error;
