@@ -1143,3 +1143,58 @@ test('public catalog endpoints are cacheable at the edge while private data stay
   const customer = await login();
   assert.equal((await customer('/orders')).headers.get('cache-control'), 'no-store');
 });
+
+test('pharmacist consultation is a two-way chat scoped to the customer and an owned prescription', async (t) => {
+  const { login } = await fixture(t);
+  const customer = await login();
+  const other = await login('huong@antam.vn');
+  const pharmacist = await login('duocsi@antam.vn');
+  const rx = await upload(customer);
+
+  assert.equal((await customer('/consultations', 'POST', { message: 'a' })).status, 400);
+  assert.equal(
+    (await other('/consultations', 'POST', { message: 'Cần tư vấn đơn thuốc', prescriptionId: rx.id })).status,
+    404,
+    'a customer cannot attach another customer prescription',
+  );
+
+  const created = await customer('/consultations', 'POST', {
+    message: 'Dược sĩ giúp tôi xem đơn này với',
+    prescriptionId: rx.id,
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const id = created.data.consultation.id;
+  assert.match(created.data.consultation.title, new RegExp(`Đơn thuốc #${rx.id}$`));
+  assert.equal(created.data.consultation.status, 'pending');
+
+  const again = await customer('/consultations', 'POST', { message: 'Đơn gửi lúc sáng', prescriptionId: rx.id });
+  assert.equal(again.status, 200);
+  assert.equal(again.data.consultation.id, id, 'an open consultation is reused');
+
+  assert.equal((await other(`/consultations/${id}/messages`)).status, 404);
+  assert.equal((await other(`/consultations/${id}/messages`, 'POST', { message: 'xen vào' })).status, 404);
+
+  const queue = await pharmacist('/admin/support');
+  const item = queue.data.find((row) => row.sessionId === id);
+  assert.ok(item, 'pharmacist sees the consultation');
+  assert.match(item.sessionTitle, /Đơn thuốc #/);
+  assert.equal((await customer('/admin/support')).status, 403);
+
+  const reply = await pharmacist(`/admin/support/${item.id}/messages`, 'POST', { message: 'Chào bạn, mình đã xem đơn.' });
+  assert.equal(reply.status, 201);
+  assert.equal(reply.data.mode, 'pharmacist');
+
+  const polled = await customer(`/consultations/${id}/messages`);
+  assert.equal(polled.data.messages.length, 3);
+  assert.equal(polled.data.consultation.status, 'in_progress');
+  assert.equal(polled.data.consultation.handlerName, 'Dược sĩ Trần Thanh Hà');
+  const newer = await customer(`/consultations/${id}/messages?after=${polled.data.messages[1].id}`);
+  assert.deepEqual(newer.data.messages.map((m) => m.mode), ['pharmacist']);
+
+  const resolved = await pharmacist(`/admin/support/${item.id}`, 'PATCH', { status: 'resolved', reply: 'Kết thúc tư vấn.' });
+  assert.equal(resolved.status, 200);
+  assert.equal((await customer(`/consultations/${id}/messages`)).data.consultation.status, 'resolved');
+  assert.equal((await customer(`/consultations/${id}/messages`, 'POST', { message: 'Cho mình hỏi thêm' })).status, 201);
+  assert.equal((await customer(`/consultations/${id}/messages`)).data.consultation.status, 'pending', 'a new customer message reopens the consultation');
+  assert.equal((await customer('/consultations')).data.length, 1);
+});

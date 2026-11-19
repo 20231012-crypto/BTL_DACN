@@ -1321,7 +1321,7 @@ export function installAdmin(
     res.json({
       data: (
         await d.all(
-          'SELECT s.*,u.name user_name FROM yeu_cau_ho_tro s JOIN nguoi_dung u ON u.id=s.user_id ORDER BY s.id DESC',
+          'SELECT s.*,u.name user_name,c.title session_title FROM yeu_cau_ho_tro s JOIN nguoi_dung u ON u.id=s.user_id JOIN cuoc_hoi_thoai c ON c.id=s.session_id ORDER BY s.id DESC',
         )
       ).map(camel),
     }),
@@ -1338,8 +1338,9 @@ export function installAdmin(
       res.json({
         data: (
           await d.all(
-            'SELECT * FROM tin_nhan WHERE session_id=? ORDER BY id',
+            'SELECT * FROM tin_nhan WHERE session_id=? AND id>? ORDER BY id',
             s.session_id,
+            Number(req.query.after) || 0,
           )
         ).map(camel),
       });

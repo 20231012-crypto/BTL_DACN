@@ -18,6 +18,7 @@ import { installOrders, expireOrders } from './services/orders.js';
 import { installAdmin } from './services/admin.js';
 import { installBackup } from './services/backup.js';
 import { installChatbot } from './services/chatbot.js';
+import { installConsultation } from './services/consultation.js';
 import {
   installUploadIntents,
   supabaseStorage,
@@ -324,6 +325,7 @@ export async function createApp(options = {}) {
   installAdmin(app, d, guards, config);
   installBackup(app, d, guards);
   installChatbot(app, d, guards, config);
+  installConsultation(app, d, guards);
   app.use('/api', (req, res) =>
     res.status(404).json({ error: 'API không tồn tại.' }),
   );
