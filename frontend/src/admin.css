@@ -2301,3 +2301,14 @@
     transition: none;
   }
 }
+.adm-support-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.adm-support-head > div { flex: 1; min-width: 160px; }
+.adm-support-head strong { display: block; font-size: 14px; }
+.adm-support-head small { color: #87a06c; font-size: 11px; }
+.adm-support-status { padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; background: #fff4d6; color: #8a6a00; }
+.adm-support-status.in_progress { background: #e1f3e8; color: #1c6b3f; }
+.adm-support-status.resolved { background: #e9edf0; color: #5b6b75; }
+.adm-support-chat .adm-chat-box { max-height: 340px; min-height: 180px; }
+.adm-support-chat .adm-conversation p { font-size: 13px; color: #31412c; }
+.adm-chat-form textarea { width: 100%; padding: 10px 12px; border: 1px solid #d9e4cf; border-radius: 8px; font: inherit; resize: vertical; }
+.adm-chat-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; }

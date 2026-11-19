@@ -34,6 +34,7 @@ import {
   Pill,
 } from 'lucide-react';
 import { LogoIcon } from './Logo.jsx';
+import SupportChat from './SupportChat.jsx';
 import { api, money, dateTime, statusLabel } from './lib.js';
 import './admin.css';
 
@@ -452,6 +453,14 @@ export default function Admin({ user, onExit, onLogout, config }) {
   useEffect(() => {
     load();
   }, [view, tab]);
+  // Danh sách yêu cầu hỗ trợ tự làm mới để dược sĩ thấy yêu cầu tư vấn mới.
+  useEffect(() => {
+    if (view !== 'chatbot' || tab !== 'support' || modal) return undefined;
+    const timer = setInterval(() => {
+      if (!document.hidden) load(true);
+    }, 10000);
+    return () => clearInterval(timer);
+  }, [view, tab, modal]);
   const change = (e) =>
     setForm((f) => ({
       ...f,
@@ -2564,62 +2573,13 @@ export default function Admin({ user, onExit, onLogout, config }) {
       );
     if (type === 'support')
       return (
-        <Modal title="Xử lý yêu cầu hỗ trợ" onClose={close}>
-          <form
-            onSubmit={(e) =>
-              submit(e, `/admin/support/${item.id}`, 'PATCH', {
-                status: form.status,
-                reply: form.reply,
-              })
-            }
-          >
-            <div className="adm-modal-body">
-              <div className="adm-message-preview">
-                <strong>{item.userName || 'Khách hàng'}</strong>
-                <p>
-                  {item.message ||
-                    item.reason ||
-                    'Khách hàng yêu cầu tư vấn trực tiếp với dược sĩ.'}
-                </p>
-                <small>{dateTime(item.createdAt)}</small>
-              </div>
-              <Field label="Trạng thái">
-                <select
-                  name="status"
-                  value={form.status || 'in_progress'}
-                  onChange={change}
-                >
-                  {['pending', 'in_progress', 'resolved'].map((s) => (
-                    <option key={s} value={s}>
-                      {label(s)}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              {item.messages?.length > 0 && (
-                <div className="adm-conversation">
-                  {item.messages.map((m, i) => (
-                    <div
-                      key={m.id || i}
-                      className={m.role === 'user' ? 'from-user' : ''}
-                    >
-                      <strong>
-                        {m.role === 'user'
-                          ? 'Khách hàng'
-                          : m.mode === 'pharmacist'
-                            ? 'Nhân viên tư vấn'
-                            : 'Trợ lý An Tâm'}
-                      </strong>
-                      <p>{m.content}</p>
-                      <small>{dateTime(m.createdAt)}</small>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {fields([['reply', 'Phản hồi gửi khách hàng', 'textarea', true]])}
-            </div>
-            {footer('Gửi phản hồi')}
-          </form>
+        <Modal title="Tư vấn khách hàng" onClose={close} wide>
+          <SupportChat
+            key={item.id}
+            item={item}
+            notify={notify}
+            onChanged={() => load(true)}
+          />
         </Modal>
       );
     if (type === 'prescription')
