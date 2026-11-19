@@ -1130,3 +1130,16 @@ test('Gemini recognition uses an owned file and produces editable catalog matche
   assert.equal(result.data.medicines[0].patient, undefined);
   assert.ok(result.data.results[0].matches.length > 0);
 });
+
+test('public catalog endpoints are cacheable at the edge while private data stays no-store', async (t) => {
+  const { client, login } = await fixture(t);
+  const guest = client();
+  for (const route of ['/config', '/products', '/categories', '/manufacturers']) {
+    const response = await guest(route);
+    assert.equal(response.status, 200, route);
+    assert.match(response.headers.get('cache-control'), /^public, s-maxage=\d+, stale-while-revalidate=\d+$/, route);
+  }
+  assert.equal((await guest('/auth/me')).headers.get('cache-control'), 'no-store');
+  const customer = await login();
+  assert.equal((await customer('/orders')).headers.get('cache-control'), 'no-store');
+});

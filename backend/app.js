@@ -102,6 +102,14 @@ export async function createApp(options = {}) {
     if (req.path.startsWith('/api')) res.set('Cache-Control', 'no-store');
     next();
   });
+  // Dữ liệu công khai, không phụ thuộc người dùng: cho phép CDN lưu ngắn hạn để tải lại trang nhanh hơn.
+  const edgeCache = (seconds, staleSeconds) => (req, res, next) => {
+    res.set(
+      'Cache-Control',
+      `public, s-maxage=${seconds}, stale-while-revalidate=${staleSeconds}`,
+    );
+    next();
+  };
   app.use(
     express.json({
       limit: hosted ? '4mb' : '20mb',
@@ -199,7 +207,7 @@ export async function createApp(options = {}) {
       },
     }),
   );
-  app.get('/api/config', async (req, res) => {
+  app.get('/api/config', edgeCache(60, 300), async (req, res) => {
     const s = await getSettings(d);
     res.json({
       data: {
@@ -222,7 +230,7 @@ export async function createApp(options = {}) {
       },
     });
   });
-  app.get('/api/products', async (req, res) =>
+  app.get('/api/products', edgeCache(30, 120), async (req, res) =>
     res.json({
       data: await productList(d, req.query),
     }),
@@ -290,14 +298,14 @@ export async function createApp(options = {}) {
     ).map(camel);
     res.json({ data: { ...product, reviews } });
   });
-  app.get('/api/categories', async (req, res) =>
+  app.get('/api/categories', edgeCache(120, 600), async (req, res) =>
     res.json({
       data: (
         await d.all('SELECT * FROM danh_muc WHERE active=1 ORDER BY id')
       ).map(camel),
     }),
   );
-  app.get('/api/manufacturers', async (req, res) =>
+  app.get('/api/manufacturers', edgeCache(120, 600), async (req, res) =>
     res.json({
       data: (
         await d.all('SELECT * FROM nha_san_xuat WHERE active=1 ORDER BY name')
