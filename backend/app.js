@@ -228,9 +228,49 @@ export async function createApp(options = {}) {
     }),
   );
   app.get('/api/products/suggestions', async (req, res) => {
-    const search = typeof req.query.search === 'string' ? req.query.search.trim().slice(0, 100) : '';
-    const products = search ? await productList(d, { search, prescription: req.query.prescription || 'false' }) : [];
-    res.json({ data: products.slice(0, 8).map(({ id, name, ingredient, prescriptionRequired }) => ({ id, name, ingredient, prescriptionRequired })) });
+    const search =
+      typeof req.query.search === 'string'
+        ? req.query.search.trim().slice(0, 100)
+        : '';
+    const category =
+      typeof req.query.category === 'string'
+        ? req.query.category.trim().slice(0, 60)
+        : '';
+    const prescription =
+      typeof req.query.prescription === 'string'
+        ? req.query.prescription
+        : 'false';
+    const hasFilter = Boolean(search || category || prescription === 'true');
+    const products = hasFilter
+      ? await productList(d, { search, category, prescription })
+      : [];
+    res.json({
+      data: products
+        .slice(0, 8)
+        .map(
+          ({
+            id,
+            name,
+            ingredient,
+            prescriptionRequired,
+            price,
+            unit,
+            image,
+            categoryName,
+            stock,
+          }) => ({
+            id,
+            name,
+            ingredient,
+            prescriptionRequired,
+            price,
+            unit,
+            image,
+            categoryName,
+            stock,
+          }),
+        ),
+    });
   });
   app.get('/api/products/:id', async (req, res) => {
     let product = await getProduct(d, req.params.id);

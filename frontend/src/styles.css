@@ -4847,10 +4847,157 @@ svg {
 @media (max-width: 680px) { .prescription-row { grid-template-columns: 1fr; padding-bottom: 12px; border-bottom: 1px solid #d9e4e1; } }
 
 .product-search { position: relative; overflow: visible; }
-.product-suggestions { position: absolute; z-index: 70; top: calc(100% + 6px); left: 0; right: 0; background: #fff; border: 1px solid #d9e4e1; border-radius: 12px; box-shadow: 0 12px 28px #123d3426; padding: 6px; max-height: 360px; overflow-y: auto; }
-.product-suggestions > button { display: flex; flex-direction: column; width: 100%; text-align: left; padding: 11px 14px; gap: 4px; background: white; color: #173c35; border-radius: 7px; }
-.product-suggestions > button:hover, .product-suggestions > button[aria-selected="true"] { background: #e7f5ef; }
-.product-suggestions span { font-size: 12px; color: #667772; }
+.header-search.has-scope { padding-left: 6px; gap: 8px; }
+.search-scope { position: relative; flex-shrink: 0; }
+.header-search .search-scope-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 33px;
+  margin-right: 0;
+  padding: 0 11px;
+  border-radius: 5px;
+  background: #edf3e5;
+  border: 1px solid #d9e4cf;
+  color: #264d42;
+  font-size: 11px;
+  font-weight: 600;
+  max-width: 148px;
+  transition: background 0.16s ease, border-color 0.16s ease;
+}
+.header-search .search-scope-trigger:hover,
+.header-search .search-scope-trigger.is-open {
+  background: #e1ecd4;
+  border-color: #bfd2b1;
+}
+.search-scope-trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-scope-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 80;
+  min-width: 225px;
+  max-height: 340px;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #d9e4e1;
+  border-radius: 12px;
+  box-shadow: 0 14px 32px #123d3428;
+  padding: 6px;
+}
+.search-scope-group {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #7b8e84;
+  padding: 8px 10px 4px;
+}
+.header-search .search-scope-menu > button {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0;
+  text-align: left;
+  padding: 9px 11px;
+  border-radius: 7px;
+  background: transparent;
+  color: #1c3f37;
+  font-size: 12px;
+  font-weight: 500;
+}
+.header-search .search-scope-menu > button:hover,
+.header-search .search-scope-menu > button[aria-selected="true"] {
+  background: #eaf5ee;
+  color: #164b43;
+  font-weight: 600;
+}
+.search-field-icon { flex-shrink: 0; color: #7e8b7c; }
+.product-suggestions { position: absolute; z-index: 70; top: calc(100% + 6px); left: 0; right: 0; background: #fff; border: 1px solid #d9e4e1; border-radius: 12px; box-shadow: 0 12px 28px #123d3426; padding: 6px; max-height: 390px; overflow-y: auto; }
+.product-suggestions > button,
+.header-search .product-suggestions > button {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 100%;
+  height: auto;
+  margin: 0;
+  text-align: left;
+  padding: 9px 11px;
+  gap: 11px;
+  background: white;
+  color: #173c35;
+  border-radius: 8px;
+  font-weight: 500;
+}
+.product-suggestions > button:hover,
+.product-suggestions > button[aria-selected="true"],
+.header-search .product-suggestions > button:hover,
+.header-search .product-suggestions > button[aria-selected="true"] {
+  background: #e9f5ef;
+}
+.suggestion-thumb {
+  width: 38px;
+  height: 38px;
+  border-radius: 7px;
+  background: #f5f8f2;
+  padding: 4px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.suggestion-body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.suggestion-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.suggestion-head strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: #164b43;
+}
+.suggestion-rx {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #fff1e6;
+  color: #b45309;
+  border: 1px solid #f6d5b8;
+}
+.suggestion-body > span {
+  font-size: 11px;
+  color: #667772;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.suggestion-price {
+  font-size: 12px;
+  font-weight: 700;
+  color: #164b43;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+@media (max-width: 760px) {
+  .header-search .search-scope-trigger {
+    max-width: 104px;
+    padding: 0 8px;
+    font-size: 10px;
+  }
+}
 
 .password-field-wrap {
   position: relative;

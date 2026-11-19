@@ -388,9 +388,19 @@ function Header() {
               </strong>
             </span>
           </Link>
-          <ProductSearch value={search} onChange={setSearch}
-            onSubmit={(query) => navigate(`/products?search=${encodeURIComponent(query)}`)}
-            onChoose={(product) => navigate(`/products/${product.id}`)} />
+          <ProductSearch
+            value={search}
+            onChange={setSearch}
+            categories={categories}
+            onSubmit={(query, scope) => {
+              const qs = new URLSearchParams();
+              if (query.trim()) qs.set('search', query.trim());
+              if (scope?.prescription) qs.set('prescription', scope.prescription);
+              if (scope?.category) qs.set('category', scope.category);
+              navigate(`/products${qs.toString() ? `?${qs}` : ''}`);
+            }}
+            onChoose={(product) => navigate(`/products/${product.id}`)}
+          />
 
           <div className="header-actions">
             <Link className="account-link" to={user ? '/account' : '/login'}>
