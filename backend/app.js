@@ -227,6 +227,11 @@ export async function createApp(options = {}) {
       data: await productList(d, req.query),
     }),
   );
+  app.get('/api/products/suggestions', async (req, res) => {
+    const search = typeof req.query.search === 'string' ? req.query.search.trim().slice(0, 100) : '';
+    const products = search ? await productList(d, { search, prescription: req.query.prescription || 'false' }) : [];
+    res.json({ data: products.slice(0, 8).map(({ id, name, ingredient, prescriptionRequired }) => ({ id, name, ingredient, prescriptionRequired })) });
+  });
   app.get('/api/products/:id', async (req, res) => {
     let product = await getProduct(d, req.params.id);
     if (!product) {

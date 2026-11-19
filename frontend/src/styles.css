@@ -4842,3 +4842,9 @@ svg {
 .prescription-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; align-items: end; gap: 12px; margin-bottom: 16px; }
 .prescription-actions { display: flex; flex-wrap: wrap; gap: 12px; }
 @media (max-width: 680px) { .prescription-row { grid-template-columns: 1fr; padding-bottom: 12px; border-bottom: 1px solid #d9e4e1; } }
+
+.product-search { position: relative; overflow: visible; }
+.product-suggestions { position: absolute; z-index: 70; top: calc(100% + 6px); left: 0; right: 0; background: #fff; border: 1px solid #d9e4e1; border-radius: 12px; box-shadow: 0 12px 28px #123d3426; padding: 6px; max-height: 360px; overflow-y: auto; }
+.product-suggestions > button { display: flex; flex-direction: column; width: 100%; text-align: left; padding: 11px 14px; gap: 4px; background: white; color: #173c35; border-radius: 7px; }
+.product-suggestions > button:hover, .product-suggestions > button[aria-selected="true"] { background: #e7f5ef; }
+.product-suggestions span { font-size: 12px; color: #667772; }

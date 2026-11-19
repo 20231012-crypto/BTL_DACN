@@ -61,7 +61,7 @@ export default function PrescriptionCatalog({ config, onUpload, renderProduct })
     {results && results.length === 0 && <p>Chưa đọc được tên thuốc. Bạn có thể nhập tên từ đơn để tìm.</p>}
     {results?.map((row, index) => <section className="panel" key={index}>
       <h2>{row.name} {row.strength}</h2>
-      {row.matches.length ? <><h3>Sản phẩm khớp tên</h3><div className="product-grid">{row.matches.map(renderProduct)}</div></> : <p>Chưa có sản phẩm khớp tên này trong danh mục.</p>}
+      {row.matches.length ? <><h3>Sản phẩm tìm theo tên trong đơn</h3><div className="product-grid">{row.matches.map(renderProduct)}</div></> : <p>Chưa có sản phẩm khớp tên này trong danh mục.</p>}
       {row.related.length > 0 && <><h3>Sản phẩm cùng hoạt chất</h3><p>Dược sĩ cần đối chiếu hàm lượng và dạng bào chế trước khi đổi sản phẩm.</p><div className="product-grid">{row.related.map(renderProduct)}</div></>}
     </section>)}
   </main>;

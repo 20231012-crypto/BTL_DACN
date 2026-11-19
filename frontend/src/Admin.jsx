@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { searchScore } from '../../shared/search.js';
 import {
   LayoutDashboard,
   Package,
@@ -358,6 +359,7 @@ function Chart({ data = [] }) {
 }
 
 export default function Admin({ user, onExit, onLogout, config }) {
+  const searchId = useId();
   const hasPermission = (permission) => user?.permissions?.includes(permission);
   const canReviewKnowledge = hasPermission('prescriptions');
   const allowedNav = NAV.filter(
@@ -493,7 +495,7 @@ export default function Admin({ user, onExit, onLogout, config }) {
           Object.values(item).some(
             (v) =>
               typeof v === 'string' &&
-              v.toLocaleLowerCase('vi').includes(query.toLocaleLowerCase('vi')),
+              searchScore(v, query) > 0,
           )) &&
         (!filter ||
           item.status === filter ||
@@ -524,11 +526,16 @@ export default function Admin({ user, onExit, onLogout, config }) {
       <div className="adm-search">
         <Search size={17} />
         <input
+          list={searchId}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={placeholder}
           aria-label={placeholder}
         />
+        <datalist id={searchId}>{filtered(data).slice(0, 8).map((item, index) => {
+          const title = item.name || item.title || item.code || item.customerName;
+          return title ? <option value={title} key={index} /> : null;
+        })}</datalist>
       </div>
       <div className="adm-toolbar-right">
         {children}

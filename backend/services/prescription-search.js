@@ -1,6 +1,7 @@
 import { assert, text, productList } from './shared.js';
 import { normalize } from '../repositories/database.js';
 import { geminiKeys, geminiRequest } from '../integrations/gemini-client.js';
+import { searchScore } from '../../shared/search.js';
 
 export function medicineRows(value) {
   assert(Array.isArray(value) && value.length <= 30, 400, 'Nhập tối đa 30 thuốc trong đơn.');
@@ -38,7 +39,7 @@ export async function prescriptionMatches(d, medicines) {
   return medicines.map((medicine) => {
     const name = normalize(medicine.name);
     const ingredient = normalize(medicine.ingredient);
-    const exact = products.filter((product) => name.length >= 3 && (normalize(product.name).includes(name) || name.includes(normalize(product.name))));
+    const exact = products.filter((product) => name.length >= 3 && searchScore(`${product.name} ${product.ingredient}`, name) > 0);
     const related = products.filter((product) => !exact.some((row) => row.id === product.id) && ingredient.length >= 3 && normalize(product.ingredient) === ingredient);
     return { ...medicine, matches: exact.slice(0, 8), related: related.slice(0, 8) };
   });

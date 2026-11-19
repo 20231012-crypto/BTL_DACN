@@ -48,6 +48,7 @@ import Admin from './Admin.jsx';
 import AddressFields from './AddressFields.jsx';
 import BankTransfer from './BankTransfer.jsx';
 import PrescriptionCatalog from './PrescriptionCatalog.jsx';
+import ProductSearch from './ProductSearch.jsx';
 import { LogoIcon } from './Logo.jsx';
 import {
   api,
@@ -364,22 +365,10 @@ function Header() {
               </strong>
             </span>
           </Link>
-          <form
-            className="header-search"
-            onSubmit={(e) => {
-              e.preventDefault();
-              navigate(`/products?search=${encodeURIComponent(search)}`);
-            }}
-          >
-            <Search size={19} />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Tìm tên thuốc, hoạt chất, sản phẩm…"
-              aria-label="Tìm sản phẩm"
-            />
-            <button type="submit">Tìm kiếm</button>
-          </form>
+          <ProductSearch value={search} onChange={setSearch}
+            onSubmit={(query) => navigate(`/products?search=${encodeURIComponent(query)}`)}
+            onChoose={(product) => navigate(`/products/${product.id}`)} />
+
           <div className="header-actions">
             <Link className="account-link" to={user ? '/account' : '/login'}>
               <UserRound size={23} />
@@ -854,24 +843,10 @@ function Catalog() {
           </div>
         </aside>
         <div className="catalog-content">
-          <form
-            className="catalog-search"
-            onSubmit={(e) => {
-              e.preventDefault();
-              update('search', search);
-            }}
-          >
-            <Search size={19} />
-            <input
-              aria-label="Tìm trong danh mục"
-              placeholder="Tìm tên sản phẩm, hoạt chất…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <button className="btn btn-primary" type="submit">
-              Tìm kiếm
-            </button>
-          </form>
+          <ProductSearch className="catalog-search" value={search} onChange={setSearch}
+            prescription={params.get('prescription') || 'false'} onSubmit={(query) => update('search', query)}
+            onChoose={(product) => navigate(`/products/${product.id}`)} />
+
           <div className="catalog-toolbar">
             <span>
               {items ? (

@@ -1091,3 +1091,15 @@ test('prescription matching requires an owned upload and preserves pharmacist re
   const created = await order(customer, { prescriptionId: rx.id });
   assert.equal(created.data.status, 'pending_prescription');
 });
+
+test('search suggestions accept accents, reordered words and small spelling errors', async (t) => {
+  const { client } = await fixture(t);
+  const guest = client();
+  const fuzzy = await guest('/products/suggestions?search=vitamni');
+  assert.equal(fuzzy.status, 200);
+  assert.ok(fuzzy.data.some((product) => product.name.includes('Vitamin C')));
+  assert.ok(fuzzy.data.every((product) => !product.prescriptionRequired));
+  const reordered = await guest('/products?search=muoi%20nuoc');
+  assert.ok(reordered.data.some((product) => product.name.includes('Nước muối')));
+  assert.deepEqual((await guest('/products/suggestions?search=zzzzxyyy')).data, []);
+});

@@ -1,5 +1,6 @@
 import { randomBytes, createHash } from 'node:crypto';
 import { camel, now, normalize, today } from '../repositories/database.js';
+import { searchScore } from '../../shared/search.js';
 export const hash = (value) =>
   createHash('sha256').update(String(value)).digest('hex');
 export const randomToken = () => randomBytes(32).toString('hex');
@@ -120,12 +121,13 @@ export async function productList(d, query = {}, hidden = false) {
     )
   ).map(productView);
   const search = normalize(query.search);
-  if (search)
-    list = list.filter((p) =>
-      normalize(
-        `${p.name} ${p.ingredient} ${p.description} ${p.manufacturer}`,
-      ).includes(search),
-    );
+  if (search) {
+    const ranked = list.map((product) => ({ product, score: Math.max(
+      searchScore(`${product.name} ${product.ingredient} ${product.manufacturer}`, search),
+      searchScore(product.description, search) * 0.5,
+    ) })).filter((row) => row.score > 0).sort((a, b) => b.score - a.score);
+    list = ranked.map((row) => row.product);
+  }
   if (query.category)
     list = list.filter(
       (p) =>
