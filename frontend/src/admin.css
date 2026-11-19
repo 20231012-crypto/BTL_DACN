@@ -1,4 +1,4 @@
-.ma-admin {
+.at-admin {
   --adm-green: #166454;
   --adm-dark: #123a35;
   --adm-text: #233b37;
@@ -18,41 +18,41 @@
   line-height: 1.5;
   display: flex;
 }
-.ma-admin * {
+.at-admin * {
   box-sizing: border-box;
 }
-.ma-admin button,
-.ma-admin input,
-.ma-admin select,
-.ma-admin textarea {
+.at-admin button,
+.at-admin input,
+.at-admin select,
+.at-admin textarea {
   font: inherit;
 }
-.ma-admin button {
+.at-admin button {
   cursor: pointer;
 }
-.ma-admin a {
+.at-admin a {
   text-decoration: none;
 }
-.ma-admin button:disabled {
+.at-admin button:disabled {
   cursor: wait;
   opacity: 0.6;
 }
-.ma-admin button:focus-visible,
-.ma-admin a:focus-visible {
+.at-admin button:focus-visible,
+.at-admin a:focus-visible {
   outline: 3px solid #5cb39f;
   outline-offset: 3px;
 }
-.ma-admin h1,
-.ma-admin h2,
-.ma-admin h3,
-.ma-admin p {
+.at-admin h1,
+.at-admin h2,
+.at-admin h3,
+.at-admin p {
   margin: 0;
 }
-.ma-admin h3 {
+.at-admin h3 {
   font-size: 15px;
   font-weight: 650;
 }
-.ma-admin small {
+.at-admin small {
   display: block;
   font-size: 11px;
   color: var(--adm-muted);
@@ -1412,7 +1412,7 @@
   display: none;
 }
 @media (min-width: 1500px) {
-  .ma-admin {
+  .at-admin {
     font-size: 14px;
   }
   .adm-sidebar {

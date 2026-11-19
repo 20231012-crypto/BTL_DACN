@@ -75,7 +75,7 @@ async function fixture(t, options = {}) {
 
 test('Vercel rewrites preserve the path and business query parameters', () => {
   assert.equal(
-    resolveApiUrl('/api/index?__minhan_path=orders%2F1&payment=waiting'),
+    resolveApiUrl('/api/index?__antam_path=orders%2F1&payment=waiting'),
     '/api/orders/1?payment=waiting',
   );
   assert.equal(
@@ -83,14 +83,14 @@ test('Vercel rewrites preserve the path and business query parameters', () => {
     '/api/products?search=nuoc+muoi',
   );
   assert.equal(
-    resolveApiUrl('/api/index?__minhan_path=..%2Fadmin'),
+    resolveApiUrl('/api/index?__antam_path=..%2Fadmin'),
     '/api/index',
   );
 });
 
 test(
   'a running PostgreSQL store follows the schema rename and retains existing rows',
-  { skip: !process.env.MINHAN_TEST_POSTGRES_URL },
+  { skip: !process.env.ANTAM_TEST_POSTGRES_URL },
   async () => {
     const database = await createTestDatabase();
     const migrator = openPostgres(database.databaseUrl);
@@ -127,7 +127,7 @@ test(
 
 test(
   'signed attachments are scoped to the uploader and consumed after use',
-  { skip: !process.env.MINHAN_TEST_POSTGRES_URL },
+  { skip: !process.env.ANTAM_TEST_POSTGRES_URL },
   async (t) => {
     const uploads = new Set();
     const attachmentStorage = {

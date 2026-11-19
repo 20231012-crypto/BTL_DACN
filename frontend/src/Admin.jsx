@@ -3256,7 +3256,7 @@ export default function Admin({ user, onExit, onLogout, config }) {
   };
 
   return (
-    <div className="ma-admin">
+    <div className="at-admin">
       <aside className={`adm-sidebar ${menuOpen ? 'is-open' : ''}`}>
         <button className="adm-brand" onClick={onExit}>
           <span className="adm-brand-icon">

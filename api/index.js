@@ -2,14 +2,14 @@ import { createApp } from '../backend/app.js';
 
 let appPromise;
 export function resolveApiUrl(requestUrl) {
-  const url = new URL(requestUrl, 'https://minhan.local');
-  const rewrittenPath = url.searchParams.get('__minhan_path');
+  const url = new URL(requestUrl, 'https://antam.local');
+  const rewrittenPath = url.searchParams.get('__antam_path');
   if (['/api/index', '/api/index.js'].includes(url.pathname) && rewrittenPath) {
     const path = rewrittenPath.replace(/^\/+/, '');
     if (/^[A-Za-z0-9_./%-]+$/.test(path) && !path.split('/').includes('..'))
       url.pathname = `/api/${path}`;
   }
-  url.searchParams.delete('__minhan_path');
+  url.searchParams.delete('__antam_path');
   return url.pathname + url.search;
 }
 
@@ -22,7 +22,7 @@ export default async function handler(req, res) {
   try {
     app = await appPromise;
   } catch (error) {
-    console.error('Minh An startup:', error.code || 'CONFIG');
+    console.error('An Tâm startup:', error.code || 'CONFIG');
     res.writeHead(503, {
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-store',

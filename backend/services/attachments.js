@@ -40,7 +40,7 @@ export function supabaseStorage() {
       detectSessionInUrl: false,
     },
   });
-  const name = process.env.SUPABASE_ATTACHMENTS_BUCKET || 'minhan-private';
+  const name = process.env.SUPABASE_ATTACHMENTS_BUCKET || 'antam-private';
   if (!/^[a-z0-9-]{3,60}$/.test(name))
     throw new Error('Tên bucket đính kèm không hợp lệ.');
   const bucket = client.storage.from(name);

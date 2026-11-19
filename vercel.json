@@ -8,7 +8,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "/api/index?__minhan_path=:path*"
+      "destination": "/api/index?__antam_path=:path*"
     },
     { "source": "/products/:path*", "destination": "/index.html" },
     { "source": "/orders/:path*", "destination": "/index.html" },

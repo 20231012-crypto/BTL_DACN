@@ -290,7 +290,7 @@ try {
     isMobile: true,
     hasTouch: true,
   });
-  await open(admin, '/admin', '.ma-admin');
+  await open(admin, '/admin', '.at-admin');
   await clip(admin, 'admin-mobile');
   console.log(
     `PASS ${sections.length} admin views, staff invitation and mobile admin layout`,
