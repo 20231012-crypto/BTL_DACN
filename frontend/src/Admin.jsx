@@ -32,11 +32,46 @@ import {
   Eye,
   ShieldCheck,
   Pill,
+  TrendingUp,
+  TrendingDown,
+  Calendar,
+  CreditCard,
+  Layers,
+  Activity,
+  BarChart3,
+  Wallet,
+  CheckCircle2,
 } from 'lucide-react';
 import { LogoIcon } from './Logo.jsx';
 import SupportChat from './SupportChat.jsx';
 import Pagination from './Pagination.jsx';
-import { api, money, dateTime, statusLabel } from './lib.js';
+import AdminDashboard from './AdminDashboard.jsx';
+import AdminOrders, {
+  CreateOrderContent,
+  OrderDetailContent,
+} from './AdminOrders.jsx';
+import {
+  VIEW_PERMISSION,
+  ORDER_STATES,
+  ORDER_NEXT,
+  RETURN_GOODS_NEXT,
+  RETURN_GOODS_ACTION,
+  label,
+  list,
+  fmtDate,
+  safeJson,
+  text,
+  count,
+  vnDate,
+  paymentLabel,
+  paymentShortLabel,
+  deltaInfo,
+  Badge,
+  Empty,
+  Table,
+  ReportChart,
+} from './adminUi.jsx';
+import { api, money, dateTime } from './lib.js';
 import './admin.css';
 
 const NAV = [
@@ -54,178 +89,6 @@ const NAV = [
   ['audit', ScrollText, 'Nhật ký hệ thống', true],
 ];
 const TITLES = Object.fromEntries(NAV.map(([key, , name]) => [key, name]));
-const VIEW_PERMISSION = {
-  dashboard: 'reports',
-  orders: 'orders',
-  prescriptions: 'prescriptions',
-  products: 'catalog',
-  inventory: 'inventory',
-  catalog: 'catalog',
-  promotions: 'promotions',
-  users: 'users',
-  chatbot: 'support',
-  reports: 'reports',
-  settings: 'settings',
-  audit: 'audit',
-};
-const RETURN_GOODS_STATES = [
-  'awaiting',
-  'in_transit',
-  'received',
-  'restocked',
-  'discarded',
-];
-const RETURN_GOODS_NEXT = {
-  awaiting: ['in_transit', 'received'],
-  in_transit: ['received'],
-  received: ['restocked', 'discarded'],
-  restocked: [],
-  discarded: [],
-};
-const RETURN_GOODS_ACTION = {
-  in_transit: 'Khách đang gửi hàng về',
-  received: 'Đã nhận hàng trả về',
-  restocked: 'Kiểm đạt, nhập lại kho',
-  discarded: 'Không đạt, loại bỏ',
-};
-const ORDER_STATES = [
-  'pending_prescription',
-  'pending_payment',
-  'pending',
-  'confirmed',
-  'packing',
-  'shipping',
-  'delivery_failed',
-  'delivered',
-  'cancelled',
-  'returned',
-];
-const ORDER_NEXT = {
-  pending_prescription: ['cancelled'],
-  pending_payment: ['cancelled'],
-  pending: ['confirmed', 'cancelled'],
-  confirmed: ['packing', 'cancelled'],
-  packing: ['shipping', 'cancelled'],
-  shipping: ['delivered', 'delivery_failed'],
-  delivery_failed: ['shipping', 'cancelled'],
-  delivered: [],
-  cancelled: [],
-  returned: [],
-};
-const LABELS = {
-  pending_prescription: 'Chờ duyệt đơn thuốc',
-  pending_payment: 'Chờ thanh toán',
-  pending: 'Chờ xác nhận',
-  confirmed: 'Đã xác nhận',
-  packing: 'Đang đóng gói',
-  shipping: 'Đang giao',
-  delivery_failed: 'Giao thất bại',
-  delivered: 'Đã giao',
-  cancelled: 'Đã hủy',
-  returned: 'Đã trả hàng',
-  unpaid: 'Chưa thanh toán',
-  paid: 'Đã thanh toán',
-  failed: 'Thất bại',
-  refund_pending: 'Chờ hoàn tiền',
-  refunded: 'Đã hoàn tiền',
-  approved: 'Đã duyệt',
-  rejected: 'Từ chối',
-  active: 'Đang hoạt động',
-  inactive: 'Tạm ngưng',
-  expired: 'Hết hạn',
-  available: 'Có thể bán',
-  reserved: 'Đang giữ',
-  low_stock: 'Sắp hết hàng',
-  expiring: 'Sắp hết hạn',
-  in_progress: 'Đang hỗ trợ',
-  resolved: 'Đã giải quyết',
-  customer: 'Khách hàng',
-  staff: 'Nhân viên',
-  admin: 'Quản trị viên',
-  pharmacist: 'Dược sĩ',
-  sales: 'Bán hàng',
-  warehouse: 'Nhân viên kho',
-  receipt: 'Nhập kho',
-  return_restore: 'Nhập lại hàng trả',
-  sale: 'Xuất bán',
-  adjustment: 'Điều chỉnh',
-  release: 'Hoàn tồn',
-  reserve: 'Giữ tồn',
-  cancel: 'Hủy đơn',
-  return: 'Đổi trả',
-  refund: 'Hoàn tiền',
-};
-const label = (value) =>
-  LABELS[value] ||
-  (typeof statusLabel === 'function'
-    ? statusLabel(value)
-    : statusLabel?.[value]) ||
-  value ||
-  '—';
-const list = (value) =>
-  Array.isArray(value) ? value : value?.items || value?.rows || [];
-const fmtDate = (value) =>
-  value
-    ? new Intl.DateTimeFormat('vi-VN', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-      }).format(new Date(value))
-    : '—';
-const safeJson = (value, fallback = []) => {
-  try {
-    return typeof value === 'string' ? JSON.parse(value) : value || fallback;
-  } catch {
-    return fallback;
-  }
-};
-const text = (value) => (value == null || value === '' ? '—' : String(value));
-const count = (value) =>
-  new Intl.NumberFormat('vi-VN').format(Number(value) || 0);
-
-function Badge({ value, children }) {
-  return (
-    <span className={`adm-badge is-${value}`}>{children || label(value)}</span>
-  );
-}
-function Empty({
-  title = 'Chưa có dữ liệu',
-  description = 'Thông tin sẽ xuất hiện tại đây khi có phát sinh.',
-}) {
-  return (
-    <div className="adm-empty">
-      <Package size={30} />
-      <strong>{title}</strong>
-      <p>{description}</p>
-    </div>
-  );
-}
-function Table({ columns, rows, empty, children }) {
-  return (
-    <div className="adm-table-wrap">
-      <table className="adm-table">
-        <thead>
-          <tr>
-            {columns.map((c, i) => (
-              <th key={i}>{c}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows?.length ? (
-            children
-          ) : (
-            <tr>
-              <td colSpan={columns.length}>
-                <Empty title={empty} />
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 function Field({
   label: fieldLabel,
   name,
@@ -347,35 +210,82 @@ function Modal({ title, children, onClose, wide = false }) {
     </div>
   );
 }
-function Chart({ data = [] }) {
-  const max = Math.max(1, ...data.map((d) => Number(d.revenue) || 0));
+
+const STATUS_BUCKETS = [
+  ['Hoàn tất (đã giao)', ['delivered'], '#2d7a55'],
+  [
+    'Đang xử lý & giao',
+    ['pending', 'pending_payment', 'pending_prescription', 'confirmed', 'packing', 'shipping'],
+    '#4c86b6',
+  ],
+  ['Giao thất bại / Trả hàng', ['delivery_failed', 'returned'], '#d0943b'],
+  ['Đã hủy', ['cancelled'], '#cf6a5e'],
+];
+
+function StatusDonut({ breakdown = [], totalOrders = 0 }) {
+  const byStatus = Object.fromEntries(breakdown.map((b) => [b.status, b]));
+  const groups = STATUS_BUCKETS.map(([name, codes, color]) => {
+    const orders = codes.reduce((n, c) => n + (byStatus[c]?.orders || 0), 0);
+    const amount = codes.reduce((n, c) => n + (byStatus[c]?.amount || 0), 0);
+    return { name, color, orders, amount };
+  });
+  const radius = 44;
+  const circumference = 2 * Math.PI * radius;
+  let offset = 0;
+
   return (
-    <div className="adm-chart">
-      {data.length ? (
-        data.slice(-10).map((d, i) => (
-          <div className="adm-chart-column" key={d.date || i}>
-            <span className="adm-chart-value">{money(d.revenue)}</span>
-            <div className="adm-chart-bar-wrap">
-              <div
-                className="adm-chart-bar"
-                style={{
-                  height: `${Math.max(3, (Number(d.revenue) / max) * 100)}%`,
-                }}
-                title={`${d.date}: ${money(d.revenue)}`}
-              />
+    <div className="adm-rp-donut-wrap">
+      <div className="adm-rp-donut">
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <circle cx="60" cy="60" r={radius} fill="none" stroke="#eef3ec" strokeWidth="14" />
+          {totalOrders > 0 &&
+            groups
+              .filter((g) => g.orders > 0)
+              .map((g) => {
+                const len = (g.orders / totalOrders) * circumference;
+                const dash = `${len} ${circumference - len}`;
+                const curOffset = offset;
+                offset += len;
+                return (
+                  <circle
+                    key={g.name}
+                    cx="60"
+                    cy="60"
+                    r={radius}
+                    fill="none"
+                    stroke={g.color}
+                    strokeWidth="14"
+                    strokeDasharray={dash}
+                    strokeDashoffset={-curOffset}
+                    transform="rotate(-90 60 60)"
+                  />
+                );
+              })}
+        </svg>
+        <div className="adm-rp-donut-center">
+          <strong>{count(totalOrders)}</strong>
+          <span>Đơn hàng</span>
+        </div>
+      </div>
+
+      <div className="adm-rp-legend">
+        {groups.map((g) => {
+          const share = totalOrders ? ((g.orders / totalOrders) * 100).toFixed(1) : '0.0';
+          return (
+            <div key={g.name} className="adm-rp-legend-row">
+              <span className="adm-rp-legend-dot" style={{ background: g.color }} />
+              <div className="adm-rp-legend-meta">
+                <strong>{g.name}</strong>
+                <small>{money(g.amount)}</small>
+              </div>
+              <div className="adm-rp-legend-val">
+                <b>{count(g.orders)}</b>
+                <span>{share}%</span>
+              </div>
             </div>
-            <span>
-              {String(d.date || '')
-                .slice(5)
-                .split('-')
-                .reverse()
-                .join('/')}
-            </span>
-          </div>
-        ))
-      ) : (
-        <Empty title="Chưa có doanh thu trong kỳ" />
-      )}
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -403,11 +313,15 @@ export default function Admin({ user, onExit, onLogout, config }) {
   const [products, setProducts] = useState([]),
     [categories, setCategories] = useState([]),
     [suppliers, setSuppliers] = useState([]),
-    [manufacturers, setManufacturers] = useState([]);
+    [manufacturers, setManufacturers] = useState([]),
+    [orderRequests, setOrderRequests] = useState([]),
+    [returnGoods, setReturnGoods] = useState([]);
   const [tab, setTab] = useState('categories'),
     [menuOpen, setMenuOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [range, setRange] = useState({ from: '', to: '' });
+  const [dashDays, setDashDays] = useState(7);
+  const [dashRefreshing, setDashRefreshing] = useState(false);
   const isAdmin = user?.role === 'admin';
   useEffect(() => {
     setPage(1);
@@ -420,11 +334,8 @@ export default function Admin({ user, onExit, onLogout, config }) {
     const timer = setTimeout(() => setToast(null), 5000);
     return () => clearTimeout(timer);
   }, [toast]);
-  const go = (next) => {
-    setView(next);
-    setQuery('');
-    setFilter('');
-    setTab(
+  const go = (next, opts = {}) => {
+    const defaultTab =
       next === 'chatbot'
         ? hasPermission('support')
           ? 'support'
@@ -433,29 +344,43 @@ export default function Admin({ user, onExit, onLogout, config }) {
           ? 'batches'
           : next === 'orders'
             ? 'orders'
-            : 'categories',
-    );
+            : 'categories';
+    setView(next);
+    setQuery(opts.query || '');
+    setFilter(opts.filter || '');
+    setTab(opts.tab || defaultTab);
     setData(null);
     setMenuOpen(false);
   };
-  const load = async (silent = false) => {
+  const load = async (
+    silent = false,
+    customRange = range,
+    customDashDays = dashDays,
+  ) => {
     if (!silent) setLoading(true);
     setError('');
     try {
       let result;
-      if (view === 'orders' && tab === 'requests')
-        result = await api('/admin/requests');
-      else if (view === 'orders' && tab === 'returns')
-        result = await api('/admin/return-goods');
-      else if (view === 'catalog') result = await api(`/admin/${tab}`);
+      if (view === 'orders') {
+        const [ordersRes, reqRes, returnsRes] = await Promise.all([
+          api('/admin/orders'),
+          api('/admin/requests'),
+          api('/admin/return-goods'),
+        ]);
+        result = ordersRes;
+        setOrderRequests(list(reqRes));
+        setReturnGoods(list(returnsRes));
+      } else if (view === 'catalog') result = await api(`/admin/${tab}`);
       else if (view === 'chatbot')
         result = await api(
           `/admin/${tab === 'knowledge' ? 'knowledge' : tab === 'rules' ? 'safety-rules' : 'support'}`,
         );
       else if (view === 'reports')
         result = await api(
-          `/admin/reports?${new URLSearchParams(Object.fromEntries(Object.entries(range).filter(([, v]) => v)))}`,
+          `/admin/reports?${new URLSearchParams(Object.fromEntries(Object.entries(customRange).filter(([, v]) => v)))}`,
         );
+      else if (view === 'dashboard')
+        result = await api(`/admin/dashboard?days=${customDashDays}`);
       else result = await api(`/admin/${view}`);
       setData(result);
       if (view === 'products' || view === 'inventory') {
@@ -477,8 +402,17 @@ export default function Admin({ user, onExit, onLogout, config }) {
       setLoading(false);
     }
   };
+  const changeDashDays = async (nextDays) => {
+    setDashDays(nextDays);
+    setDashRefreshing(true);
+    try {
+      await load(true, range, nextDays);
+    } finally {
+      setDashRefreshing(false);
+    }
+  };
   useEffect(() => {
-    load();
+    load(view === 'orders' && Array.isArray(data));
   }, [view, tab]);
   // Danh sách yêu cầu hỗ trợ tự làm mới để dược sĩ thấy yêu cầu tư vấn mới.
   useEffect(() => {
@@ -494,12 +428,14 @@ export default function Admin({ user, onExit, onLogout, config }) {
       [e.target.name]:
         e.target.type === 'checkbox' ? e.target.checked : e.target.value,
     }));
-  const open = (type, item = {}) => {
-    const prepared = { ...item };
+  const open = (type, item = {}, extraForm = {}) => {
+    const prepared = { ...item, ...extraForm };
     for (const k of ['startDate', 'endDate', 'manufacturedAt', 'expiresAt'])
       if (prepared[k]) prepared[k] = String(prepared[k]).slice(0, 10);
     if (Array.isArray(prepared.keywords))
       prepared.keywords = prepared.keywords.join(', ');
+    if (type === 'order' && prepared.bankAmount === undefined && item.total)
+      prepared.bankAmount = item.total;
     setForm(prepared);
     setModal({ type, data: item });
   };
@@ -541,12 +477,22 @@ export default function Admin({ user, onExit, onLogout, config }) {
           (filter === 'active' && item.active) ||
           (filter === 'inactive' && !item.active)),
     );
-  const orderDetail = async (order) => {
+  const orderDetail = async (order, extraForm = {}) => {
     try {
       const details = await api(`/admin/orders/${order.id}`);
-      open('order', details);
+      open('order', details, extraForm);
     } catch {
-      open('order', order);
+      open('order', order, extraForm);
+    }
+  };
+  const openPrescriptionById = async (prescriptionId) => {
+    try {
+      const rxs = list(await api('/admin/prescriptions'));
+      const rx = rxs.find((r) => r.id === prescriptionId);
+      if (rx) open('prescription', rx);
+      else notify('Không tìm thấy đơn thuốc.', 'error');
+    } catch (e) {
+      notify(e.message, 'error');
     }
   };
   const supportDetail = async (item) => {
@@ -579,7 +525,11 @@ export default function Admin({ user, onExit, onLogout, config }) {
       </div>
     </div>
   );
-  const selectFilter = (options, placeholder = 'Tất cả trạng thái') => (
+  const selectFilter = (
+    options,
+    placeholder = 'Tất cả trạng thái',
+    labelFn = label,
+  ) => (
     <select
       className="adm-select"
       value={filter}
@@ -588,7 +538,7 @@ export default function Admin({ user, onExit, onLogout, config }) {
       <option value="">{placeholder}</option>
       {options.map((v) => (
         <option key={v} value={v}>
-          {label(v)}
+          {labelFn(v)}
         </option>
       ))}
     </select>
@@ -643,322 +593,93 @@ export default function Admin({ user, onExit, onLogout, config }) {
       ]}
       rows={orders}
     >
-      {orders.map((o) => (
-        <tr key={o.id}>
-          <td>
-            <button className="adm-code" onClick={() => orderDetail(o)}>
-              {o.code}
-            </button>
-            <small>{o.items?.length || o.itemCount || '—'} sản phẩm</small>
-          </td>
-          <td>
-            <strong>
-              {o.customerName ||
-                o.userName ||
-                safeJson(o.address, {}).recipient ||
-                'Khách hàng'}
-            </strong>
-            <small>
-              {o.customerEmail || safeJson(o.address, {}).phone || ''}
-            </small>
-          </td>
-          <td>{fmtDate(o.createdAt)}</td>
-          <td className="adm-amount">{money(o.total)}</td>
-          <td>
-            <Badge value={o.paymentStatus} />
-          </td>
-          <td>
-            <Badge value={o.status} />
-          </td>
-          <td>
-            <button
-              className="adm-icon-btn"
-              onClick={() => orderDetail(o)}
-              aria-label="Xem đơn hàng"
-            >
-              <ChevronRight size={18} />
-            </button>
-          </td>
-        </tr>
-      ))}
+      {orders.map((o) => {
+        const hasPendingReq = o.requests?.some((r) => r.status === 'pending');
+        return (
+          <tr key={o.id}>
+            <td>
+              <button className="adm-code" onClick={() => orderDetail(o)}>
+                {o.code}
+              </button>
+              <small>
+                {o.itemCount || o.items?.length || '—'} sản phẩm
+                {o.prescriptionId ? ` · Kê đơn #${o.prescriptionId}` : ''}
+                {hasPendingReq ? ' · Có yêu cầu' : ''}
+              </small>
+            </td>
+            <td>
+              <strong>
+                {o.userName ||
+                  o.customerName ||
+                  safeJson(o.address, {}).recipient ||
+                  'Khách hàng'}
+              </strong>
+              <small>
+                {o.phone ||
+                  safeJson(o.address, {}).phone ||
+                  o.email ||
+                  ''}
+              </small>
+            </td>
+            <td>{fmtDate(o.createdAt)}</td>
+            <td className="adm-amount">{money(o.total)}</td>
+            <td>
+              <Badge value={o.paymentStatus} />
+              {o.paymentMethod && (
+                <small>{paymentShortLabel(o.paymentMethod)}</small>
+              )}
+            </td>
+            <td>
+              <Badge value={o.status} />
+            </td>
+            <td>
+              <button
+                className="adm-icon-btn"
+                onClick={() => orderDetail(o)}
+                aria-label="Xem đơn hàng"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </td>
+          </tr>
+        );
+      })}
     </Table>
   );
-  const stats = (d, report = false) => (
-    <div className="adm-stats">
-      {[
-        [
-          report ? 'Doanh thu trong kỳ' : 'Doanh thu đơn đã giao',
-          money(d?.revenue),
-          ShoppingBag,
-          'Doanh thu từ đơn đã thanh toán',
-        ],
-        [
-          'Tổng đơn hàng',
-          count(d?.orderCount),
-          Package,
-          report
-            ? `Giá trị trung bình ${money(d?.averageOrder)}`
-            : `${count(d?.pendingOrders)} đơn đang chờ xử lý`,
-        ],
-        [
-          report ? 'Tỷ lệ hủy đơn' : 'Khách hàng',
-          report
-            ? `${Number(d?.cancellationRate || 0).toFixed(1)}%`
-            : count(d?.customerCount),
-          report ? ArrowUpRight : Users,
-          report
-            ? 'Tỷ lệ trên tổng đơn trong kỳ'
-            : 'Tài khoản khách hàng trong hệ thống',
-        ],
-        [
-          report ? 'Tồn kho khả dụng' : 'Đơn thuốc chờ duyệt',
-          count(report ? d?.inventory?.sellable : d?.pendingPrescriptions),
-          report ? Boxes : ClipboardCheck,
-          report
-            ? `${count(d?.inventory?.lowStockCount)} sản phẩm sắp hết`
-            : 'Cần dược sĩ kiểm tra và xác nhận',
-        ],
-      ].map(([title, value, Icon, caption], i) => (
-        <div className="adm-stat" key={title}>
-          <div className="adm-stat-top">
-            <span>{title}</span>
-            <span className={`adm-stat-icon tone-${i}`}>
-              <Icon size={20} />
-            </span>
-          </div>
-          <strong>{value}</strong>
-          <small>{caption}</small>
-        </div>
-      ))}
-    </div>
-  );
   const dashboard = () => (
-    <>
-      {stats(data)}
-      <div className="adm-dashboard-grid">
-        <section className="adm-panel">
-          <div className="adm-panel-head">
-            <div>
-              <h3>Doanh thu gần đây</h3>
-              <p>Dòng tiền đã được ghi nhận trong hệ thống</p>
-            </div>
-            <span className="adm-soft-label">VNĐ</span>
-          </div>
-          <Chart data={data?.dailyRevenue || []} />
-        </section>
-        <section className="adm-panel adm-work-card">
-          <div className="adm-panel-head">
-            <div>
-              <h3>Việc cần xử lý</h3>
-              <p>Cùng chăm sóc nhà thuốc mỗi ngày</p>
-            </div>
-            <span className="adm-live-dot" />
-          </div>
-          {[
-            [
-              ClipboardCheck,
-              'Đơn thuốc chờ kiểm duyệt',
-              data?.pendingPrescriptions,
-              'prescriptions',
-            ],
-            [
-              ShoppingBag,
-              'Đơn hàng chờ xác nhận',
-              data?.pendingOrders,
-              'orders',
-            ],
-            [
-              AlertTriangle,
-              'Sản phẩm sắp hết hàng',
-              data?.lowStockCount,
-              'inventory',
-            ],
-          ]
-            .filter(([, , , to]) => hasPermission(VIEW_PERMISSION[to]))
-            .map(([Icon, title, n, to]) => (
-              <button key={to} onClick={() => go(to)} className="adm-task">
-                <span className="adm-task-icon">
-                  <Icon size={20} />
-                </span>
-                <span>{title}</span>
-                <b>{count(n)}</b>
-                <ChevronRight size={16} />
-              </button>
-            ))}
-          <div className="adm-work-note">
-            <ShieldCheck size={18} />
-            <p>
-              Đơn thuốc kê đơn cần được dược sĩ kiểm duyệt trước khi xử lý bán
-              hàng.
-            </p>
-          </div>
-        </section>
-      </div>
-      <section className="adm-panel">
-        <div className="adm-panel-head">
-          <div>
-            <h3>Đơn hàng mới nhất</h3>
-            <p>Theo dõi và xử lý đơn hàng của khách</p>
-          </div>
-          <button className="adm-text-btn" onClick={() => go('orders')}>
-            Tất cả đơn hàng
-            <ArrowUpRight size={16} />
-          </button>
-        </div>
-        {orderTable(list(data?.recentOrders))}
-      </section>
-    </>
+    <AdminDashboard
+      data={data}
+      dashDays={dashDays}
+      refreshing={dashRefreshing}
+      onChangeDays={changeDashDays}
+      onNavigate={go}
+      orderTable={orderTable}
+      hasPermission={hasPermission}
+      isAdmin={isAdmin}
+    />
   );
   const ordersView = () => (
-    <section className="adm-panel">
-      <div className="adm-tabs">
-        <button
-          className={tab !== 'requests' && tab !== 'returns' ? 'active' : ''}
-          onClick={() => {
-            setTab('orders');
-            setFilter('');
-          }}
-        >
-          Tất cả đơn hàng
-        </button>
-        <button
-          className={tab === 'requests' ? 'active' : ''}
-          onClick={() => {
-            setTab('requests');
-            setFilter('');
-          }}
-        >
-          Yêu cầu hủy, đổi trả & hoàn tiền
-        </button>
-        <button
-          className={tab === 'returns' ? 'active' : ''}
-          onClick={() => {
-            setTab('returns');
-            setFilter('');
-          }}
-        >
-          Hàng trả về
-        </button>
-      </div>
-      {toolBar(
-        'Tìm theo mã đơn, khách hàng, mã vận đơn...',
-        tab === 'returns' ? (
-          <select
-            className="adm-select"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          >
-            <option value="">Tất cả trạng thái</option>
-            {RETURN_GOODS_STATES.map((v) => (
-              <option key={v} value={v}>
-                {label(`return_${v}`)}
-              </option>
-            ))}
-          </select>
-        ) : (
-          selectFilter(
-            tab === 'requests'
-              ? ['pending', 'approved', 'rejected']
-              : ORDER_STATES,
-          )
-        ),
-      )}
-      {tab === 'returns' ? (
-        <Table
-          columns={[
-            'Đơn hàng',
-            'Khách hàng',
-            'Sản phẩm trả về',
-            'Vận chuyển',
-            'Cập nhật',
-            'Trạng thái',
-            '',
-          ]}
-          rows={filtered(data)}
-          empty="Chưa có hàng trả về"
-        >
-          {filtered(data).map((g) => (
-            <tr key={g.id}>
-              <td>
-                <strong>{g.orderCode || `#${g.orderId}`}</strong>
-                <small>{money(g.total)}</small>
-              </td>
-              <td>{g.userName}</td>
-              <td className="adm-truncate">
-                {(g.items || [])
-                  .map((item) => `${item.name} × ${item.quantity}`)
-                  .join(', ')}
-              </td>
-              <td>
-                {g.trackingCode ? (
-                  <>
-                    <strong>{g.trackingCode}</strong>
-                    <small>{g.carrier || 'Đơn vị vận chuyển'}</small>
-                  </>
-                ) : (
-                  '—'
-                )}
-              </td>
-              <td>{fmtDate(g.updatedAt || g.createdAt)}</td>
-              <td>
-                <Badge value={`return_${g.status}`} />
-              </td>
-              <td>
-                <button
-                  className="adm-btn small"
-                  onClick={() => open('returnGoods', g)}
-                >
-                  <Eye size={14} />
-                  Xử lý
-                </button>
-              </td>
-            </tr>
-          ))}
-        </Table>
-      ) : tab === 'requests' ? (
-        <Table
-          columns={[
-            'Đơn hàng',
-            'Khách hàng',
-            'Loại yêu cầu',
-            'Lý do',
-            'Ngày gửi',
-            'Trạng thái',
-            '',
-          ]}
-          rows={filtered(data)}
-        >
-          {filtered(data).map((r) => (
-            <tr key={r.id}>
-              <td>
-                <strong>{r.orderCode || `#${r.orderId}`}</strong>
-                <small>{money(r.total)}</small>
-              </td>
-              <td>{r.userName}</td>
-              <td>
-                <Badge value={r.type} />
-              </td>
-              <td className="adm-truncate">{r.reason}</td>
-              <td>{fmtDate(r.createdAt)}</td>
-              <td>
-                <Badge value={r.status} />
-              </td>
-              <td>
-                <button
-                  className="adm-btn small"
-                  onClick={() => open('request', r)}
-                >
-                  <Eye size={14} />
-                  Xử lý
-                </button>
-              </td>
-            </tr>
-          ))}
-        </Table>
-      ) : (
-        orderTable(filtered(data))
-      )}
-    </section>
+    <AdminOrders
+      orders={data}
+      requests={orderRequests}
+      returnGoods={returnGoods}
+      tab={tab}
+      setTab={setTab}
+      query={query}
+      setQuery={setQuery}
+      filter={filter}
+      setFilter={setFilter}
+      page={page}
+      setPage={setPage}
+      onOpenOrder={orderDetail}
+      onOpenRequest={(r) => open('request', r)}
+      onOpenReturnGoods={(g) => open('returnGoods', g)}
+      onOpenPrescription={openPrescriptionById}
+      onOpenCreateOrder={() => open('createOrder', {})}
+      onReload={load}
+      notify={notify}
+      hasPermission={hasPermission}
+    />
   );
   const prescriptionsView = () => (
     <>
@@ -975,7 +696,11 @@ export default function Admin({ user, onExit, onLogout, config }) {
       <section className="adm-panel">
         {toolBar(
           'Tìm đơn thuốc, khách hàng...',
-          selectFilter(['pending', 'approved', 'rejected']),
+          selectFilter(
+            ['pending', 'partial', 'approved', 'rejected'],
+            'Tất cả trạng thái',
+            (v) => (v === 'pending' ? 'Chờ duyệt' : label(v)),
+          ),
         )}
         <Table
           columns={[
@@ -1002,7 +727,9 @@ export default function Admin({ user, onExit, onLogout, config }) {
               <td>{rx.orderCode || 'Chưa gắn đơn hàng'}</td>
               <td>{fmtDate(rx.createdAt)}</td>
               <td>
-                <Badge value={rx.status} />
+                <Badge value={rx.status}>
+                  {rx.status === 'pending' ? 'Chờ duyệt' : undefined}
+                </Badge>
               </td>
               <td>
                 <button
@@ -1529,7 +1256,11 @@ export default function Admin({ user, onExit, onLogout, config }) {
           ? 'Tìm nội dung hỗ trợ...'
           : 'Tìm tiêu đề, từ khóa...',
         tab === 'support'
-          ? selectFilter(['pending', 'in_progress', 'resolved'])
+          ? selectFilter(
+              ['pending', 'in_progress', 'resolved'],
+              'Tất cả trạng thái',
+              (v) => (v === 'pending' ? 'Chờ hỗ trợ' : label(v)),
+            )
           : null,
         tab === 'knowledge' && hasPermission('knowledge')
           ? addButton('Thêm tri thức', 'knowledge', { active: true })
@@ -1663,86 +1394,463 @@ export default function Admin({ user, onExit, onLogout, config }) {
       )}
     </section>
   );
-  const reportsView = () => (
-    <>
-      <form
-        className="adm-report-range"
-        onSubmit={(e) => {
-          e.preventDefault();
-          load();
-        }}
-      >
-        <div>
-          <h3>Hiệu quả kinh doanh</h3>
-          <p>Chọn khoảng thời gian để xem dữ liệu thực tế</p>
-        </div>
-        <label>
-          Từ ngày
-          <input
-            aria-label="Từ ngày"
-            type="date"
-            value={range.from}
-            onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))}
-          />
-        </label>
-        <label>
-          Đến ngày
-          <input
-            aria-label="Đến ngày"
-            type="date"
-            value={range.to}
-            onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
-          />
-        </label>
-        <button className="adm-btn primary" type="submit">
-          Xem báo cáo
-        </button>
-        <a
-          className="adm-btn"
-          href={`/api/admin/reports/export?${new URLSearchParams(range)}`}
-          download
+  const reportsView = () => {
+    const activeFrom = range.from || data?.from || '';
+    const activeTo = range.to || data?.to || '';
+    const applyPreset = (fromVal, toVal) => {
+      const next = { from: fromVal, to: toVal };
+      setRange(next);
+      load(false, next);
+    };
+    const todayIso = vnDate(0);
+    const presets = [
+      ['7 ngày', vnDate(-6), todayIso],
+      ['14 ngày', vnDate(-13), todayIso],
+      ['30 ngày', vnDate(-29), todayIso],
+      ['Tháng này', `${todayIso.slice(0, 8)}01`, todayIso],
+    ];
+    const revDelta = deltaInfo(data?.revenue, data?.previous?.revenue);
+    const ordDelta = deltaInfo(data?.orderCount, data?.previous?.orderCount);
+    const cancelDelta = deltaInfo(
+      data?.cancellationRate,
+      data?.previous?.cancellationRate,
+      true,
+    );
+    const alertTotal =
+      (data?.inventory?.lowStockCount || 0) +
+      (data?.inventory?.expiringCount || 0) +
+      (data?.inventory?.expiredCount || 0);
+    const kpiCards = [
+      {
+        title: 'Doanh thu thuần trong kỳ',
+        value: money(data?.revenue),
+        Icon: Wallet,
+        tone: 'tone-0',
+        badge: revDelta.text,
+        badgeTone: revDelta.tone,
+        dir: revDelta.dir,
+        sub: `Tiền hàng ${money(data?.grossRevenue)} · Giảm giá ${money(data?.totalDiscount)}${data?.refundTotal > 0 ? ` · Hoàn ${money(data?.refundTotal)}` : ''}`,
+      },
+      {
+        title: 'Tổng đơn hàng',
+        value: count(data?.orderCount),
+        Icon: ShoppingBag,
+        tone: 'tone-1',
+        badge: ordDelta.text,
+        badgeTone: ordDelta.tone,
+        dir: ordDelta.dir,
+        sub: `${count(data?.completedOrders)} hoàn tất · TB ${money(data?.averageOrder)}/đơn`,
+      },
+      {
+        title: 'Tỷ lệ hủy đơn',
+        value: `${Number(data?.cancellationRate || 0).toFixed(1)}%`,
+        Icon: AlertTriangle,
+        tone: 'tone-2',
+        badge: `Hoàn tất ${Number(data?.completionRate || 0).toFixed(1)}%`,
+        badgeTone:
+          Number(data?.cancellationRate || 0) > 25
+            ? 'down'
+            : Number(data?.completionRate || 0) >= 60
+              ? 'up'
+              : 'flat',
+        dir: cancelDelta.dir,
+        sub: `${count(data?.cancelledOrders)} đơn hủy / ${count(data?.orderCount)} đơn trong kỳ`,
+      },
+      {
+        title: 'Tồn kho khả dụng',
+        value: count(data?.inventory?.sellable),
+        Icon: Boxes,
+        tone: 'tone-3',
+        badge: alertTotal > 0 ? `${count(alertTotal)} cảnh báo kho` : 'Kho ổn định',
+        badgeTone: alertTotal > 0 ? 'warn' : 'up',
+        dir: 'flat',
+        sub: `Giá trị vốn ${money(data?.inventory?.value)} · Giữ ${count(data?.inventory?.reserved)}`,
+      },
+    ];
+    const topProducts = list(data?.topProducts);
+    const paymentList = list(data?.paymentBreakdown);
+    const categoryList = list(data?.categoryBreakdown);
+    const topRevSum = Math.max(
+      1,
+      Number(data?.grossRevenue) ||
+        categoryList.reduce((n, c) => n + (Number(c.revenue) || 0), 0) ||
+        topProducts.reduce((n, p) => n + (Number(p.revenue) || 0), 0),
+    );
+    const maxCatRev = Math.max(1, ...categoryList.map((c) => Number(c.revenue) || 0));
+    const hasPayRev = paymentList.some((m) => (Number(m.revenue) || 0) > 0);
+    const maxPayMetric = Math.max(
+      1,
+      ...paymentList.map((m) => (hasPayRev ? Number(m.revenue) || 0 : Number(m.orders) || 0)),
+    );
+    const alerts = list(data?.inventoryAlerts);
+    const exportParams = new URLSearchParams(
+      Object.fromEntries(
+        Object.entries({ from: activeFrom, to: activeTo }).filter(([, v]) => v),
+      ),
+    );
+
+    return (
+      <div className="adm-rp">
+        <form
+          className="adm-rp-toolbar"
+          onSubmit={(e) => {
+            e.preventDefault();
+            load(false, { from: activeFrom, to: activeTo });
+          }}
         >
-          <Download size={16} />
-          Xuất CSV
-        </a>
-      </form>
-      {stats(data, true)}
-      <section className="adm-panel">
-        <div className="adm-panel-head">
-          <div>
-            <h3>Doanh thu theo ngày</h3>
-            <p>Tổng hợp các giao dịch đã thanh toán</p>
+          <div className="adm-rp-title-block">
+            <div className="adm-rp-eyebrow">
+              <BarChart3 size={14} />
+              <span>BÁO CÁO & PHÂN TÍCH KINH DOANH</span>
+            </div>
+            <h3>Hiệu quả vận hành Nhà thuốc An Tâm</h3>
+            <p>
+              <Calendar size={13} />
+              <span>
+                Kỳ báo cáo: <strong>{fmtDate(data?.from || activeFrom)}</strong> →{' '}
+                <strong>{fmtDate(data?.to || activeTo)}</strong>
+                {data?.spanDays ? ` (${data.spanDays} ngày)` : ''}
+              </span>
+            </p>
           </div>
-        </div>
-        <Chart data={data?.dailyRevenue || []} />
-      </section>
-      <section className="adm-panel">
-        <div className="adm-panel-head">
-          <div>
-            <h3>Sản phẩm bán chạy</h3>
-            <p>Sản phẩm có số lượng bán cao nhất trong kỳ</p>
+
+          <div className="adm-rp-controls">
+            <div className="adm-rp-presets" role="group" aria-label="Chọn nhanh khoảng ngày">
+              {presets.map(([name, f, t]) => {
+                const active = activeFrom === f && activeTo === t;
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    className={`adm-rp-preset ${active ? 'active' : ''}`}
+                    onClick={() => applyPreset(f, t)}
+                  >
+                    {name}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="adm-rp-dates">
+              <label>
+                Từ ngày
+                <input
+                  aria-label="Từ ngày"
+                  type="date"
+                  value={activeFrom}
+                  onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))}
+                />
+              </label>
+              <label>
+                Đến ngày
+                <input
+                  aria-label="Đến ngày"
+                  type="date"
+                  value={activeTo}
+                  onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
+                />
+              </label>
+              <button className="adm-btn primary" type="submit">
+                Xem báo cáo
+              </button>
+              <a
+                className="adm-btn"
+                href={`/api/admin/reports/export?${exportParams}`}
+                download
+              >
+                <Download size={15} />
+                Xuất CSV
+              </a>
+            </div>
           </div>
-        </div>
-        <Table
-          columns={['Sản phẩm', 'Số lượng đã bán', 'Doanh thu']}
-          rows={list(data?.topProducts)}
-        >
-          {list(data?.topProducts).map((p, i) => (
-            <tr key={p.id || i}>
-              <td>
-                <strong>
-                  <span className="adm-rank">{i + 1}</span>
-                  {p.name}
-                </strong>
-              </td>
-              <td>{count(p.quantity)}</td>
-              <td className="adm-amount">{money(p.revenue)}</td>
-            </tr>
+        </form>
+
+        <div className="adm-rp-kpis">
+          {kpiCards.map(({ title, value, Icon, tone, badge, badgeTone, dir, sub }) => (
+            <article className="adm-rp-kpi" key={title}>
+              <div className="adm-rp-kpi-top">
+                <span>{title}</span>
+                <span className={`adm-stat-icon ${tone}`}>
+                  <Icon size={19} />
+                </span>
+              </div>
+              <strong>{value}</strong>
+              <div className="adm-rp-kpi-meta">
+                <span className={`adm-rp-delta is-${badgeTone}`}>
+                  {dir === 'up' && <TrendingUp size={12} />}
+                  {dir === 'down' && <TrendingDown size={12} />}
+                  {badge}
+                </span>
+              </div>
+              <small>{sub}</small>
+            </article>
           ))}
-        </Table>
-      </section>
-    </>
-  );
+        </div>
+
+        <div className="adm-rp-main-grid">
+          <section className="adm-panel">
+            <div className="adm-panel-head">
+              <div>
+                <h3>Xu hướng doanh thu & đơn hàng</h3>
+                <p>Theo dõi biến động thu tiền và lượng đơn phát sinh từng ngày</p>
+              </div>
+              <span className="adm-soft-label">Kỳ {data?.spanDays || 30} ngày</span>
+            </div>
+            <ReportChart data={data?.dailyRevenue || []} />
+          </section>
+
+          <section className="adm-panel">
+            <div className="adm-panel-head">
+              <div>
+                <h3>Cơ cấu trạng thái đơn</h3>
+                <p>Tỷ trọng đơn hoàn tất, đang xử lý và hủy trong kỳ</p>
+              </div>
+              <span className="adm-soft-label">{count(data?.orderCount)} đơn</span>
+            </div>
+            <StatusDonut
+              breakdown={data?.statusBreakdown || []}
+              totalOrders={data?.orderCount || 0}
+            />
+          </section>
+        </div>
+
+        <div className="adm-rp-grid-3">
+          <section className="adm-panel adm-rp-subpanel">
+            <div className="adm-panel-head">
+              <div>
+                <h3>Kênh thanh toán</h3>
+                <p>Phân bổ đơn hàng và dòng tiền theo phương thức</p>
+              </div>
+              <span className="adm-stat-icon tone-1">
+                <CreditCard size={17} />
+              </span>
+            </div>
+            <div className="adm-rp-bars-list">
+              {paymentList.length ? (
+                paymentList.map((m) => {
+                  const metricVal = hasPayRev ? Number(m.revenue) || 0 : Number(m.orders) || 0;
+                  const pct = metricVal > 0 ? Math.max(2, (metricVal / maxPayMetric) * 100) : 0;
+                  return (
+                    <div className="adm-rp-bar-row" key={m.method}>
+                      <div className="adm-rp-bar-head">
+                        <strong>{paymentLabel(m.method)}</strong>
+                        <span>{money(m.revenue)}</span>
+                      </div>
+                      <div className="adm-rp-progress">
+                        <span style={{ width: `${pct}%` }} />
+                      </div>
+                      <small>
+                        {count(m.orders)} đơn phát sinh · {count(m.completedOrders)} đơn thu tiền
+                      </small>
+                    </div>
+                  );
+                })
+              ) : (
+                <Empty title="Chưa có giao dịch trong kỳ" />
+              )}
+            </div>
+          </section>
+
+          <section className="adm-panel adm-rp-subpanel">
+            <div className="adm-panel-head">
+              <div>
+                <h3>Doanh thu theo danh mục</h3>
+                <p>Nhóm sản phẩm đóng góp doanh thu cao nhất</p>
+              </div>
+              <span className="adm-stat-icon">
+                <Layers size={17} />
+              </span>
+            </div>
+            <div className="adm-rp-bars-list">
+              {categoryList.length ? (
+                categoryList.slice(0, 6).map((c) => {
+                  const rev = Number(c.revenue) || 0;
+                  const pct = rev > 0 ? Math.max(2, (rev / maxCatRev) * 100) : 0;
+                  return (
+                    <div className="adm-rp-bar-row" key={c.id || c.name}>
+                      <div className="adm-rp-bar-head">
+                        <strong>{c.name}</strong>
+                        <span>{money(c.revenue)}</span>
+                      </div>
+                      <div className="adm-rp-progress is-teal">
+                        <span style={{ width: `${pct}%` }} />
+                      </div>
+                      <small>
+                        Đã bán {count(c.quantity)} sản phẩm · {count(c.orderCount)} đơn hàng
+                      </small>
+                    </div>
+                  );
+                })
+              ) : (
+                <Empty
+                  title="Chưa có doanh thu danh mục"
+                  description="Dữ liệu sẽ hiển thị khi có đơn hàng giao thành công và thanh toán."
+                />
+              )}
+            </div>
+          </section>
+
+          <section className="adm-panel adm-rp-subpanel">
+            <div className="adm-panel-head">
+              <div>
+                <h3>Vận hành dược sĩ & tư vấn</h3>
+                <p>Đơn thuốc, chatbot và chăm sóc khách hàng trong kỳ</p>
+              </div>
+              <span className="adm-stat-icon tone-3">
+                <Activity size={17} />
+              </span>
+            </div>
+            <div className="adm-rp-ops-list">
+              <div>
+                <span>Đơn thuốc gửi trong kỳ</span>
+                <strong>{count(data?.prescriptionStats?.total)}</strong>
+                <small>
+                  Duyệt {count(data?.prescriptionStats?.approved)} · Chờ{' '}
+                  {count(data?.prescriptionStats?.pending)} · Từ chối{' '}
+                  {count(data?.prescriptionStats?.rejected)}
+                </small>
+              </div>
+              <div>
+                <span>Phiên hỏi đáp Chatbot</span>
+                <strong>{count(data?.chatCount)}</strong>
+                <small>Tổng cuộc hội thoại tạo mới trong kỳ</small>
+              </div>
+              <div>
+                <span>Yêu cầu tư vấn dược sĩ</span>
+                <strong>{count(data?.handoffCount)}</strong>
+                <small>Khách cần dược sĩ hỗ trợ trực tiếp</small>
+              </div>
+              <div>
+                <span>Khách hàng hoạt động</span>
+                <strong>{count(data?.customerCount)}</strong>
+                <small>Phí vận chuyển đã thu: {money(data?.totalShipping)}</small>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div className="adm-rp-bottom-grid">
+          <section className="adm-panel">
+            <div className="adm-panel-head">
+              <div>
+                <h3>Top sản phẩm bán chạy</h3>
+                <p>Xếp hạng theo tiền hàng ({money(data?.grossRevenue)}) và tỷ trọng đóng góp</p>
+              </div>
+              <span className="adm-soft-label">Top {topProducts.length}</span>
+            </div>
+            <Table
+              columns={['Hạng & Sản phẩm', 'SL bán', 'Doanh thu', 'Tỷ trọng']}
+              rows={topProducts}
+              empty="Chưa có sản phẩm bán hoàn tất trong khoảng thời gian này"
+            >
+              {topProducts.map((p, i) => {
+                const share = Math.min(
+                  100,
+                  Math.round(((Number(p.revenue) || 0) / topRevSum) * 100),
+                );
+                return (
+                  <tr key={p.id || i}>
+                    <td>
+                      <div className="adm-rp-prod-cell">
+                        <span className={`adm-rp-medal is-top-${i + 1}`}>
+                          {i + 1}
+                        </span>
+                        {p.image ? (
+                          <img
+                            src={p.image}
+                            alt=""
+                            className="adm-rp-prod-thumb"
+                          />
+                        ) : (
+                          <span className="adm-rp-prod-fallback">
+                            <Pill size={14} />
+                          </span>
+                        )}
+                        <div>
+                          <strong>{p.name}</strong>
+                          <small>
+                            {[p.categoryName, p.unit].filter(Boolean).join(' · ')}
+                            {p.orderCount ? ` · ${count(p.orderCount)} đơn` : ''}
+                          </small>
+                        </div>
+                      </div>
+                    </td>
+                    <td>{count(p.quantity)}</td>
+                    <td className="adm-amount">{money(p.revenue)}</td>
+                    <td>
+                      <div className="adm-rp-share">
+                        <div className="adm-rp-progress">
+                          <span style={{ width: `${share > 0 ? Math.max(2, share) : 0}%` }} />
+                        </div>
+                        <span>{share}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </Table>
+          </section>
+
+          <section className="adm-panel adm-rp-alerts-panel">
+            <div className="adm-panel-head">
+              <div>
+                <h3>Sức khỏe kho & Cảnh báo</h3>
+                <p>Theo dõi lô thuốc hết hạn, sắp hết hạn và sắp hết hàng</p>
+              </div>
+              {hasPermission('inventory') && (
+                <button
+                  type="button"
+                  className="adm-btn"
+                  onClick={() => go('inventory', { tab: 'alerts' })}
+                >
+                  Xem kho
+                  <ChevronRight size={14} />
+                </button>
+              )}
+            </div>
+            <div className="adm-rp-alert-pills">
+              <span className="adm-badge is-expired">
+                Hết hạn: {count(data?.inventory?.expiredCount)}
+              </span>
+              <span className="adm-badge is-expiring">
+                Sắp hết hạn: {count(data?.inventory?.expiringCount)}
+              </span>
+              <span className="adm-badge is-low_stock">
+                Sắp hết hàng: {count(data?.inventory?.lowStockCount)}
+              </span>
+            </div>
+            <div className="adm-rp-alert-list">
+              {alerts.length ? (
+                alerts.map((a, idx) => (
+                  <div
+                    key={`${a.type}-${a.productId}-${a.batchId || idx}`}
+                    className="adm-rp-alert-row"
+                  >
+                    <div>
+                      <strong>{a.productName}</strong>
+                      <small>
+                        {a.batchNumber ? `Lô ${a.batchNumber} · ` : ''}
+                        {a.expiresAt ? `HSD ${fmtDate(a.expiresAt)} · ` : ''}
+                        SL: {count(a.quantity)}
+                      </small>
+                    </div>
+                    <Badge value={a.type} />
+                  </div>
+                ))
+              ) : (
+                <div className="adm-rp-all-good">
+                  <CheckCircle2 size={22} />
+                  <div>
+                    <strong>Kho hàng an toàn</strong>
+                    <p>Không có lô hết hạn hay sản phẩm dưới ngưỡng cảnh báo.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+      </div>
+    );
+  };
   const settingsView = () => (
     <form
       onSubmit={(e) =>
@@ -3136,6 +3244,8 @@ export default function Admin({ user, onExit, onLogout, config }) {
                 submit(e, `/admin/requests/${item.id}/refund`, 'POST', {
                   amount: Number(form.amount) || item.total,
                   confirmedCash: !!form.confirmedCash,
+                  confirmedTransfer: !!form.confirmedTransfer,
+                  refundReference: form.refundReference || '',
                 });
               else
                 submit(e, `/admin/requests/${item.id}`, 'PATCH', {
@@ -3149,9 +3259,18 @@ export default function Admin({ user, onExit, onLogout, config }) {
           >
             <div className="adm-modal-body">
               <div className="adm-message-preview">
-                <strong>
-                  {item.orderCode} · {item.userName}
-                </strong>
+                <div className="adm-ord-req-head">
+                  <strong>
+                    {item.orderCode} · {item.userName}
+                  </strong>
+                  <button
+                    type="button"
+                    className="adm-text-btn"
+                    onClick={() => orderDetail({ id: item.orderId, code: item.orderCode })}
+                  >
+                    Xem đơn hàng <ArrowUpRight size={14} />
+                  </button>
+                </div>
                 <p>{item.reason}</p>
                 <Badge value={item.status} />
                 {item.returnGoodsStatus && (
@@ -3258,11 +3377,24 @@ export default function Admin({ user, onExit, onLogout, config }) {
                       onChange={change}
                     />
                   )}
-                  {item.paymentMethod === 'bank_transfer' && <>
-                    <Field label="Mã giao dịch hoàn tiền" name="refundReference" value={form.refundReference || ''} onChange={change} minLength={6} required />
-                    <CheckField label="Đã hoàn tiền chuyển khoản cho khách" name="confirmedTransfer" value={form.confirmedTransfer} onChange={change} />
-                  </>}
-
+                  {item.paymentMethod === 'bank_transfer' && (
+                    <>
+                      <Field
+                        label="Mã giao dịch hoàn tiền"
+                        name="refundReference"
+                        value={form.refundReference || ''}
+                        onChange={change}
+                        minLength={6}
+                        required
+                      />
+                      <CheckField
+                        label="Đã hoàn tiền chuyển khoản cho khách"
+                        name="confirmedTransfer"
+                        value={form.confirmedTransfer}
+                        onChange={change}
+                      />
+                    </>
+                  )}
                 </>
               ) : (
                 <div className="adm-info-banner compact">
@@ -3299,192 +3431,64 @@ export default function Admin({ user, onExit, onLogout, config }) {
           </form>
         </Modal>
       );
-    if (type === 'order') {
-      const address = safeJson(item.address, {});
-      const items = safeJson(item.items, []);
+    if (type === 'createOrder')
       return (
-        <Modal title={`Đơn hàng ${item.code}`} onClose={close} wide>
-          <div className="adm-modal-body">
-            <div className="adm-order-top">
-              <Badge value={item.status} />
-              <Badge value={item.paymentStatus} />
-              <span>{dateTime(item.createdAt)}</span>
-            </div>
-            <div className="adm-order-info">
-              <div>
-                <span>Người nhận hàng</span>
-                <strong>
-                  {address.recipient ||
-                    item.customerName ||
-                    item.userName ||
-                    '—'}
-                </strong>
-                <p>{address.phone || item.customerPhone}</p>
-                <p>
-                  {[address.line1, address.ward, address.district, address.city]
-                    .filter(Boolean)
-                    .join(', ')}
-                </p>
-              </div>
-              <div>
-                <span>Thông tin thanh toán</span>
-                <strong>
-                  {item.paymentMethod === 'bank_transfer'
-                    ? 'Chuyển khoản VietQR'
-                    : item.paymentMethod === 'cod'
-                    ? 'Thanh toán khi nhận hàng'
-                    : item.paymentMethod === 'demo'
-                      ? 'Thanh toán thử nghiệm'
-                      : text(item.paymentMethod)}
-                </strong>
-                <p>{item.note || 'Không có ghi chú'}</p>
-                {item.prescriptionId && hasPermission('prescriptions') && (
-                  <button
-                    className="adm-text-btn"
-                    onClick={async () => {
-                      try {
-                        const rxs = list(await api('/admin/prescriptions'));
-                        const rx = rxs.find(
-                          (r) => r.id === item.prescriptionId,
-                        );
-                        if (rx) open('prescription', rx);
-                        else notify('Không tìm thấy đơn thuốc.', 'error');
-                      } catch (e) {
-                        notify(e.message, 'error');
-                      }
-                    }}
-                  >
-                    Xem đơn thuốc #{item.prescriptionId}
-                    <ArrowUpRight size={14} />
-                  </button>
-                )}
-              </div>
-            </div>
-            <Table
-              columns={['Sản phẩm', 'Đơn giá', 'Số lượng', 'Thành tiền']}
-              rows={items}
-            >
-              {items.map((p, i) => (
-                <tr key={p.id || i}>
-                  <td>
-                    <strong>{p.name || p.productName}</strong>
-                    <small>{p.unit}</small>
-                  </td>
-                  <td>{money(p.price)}</td>
-                  <td>{p.quantity}</td>
-                  <td className="adm-amount">{money(p.price * p.quantity)}</td>
-                </tr>
-              ))}
-            </Table>
-            <div className="adm-order-totals">
-              <div>
-                <span>Tiền hàng</span>
-                <span>{money(item.subtotal)}</span>
-              </div>
-              <div>
-                <span>Phí giao hàng</span>
-                <span>{money(item.shippingFee)}</span>
-              </div>
-              <div>
-                <span>Giảm giá</span>
-                <span>−{money(item.discount)}</span>
-              </div>
-              <div className="total">
-                <strong>Tổng thanh toán</strong>
-                <strong>{money(item.total)}</strong>
-              </div>
-            </div>
-            {item.paymentMethod === 'bank_transfer' && item.status === 'pending_payment' && <form onSubmit={(event) => submit(event, `/admin/orders/${item.id}/bank-transfer`, 'POST', {
-              amount: form.bankAmount, reference: form.bankReference, confirmed: !!form.bankConfirmed,
-            })}>
-              <h3>Đối soát chuyển khoản</h3>
-              <Field label="Mã giao dịch trên sao kê" name="bankReference" value={form.bankReference || ''} onChange={change} required minLength={6} />
-              <Field label="Số tiền đã nhận" type="number" name="bankAmount" value={form.bankAmount || ''} onChange={change} required />
-              <CheckField label="Đã kiểm tra sao kê ngân hàng" name="bankConfirmed" value={form.bankConfirmed} onChange={change} />
-              <button className="adm-btn primary" disabled={saving}>Xác nhận đã nhận tiền</button>
-            </form>}
-            {(ORDER_NEXT[item.status] || []).length > 0 && (
-              <form
-                onSubmit={(e) =>
-                  submit(e, `/admin/orders/${item.id}/status`, 'PATCH', {
-                    status: form.nextStatus,
-                    collected: !!form.collected,
-                    note: form.statusNote,
-                  })
-                }
-              >
-                <div className="adm-order-update">
-                  <Field label="Chuyển trạng thái">
-                    <select
-                      name="nextStatus"
-                      value={form.nextStatus || ''}
-                      onChange={change}
-                      required
-                    >
-                      <option value="">Chọn trạng thái tiếp theo</option>
-                      {ORDER_NEXT[item.status].map((s) => (
-                        <option key={s} value={s}>
-                          {label(s)}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  {form.nextStatus === 'delivered' &&
-                    item.paymentMethod === 'cod' && (
-                      <CheckField
-                        label="Đã thu đủ tiền COD"
-                        name="collected"
-                        value={form.collected}
-                        onChange={change}
-                      />
-                    )}
-                  {form.nextStatus === 'delivery_failed' && (
-                    <Field
-                      label="Lý do giao thất bại"
-                      name="statusNote"
-                      value={form.statusNote}
-                      onChange={change}
-                      minLength={5}
-                      required
-                    />
-                  )}
-                  <button
-                    className="adm-btn primary"
-                    type="submit"
-                    disabled={saving}
-                  >
-                    {saving ? (
-                      <LoaderCircle className="adm-spin" size={16} />
-                    ) : (
-                      <Check size={16} />
-                    )}
-                    Cập nhật đơn hàng
-                  </button>
-                </div>
-              </form>
-            )}
-            {(item.requests || []).length > 0 && (
-              <div className="adm-order-requests">
-                <h3>Yêu cầu hủy / hoàn tiền</h3>
-                {item.requests.map((r) => (
-                  <div key={r.id}>
-                    <p>
-                      <strong>{r.type}</strong> — {r.reason}
-                    </p>
-                    <Badge value={r.status} />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="adm-modal-footer">
-            <button type="button" className="adm-btn" onClick={close}>
-              Đóng chi tiết
-            </button>
-          </div>
+        <Modal title="Tạo đơn hàng hộ khách" onClose={close} wide>
+          <CreateOrderContent
+            config={config}
+            onClose={close}
+            notify={notify}
+            onCreated={async (created) => {
+              await load(true);
+              open('order', created);
+            }}
+          />
         </Modal>
       );
-    }
+    if (type === 'order')
+      return (
+        <Modal title={`Đơn hàng ${item.code}`} onClose={close} wide>
+          <OrderDetailContent
+            item={item}
+            form={form}
+            setForm={setForm}
+            change={change}
+            saving={saving}
+            setSaving={setSaving}
+            onClose={close}
+            notify={notify}
+            hasPermission={hasPermission}
+            onOpenPrescription={openPrescriptionById}
+            onOpenRequest={(r) => open('request', r)}
+            onOrderUpdated={async (updated) => {
+              setModal({ type: 'order', data: updated });
+              setForm((prev) => ({
+                ...prev,
+                nextStatus: '',
+                statusNote: '',
+                collected: false,
+              }));
+              await load(true);
+            }}
+            onBankReconcile={(event) =>
+              submit(event, `/admin/orders/${item.id}/bank-transfer`, 'POST', {
+                amount: form.bankAmount,
+                reference: form.bankReference,
+                confirmed: !!form.bankConfirmed,
+              })
+            }
+            onSubmitStatus={(e) =>
+              submit(e, `/admin/orders/${item.id}/status`, 'PATCH', {
+                status: form.nextStatus,
+                collected: !!form.collected,
+                note: form.statusNote,
+                shippingCarrier: form.shippingCarrier,
+                trackingCode: form.trackingCode,
+              })
+            }
+          />
+        </Modal>
+      );
     return null;
   };
 
@@ -3565,7 +3569,7 @@ export default function Admin({ user, onExit, onLogout, config }) {
               <h1>{TITLES[view]}</h1>
               <p>
                 {view === 'dashboard'
-                  ? `Chào ${user?.name?.split(' ').slice(-1)[0] || 'bạn'}, cùng chăm sóc sức khỏe cộng đồng mỗi ngày.`
+                  ? `Chào ${user?.name || 'bạn'}, theo dõi toàn cảnh vận hành và số liệu nhà thuốc theo thời gian thực.`
                   : view === 'orders'
                     ? 'Quản lý đơn hàng xuyên suốt từ tiếp nhận đến giao thành công.'
                     : view === 'products'
