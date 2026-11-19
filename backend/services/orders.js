@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { now, today, camel } from '../repositories/database.js';
 import { transactionJson } from '../repositories/transactions.js';
+import { searchScore } from '../../shared/search.js';
 import {
   imageMimes,
   prescriptionMimes,
@@ -24,6 +25,7 @@ import {
   audit,
   getSettings,
   getProduct,
+  productList,
   cartRows,
   orderView,
   requestView,
@@ -205,6 +207,7 @@ export async function setOrderStatus(d, orderId, status, userId, note = '') {
 export async function expireOrders(d) {
   const minutes = Number((await getSettings(d)).paymentTimeoutMinutes),
     cutoff = new Date(Date.now() - minutes * 60000).toISOString();
+  let expiredCount = 0;
   for (const candidate of await d.all(
     "SELECT id FROM don_hang WHERE status='pending_payment' AND payment_status!='paid' AND COALESCE(updated_at,created_at)<?",
     cutoff,
@@ -234,8 +237,314 @@ export async function expireOrders(d) {
           order.promotion_id,
         );
       await audit(d, null, 'order.expired', 'order', order.id);
+      expiredCount++;
     });
   }
+  return expiredCount;
+}
+const ORDER_TRANSITIONS = {
+  pending: ['confirmed', 'cancelled'],
+  pending_payment: ['cancelled'],
+  pending_prescription: ['cancelled'],
+  confirmed: ['packing', 'cancelled'],
+  packing: ['shipping', 'cancelled'],
+  shipping: ['delivered', 'delivery_failed'],
+  delivery_failed: ['shipping', 'cancelled'],
+  delivered: [],
+  cancelled: [],
+  returned: [],
+};
+const ORDER_STATUS_TEXT = {
+  pending_prescription: 'Chờ duyệt đơn thuốc',
+  pending_payment: 'Chờ thanh toán',
+  pending: 'Chờ xác nhận',
+  confirmed: 'Đã xác nhận',
+  packing: 'Đang đóng gói',
+  shipping: 'Đang giao',
+  delivery_failed: 'Giao thất bại',
+  delivered: 'Đã giao',
+  cancelled: 'Đã hủy',
+  returned: 'Đã trả hàng',
+};
+const PAYMENT_STATUS_TEXT = {
+  unpaid: 'Chưa thanh toán',
+  paid: 'Đã thanh toán',
+  failed: 'Thất bại',
+  refund_pending: 'Chờ hoàn tiền',
+  refunded: 'Đã hoàn tiền',
+};
+const PAYMENT_METHOD_TEXT = {
+  cod: 'COD',
+  bank_transfer: 'Chuyển khoản VietQR',
+  vnpay: 'VNPay Sandbox',
+  demo: 'Thanh toán mô phỏng',
+};
+const safeCsvCell = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  const str = String(value ?? '');
+  const safe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
+  return `"${safe.replace(/"/g, '""')}"`;
+};
+const vnDay = (iso) =>
+  iso
+    ? new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date(iso))
+    : '';
+
+async function transitionOrderStatus(
+  d,
+  o,
+  { status, userId, note = '', collected = false, shippingCarrier, trackingCode },
+) {
+  assert(
+    ORDER_TRANSITIONS[o.status]?.includes(status),
+    409,
+    'Không thể chuyển trạng thái đơn theo thứ tự này.',
+  );
+  const cleanNote = text(note, 1000);
+  if (status === 'delivery_failed')
+    assert(
+      cleanNote.length >= 5,
+      400,
+      'Nhập lý do giao thất bại ít nhất 5 ký tự.',
+    );
+  if (status === 'confirmed') {
+    const rx = await d.one(
+      'SELECT status FROM don_thuoc WHERE order_id=?',
+      o.id,
+    );
+    assert(
+      !rx || rx.status === 'approved',
+      409,
+      'Đơn thuốc chưa được dược sĩ duyệt.',
+    );
+    assert(
+      o.payment_method === 'cod' || o.payment_status === 'paid',
+      409,
+      'Đơn trực tuyến cần thanh toán thành công trước khi xác nhận.',
+    );
+  }
+  if (status === 'delivered' && o.payment_method === 'cod')
+    assert(
+      collected === true,
+      409,
+      'Cần xác nhận đã thu đủ tiền COD trước khi giao thành công.',
+    );
+
+  const carrierText =
+    shippingCarrier !== undefined ? text(shippingCarrier, 100) : undefined;
+  const trackingText =
+    trackingCode !== undefined ? text(trackingCode, 100) : undefined;
+
+  await d.transaction(async () => {
+    if (status === 'confirmed') await confirmStock(d, o, userId);
+    if (status === 'cancelled') {
+      await releaseStock(d, o);
+      if (o.promotion_id)
+        await d.run(
+          'UPDATE khuyen_mai SET used_count=MAX(0,used_count-1) WHERE id=?',
+          o.promotion_id,
+        );
+      for (const pendingCancel of await d.all(
+        "SELECT id,reply FROM yeu_cau_huy_hoan WHERE order_id=? AND type='cancel' AND status='pending'",
+        o.id,
+      )) {
+        await d.update(
+          'yeu_cau_huy_hoan',
+          {
+            status: 'approved',
+            handler_id: userId,
+            reply:
+              pendingCancel.reply ||
+              cleanNote ||
+              'Đã hủy đơn theo xử lý của nhân viên',
+            updated_at: now(),
+          },
+          pendingCancel.id,
+        );
+      }
+      if (o.payment_status === 'paid') {
+        await d.update(
+          'don_hang',
+          {
+            payment_status: 'refund_pending',
+          },
+          o.id,
+        );
+        if (
+          !(await d.one(
+            "SELECT id FROM yeu_cau_huy_hoan WHERE order_id=? AND type='refund' AND status!='rejected'",
+            o.id,
+          ))
+        )
+          await d.insert('yeu_cau_huy_hoan', {
+            order_id: o.id,
+            user_id: o.user_id,
+            type: 'refund',
+            reason: cleanNote || 'Đơn đã thanh toán bị hủy',
+            status: 'approved',
+            handler_id: userId,
+          });
+      }
+    }
+    if (status === 'delivered' && o.payment_method === 'cod') {
+      await d.update(
+        'don_hang',
+        {
+          payment_status: 'paid',
+        },
+        o.id,
+      );
+      await d.insert('giao_dich_thanh_toan', {
+        order_id: o.id,
+        reference: `COD-${randomUUID()}`,
+        type: 'payment',
+        provider: 'cod',
+        amount: o.total,
+        status: 'success',
+      });
+    }
+    const fulfillmentPatch = {};
+    if (carrierText !== undefined)
+      fulfillmentPatch.shipping_carrier = carrierText;
+    if (trackingText !== undefined) fulfillmentPatch.tracking_code = trackingText;
+    if (Object.keys(fulfillmentPatch).length)
+      await d.update('don_hang', fulfillmentPatch, o.id);
+
+    const historyNote =
+      cleanNote ||
+      (status === 'shipping' && (carrierText || trackingText)
+        ? `Bàn giao vận chuyển: ${[carrierText, trackingText].filter(Boolean).join(' · ')}`
+        : '');
+    await setOrderStatus(d, o.id, status, userId, historyNote);
+    await audit(d, userId, 'order.status', 'order', o.id, {
+      from: o.status,
+      to: status,
+      ...(carrierText ? { shippingCarrier: carrierText } : {}),
+      ...(trackingText ? { trackingCode: trackingText } : {}),
+    });
+  });
+}
+
+async function applyApprovedCancelOrReturn(
+  d,
+  o,
+  { type, userId, reply = '', sealed = false, storeFault = false, restock = false },
+) {
+  if (type === 'cancel') {
+    assert(
+      [
+        'pending_prescription',
+        'pending_payment',
+        'pending',
+        'confirmed',
+        'packing',
+        'delivery_failed',
+      ].includes(o.status),
+      409,
+      'Đơn đã chuyển giao không thể hủy.',
+    );
+    await releaseStock(d, o);
+    await setOrderStatus(
+      d,
+      o.id,
+      'cancelled',
+      userId,
+      reply || 'Chấp nhận yêu cầu hủy',
+    );
+    if (o.promotion_id)
+      await d.run(
+        'UPDATE khuyen_mai SET used_count=MAX(0,used_count-1) WHERE id=?',
+        o.promotion_id,
+      );
+  }
+  if (type === 'return') {
+    assert(o.status === 'delivered', 409, 'Đơn không còn đủ điều kiện đổi trả.');
+    assert(
+      sealed === true || storeFault === true,
+      400,
+      'Xác nhận sản phẩm đủ điều kiện đổi trả hoặc lỗi thuộc nhà thuốc.',
+    );
+    if (restock === true) {
+      assert(
+        sealed === true,
+        400,
+        'Cần xác nhận thuốc còn nguyên niêm phong và đảm bảo chất lượng để nhập lại kho.',
+      );
+      await releaseStock(d, o);
+    }
+    await setOrderStatus(
+      d,
+      o.id,
+      'returned',
+      userId,
+      reply || 'Chấp nhận đổi trả',
+    );
+  }
+  if (['cancel', 'return'].includes(type) && o.payment_status === 'paid') {
+    await d.update(
+      'don_hang',
+      {
+        payment_status: 'refund_pending',
+      },
+      o.id,
+    );
+  }
+}
+
+async function listFilteredAdminOrders(d, query = {}) {
+  const settings = await getSettings(d);
+  let list = await Promise.all(
+    (await d.all('SELECT id FROM don_hang ORDER BY id DESC')).map(
+      async (o) => await orderView(d, o.id, { includeInternal: true, settings }),
+    ),
+  );
+  if (query.status) list = list.filter((o) => o.status === query.status);
+  if (query.paymentMethod)
+    list = list.filter((o) => o.paymentMethod === query.paymentMethod);
+  if (query.paymentStatus)
+    list = list.filter((o) => o.paymentStatus === query.paymentStatus);
+  if (query.prescription === 'true')
+    list = list.filter((o) => o.requiresPrescription);
+  if (query.prescription === 'false')
+    list = list.filter((o) => !o.requiresPrescription);
+  if (query.hasPendingRequest === 'true')
+    list = list.filter((o) =>
+      o.requests?.some(
+        (r) =>
+          r.status === 'pending' ||
+          (r.status === 'approved' &&
+            o.paymentStatus === 'refund_pending' &&
+            !r.refundAmount),
+      ),
+    );
+  if (query.from) list = list.filter((o) => vnDay(o.createdAt) >= query.from);
+  if (query.to) list = list.filter((o) => vnDay(o.createdAt) <= query.to);
+  if (query.search) {
+    const q = String(query.search).trim();
+    list = list.filter((o) =>
+      [
+        o.code,
+        o.userName,
+        o.email,
+        o.phone,
+        o.trackingCode,
+        o.shippingCarrier,
+        o.address?.recipient,
+        o.address?.phone,
+        o.address?.line1,
+        o.address?.city,
+        ...(o.items || []).map((i) => i.name),
+      ]
+        .filter(Boolean)
+        .some((field) => searchScore(field, q) > 0),
+    );
+  }
+  return list;
 }
 export function installOrders(
   app,
@@ -1171,17 +1480,333 @@ export function installOrders(
     });
   });
   app.get('/api/admin/orders', permission('orders'), async (req, res) => {
-    let list = await Promise.all(
-      (await d.all('SELECT id FROM don_hang ORDER BY id DESC')).map(
-        async (o) => await orderView(d, o.id),
-      ),
-    );
-    if (req.query.status)
-      list = list.filter((o) => o.status === req.query.status);
-    res.json({ data: list });
+    res.json({ data: await listFilteredAdminOrders(d, req.query) });
   });
+  app.get('/api/admin/orders/lookup', permission('orders'), async (req, res) => {
+    const [customers, addresses, products, promotions, settings] =
+      await Promise.all([
+        d.all(
+          `SELECT u.id,u.name,u.email,u.phone
+           FROM nguoi_dung u
+           JOIN khach_hang k ON k.id=u.id
+           WHERE u.active=1
+           ORDER BY u.name`,
+        ),
+        d.all(
+          'SELECT * FROM dia_chi_giao_hang ORDER BY is_default DESC, id',
+        ),
+        productList(d, { inStock: 'true' }),
+        d.all(
+          'SELECT * FROM khuyen_mai WHERE active=1 AND start_date<=? AND end_date>=? AND used_count<usage_limit ORDER BY id DESC',
+          today(),
+          today(),
+        ),
+        getSettings(d),
+      ]);
+    const addrMap = new Map();
+    for (const a of addresses) {
+      const list = addrMap.get(a.user_id) || [];
+      list.push(camel(a));
+      addrMap.set(a.user_id, list);
+    }
+    res.json({
+      data: {
+        customers: customers.map((c) => ({
+          ...camel(c),
+          addresses: addrMap.get(c.id) || [],
+        })),
+        products: products.filter((p) => !p.prescriptionRequired),
+        promotions: promotions.map(camel),
+        settings: {
+          shippingFee: Number(settings.shippingFee),
+          freeShippingThreshold: Number(settings.freeShippingThreshold),
+        },
+      },
+    });
+  });
+  app.get('/api/admin/orders/export', permission('orders'), async (req, res) => {
+    const orders = await listFilteredAdminOrders(d, req.query);
+    const headers = [
+      'Mã đơn',
+      'Ngày tạo',
+      'Khách hàng',
+      'SĐT tài khoản',
+      'Người nhận',
+      'SĐT nhận',
+      'Địa chỉ giao',
+      'SL sản phẩm',
+      'Chi tiết sản phẩm',
+      'Tiền hàng',
+      'Phí giao hàng',
+      'Giảm giá',
+      'Mã khuyến mãi',
+      'Tổng tiền',
+      'Phương thức TT',
+      'Trạng thái TT',
+      'Trạng thái đơn',
+      'Đơn vị vận chuyển',
+      'Mã vận đơn',
+      'Ghi chú khách',
+    ];
+    const rows = orders.map((o) => {
+      const addr = o.address || {};
+      const fullAddress = [addr.line1, addr.ward, addr.district, addr.city]
+        .filter(Boolean)
+        .join(', ');
+      const itemsText = (o.items || [])
+        .map((i) => `${i.name} x${i.quantity}`)
+        .join('; ');
+      return [
+        o.code,
+        o.createdAt,
+        o.userName || o.customerName || '',
+        o.phone || '',
+        addr.recipient || '',
+        addr.phone || '',
+        fullAddress,
+        Number(o.itemCount || 0),
+        itemsText,
+        Number(o.subtotal || 0),
+        Number(o.shippingFee || 0),
+        Number(o.discount || 0),
+        o.promotionCode || '',
+        Number(o.total || 0),
+        PAYMENT_METHOD_TEXT[o.paymentMethod] || o.paymentMethod,
+        PAYMENT_STATUS_TEXT[o.paymentStatus] || o.paymentStatus,
+        ORDER_STATUS_TEXT[o.status] || o.status,
+        o.shippingCarrier || '',
+        o.trackingCode || '',
+        o.note || '',
+      ];
+    });
+    const csv =
+      '\uFEFF' +
+      [headers, ...rows]
+        .map((row) => row.map(safeCsvCell).join(','))
+        .join('\r\n');
+    await audit(d, req.user.id, 'order.export', 'order', '', {
+      count: orders.length,
+    });
+    res
+      .set({
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="antam-orders-${today()}.csv"`,
+      })
+      .send(csv);
+  });
+  app.post(
+    '/api/admin/orders',
+    permission('orders'),
+    transactionJson(d, async (req, res) => {
+      const customerId = positiveInt(req.body.userId);
+      assert(customerId, 400, 'Chọn khách hàng hợp lệ.');
+      const customer = await d.one(
+        'SELECT id, name, active FROM nguoi_dung WHERE id=?',
+        customerId,
+      );
+      assert(customer && customer.active, 404, 'Tài khoản khách hàng không hoạt động.');
+      const method = req.body.paymentMethod || 'cod';
+      assert(
+        ['cod', 'demo', 'bank_transfer'].includes(method),
+        400,
+        'Phương thức thanh toán không được hỗ trợ khi tạo đơn hộ.',
+      );
+      assert(
+        method !== 'demo' || options.demo,
+        400,
+        'Thanh toán mô phỏng chỉ dùng trong chế độ demo.',
+      );
+      assert(
+        method !== 'bank_transfer' || options.bankTransfer,
+        400,
+        'Chưa cấu hình tài khoản nhận chuyển khoản VietQR.',
+      );
+      let address;
+      if (req.body.addressId) {
+        const a = await d.one(
+          'SELECT * FROM dia_chi_giao_hang WHERE id=? AND user_id=?',
+          Number(req.body.addressId),
+          customer.id,
+        );
+        assert(a, 400, 'Địa chỉ giao hàng không thuộc khách hàng này.');
+        address = camel(a);
+      } else address = addressValues(req.body.address || {});
+      address = {
+        recipient: address.recipient,
+        phone: address.phone,
+        line1: address.line1,
+        ward: address.ward,
+        district: address.district,
+        city: address.city,
+      };
+      const rawItems = Array.isArray(req.body.items) ? req.body.items : [];
+      assert(
+        rawItems.length > 0 && rawItems.length <= 50,
+        400,
+        'Đơn hàng cần từ 1 đến 50 dòng sản phẩm.',
+      );
+      const merged = new Map();
+      for (const row of rawItems) {
+        const pid = positiveInt(row.productId);
+        const qty = positiveInt(row.quantity, 999);
+        assert(pid && qty, 400, 'Sản phẩm hoặc số lượng không hợp lệ.');
+        merged.set(pid, (merged.get(pid) || 0) + qty);
+      }
+      const resolvedItems = [];
+      for (const [productId, quantity] of merged.entries()) {
+        const product = await getProduct(d, productId);
+        assert(
+          product && product.active && product.categoryActive,
+          404,
+          'Có sản phẩm không tồn tại hoặc đã ngừng kinh doanh.',
+        );
+        assert(
+          !product.prescriptionRequired,
+          400,
+          `${product.name} là thuốc kê đơn. Khách hàng cần tải đơn thuốc để dược sĩ kiểm duyệt.`,
+        );
+        assert(
+          quantity <= product.stock,
+          409,
+          `${product.name} chỉ còn ${product.stock} ${product.unit} khả dụng.`,
+        );
+        resolvedItems.push({ productId, quantity, product });
+      }
+      const orderId = await d.transaction(async () => {
+        const subtotal = resolvedItems.reduce(
+          (sum, entry) => sum + entry.product.price * entry.quantity,
+          0,
+        );
+        const settings = await getSettings(d);
+        const shipping =
+          subtotal >= Number(settings.freeShippingThreshold)
+            ? 0
+            : Number(settings.shippingFee);
+        const promo = req.body.promotionCode
+          ? await validatePromotion(d, req.body.promotionCode, subtotal)
+          : null;
+        const discount = promo?.discount || 0;
+        const initialStatus = method === 'cod' ? 'pending' : 'pending_payment';
+        const id = await d.insert('don_hang', {
+          user_id: customer.id,
+          code: `AT${new Date().getFullYear()}${Date.now().toString().slice(-8)}${randomUUID().slice(0, 4).toUpperCase()}`,
+          status: initialStatus,
+          payment_method: method,
+          payment_status: 'unpaid',
+          subtotal,
+          shipping_fee: shipping,
+          discount,
+          total: subtotal + shipping - discount,
+          address_json: JSON.stringify(address),
+          promotion_id: promo?.id || null,
+          note: text(req.body.note, 1000),
+          shipping_carrier: text(req.body.shippingCarrier, 100),
+          internal_note: text(req.body.internalNote, 2000),
+          created_at: now(),
+          updated_at: now(),
+        });
+        for (const entry of resolvedItems)
+          await d.insert('chi_tiet_don_hang', {
+            order_id: id,
+            product_id: entry.productId,
+            name: entry.product.name,
+            unit: entry.product.unit,
+            image: entry.product.image,
+            price: entry.product.price,
+            quantity: entry.quantity,
+            prescription_required: 0,
+          });
+        await reserveStock(
+          d,
+          id,
+          resolvedItems.map((entry) => ({
+            productId: entry.productId,
+            name: entry.product.name,
+            quantity: entry.quantity,
+          })),
+        );
+        if (promo)
+          await d.run(
+            'UPDATE khuyen_mai SET used_count=used_count+1 WHERE id=?',
+            promo.id,
+          );
+        await d.insert('order_status_history', {
+          order_id: id,
+          status: initialStatus,
+          user_id: req.user.id,
+          note: `Tạo đơn hộ khách bởi ${req.user.name}`,
+          created_at: now(),
+        });
+        await audit(d, req.user.id, 'order.admin_create', 'order', id, {
+          customerId: customer.id,
+          paymentMethod: method,
+        });
+        if (req.body.autoConfirm === true && method === 'cod') {
+          const createdOrder = await d.one('SELECT * FROM don_hang WHERE id=?', id);
+          await confirmStock(d, createdOrder, req.user.id);
+          await setOrderStatus(
+            d,
+            id,
+            'confirmed',
+            req.user.id,
+            'Xác nhận ngay khi tạo đơn COD',
+          );
+        }
+        return id;
+      });
+      res.status(201).json({
+        data: await orderView(d, orderId, { includeInternal: true }),
+      });
+    }),
+  );
+  app.post(
+    '/api/admin/orders/bulk-status',
+    permission('orders'),
+    transactionJson(d, async (req, res) => {
+      const ids = Array.isArray(req.body.orderIds)
+        ? [...new Set(req.body.orderIds.map(Number).filter((id) => Number.isSafeInteger(id) && id > 0))]
+        : [];
+      assert(ids.length > 0 && ids.length <= 50, 400, 'Chọn từ 1 đến 50 đơn hàng.');
+      const targetStatus = req.body.status;
+      assert(
+        Object.hasOwn(ORDER_TRANSITIONS, targetStatus),
+        400,
+        'Trạng thái đích không hợp lệ.',
+      );
+      const updated = [];
+      const failed = [];
+      for (const orderId of ids) {
+        const o = await d.one('SELECT * FROM don_hang WHERE id=?', orderId);
+        if (!o) {
+          failed.push({ id: orderId, code: `#${orderId}`, error: 'Không tìm thấy đơn.' });
+          continue;
+        }
+        try {
+          await transitionOrderStatus(d, o, {
+            status: targetStatus,
+            userId: req.user.id,
+            note: req.body.note,
+            collected: req.body.collected === true,
+            shippingCarrier: req.body.shippingCarrier,
+          });
+          updated.push(o.id);
+        } catch (err) {
+          failed.push({ id: o.id, code: o.code, error: err.message });
+        }
+      }
+      res.json({ data: { updated, failed } });
+    }),
+  );
+  app.post(
+    '/api/admin/orders/expire-overdue',
+    permission('orders'),
+    transactionJson(d, async (req, res) => {
+      const expiredCount = await expireOrders(d);
+      res.json({ data: { expiredCount } });
+    }),
+  );
   app.get('/api/admin/orders/:id', permission('orders'), async (req, res) => {
-    const o = await orderView(d, req.params.id);
+    const o = await orderView(d, req.params.id, { includeInternal: true });
     assert(o, 404, 'Không tìm thấy đơn.');
     res.json({ data: o });
   });
@@ -1191,116 +1816,181 @@ export function installOrders(
     transactionJson(d, async (req, res) => {
       const o = await d.one('SELECT * FROM don_hang WHERE id=?', req.params.id);
       assert(o, 404, 'Không tìm thấy đơn.');
-      const status = req.body.status;
-      const transitions = {
-        pending: ['confirmed', 'cancelled'],
-        pending_payment: ['cancelled'],
-        pending_prescription: ['cancelled'],
-        confirmed: ['packing', 'cancelled'],
-        packing: ['shipping', 'cancelled'],
-        shipping: ['delivered', 'delivery_failed'],
-        delivery_failed: ['shipping', 'cancelled'],
-        delivered: [],
-        cancelled: [],
-        returned: [],
-      };
-      assert(
-        transitions[o.status]?.includes(status),
-        409,
-        'Không thể chuyển trạng thái đơn theo thứ tự này.',
-      );
-      if (status === 'delivery_failed')
+      await transitionOrderStatus(d, o, {
+        status: req.body.status,
+        userId: req.user.id,
+        note: req.body.note,
+        collected: req.body.collected === true,
+        shippingCarrier: req.body.shippingCarrier,
+        trackingCode: req.body.trackingCode,
+      });
+      res.json({
+        data: await orderView(d, o.id, { includeInternal: true }),
+      });
+    }),
+  );
+  app.patch(
+    '/api/admin/orders/:id/fulfillment',
+    permission('orders'),
+    transactionJson(d, async (req, res) => {
+      const o = await d.one('SELECT * FROM don_hang WHERE id=?', req.params.id);
+      assert(o, 404, 'Không tìm thấy đơn.');
+      const patch = { updated_at: now() };
+      if (req.body.shippingCarrier !== undefined)
+        patch.shipping_carrier = text(req.body.shippingCarrier, 100);
+      if (req.body.trackingCode !== undefined)
+        patch.tracking_code = text(req.body.trackingCode, 100);
+      if (req.body.internalNote !== undefined)
+        patch.internal_note = text(req.body.internalNote, 2000);
+      if (req.body.address !== undefined) {
         assert(
-          text(req.body.note, 1000).length >= 5,
-          400,
-          'Nhập lý do giao thất bại ít nhất 5 ký tự.',
-        );
-      if (status === 'confirmed') {
-        const rx = await d.one(
-          'SELECT status FROM don_thuoc WHERE order_id=?',
-          o.id,
-        );
-        assert(
-          !rx || rx.status === 'approved',
+          ['pending_prescription', 'pending_payment', 'pending', 'confirmed'].includes(
+            o.status,
+          ),
           409,
-          'Đơn thuốc chưa được dược sĩ duyệt.',
+          'Chỉ cập nhật địa chỉ giao trước khi đóng gói đơn hàng.',
         );
-        assert(
-          o.payment_method === 'cod' || o.payment_status === 'paid',
-          409,
-          'Đơn trực tuyến cần thanh toán thành công trước khi xác nhận.',
-        );
+        const normalized = addressValues(req.body.address || {});
+        patch.address_json = JSON.stringify({
+          recipient: normalized.recipient,
+          phone: normalized.phone,
+          line1: normalized.line1,
+          ward: normalized.ward,
+          district: normalized.district,
+          city: normalized.city,
+        });
       }
-      if (status === 'delivered' && o.payment_method === 'cod')
-        assert(
-          req.body.collected === true,
-          409,
-          'Cần xác nhận đã thu đủ tiền COD trước khi giao thành công.',
-        );
       await d.transaction(async () => {
-        if (status === 'confirmed') await confirmStock(d, o, req.user.id);
-        if (status === 'cancelled') {
-          await releaseStock(d, o);
-          if (o.promotion_id)
-            await d.run(
-              'UPDATE khuyen_mai SET used_count=MAX(0,used_count-1) WHERE id=?',
-              o.promotion_id,
-            );
-          if (o.payment_status === 'paid') {
-            await d.update(
-              'don_hang',
-              {
-                payment_status: 'refund_pending',
-              },
-              o.id,
-            );
-            if (
-              !(await d.one(
-                "SELECT id FROM yeu_cau_huy_hoan WHERE order_id=? AND type='refund' AND status!='rejected'",
-                o.id,
-              ))
-            )
-              await d.insert('yeu_cau_huy_hoan', {
-                order_id: o.id,
-                user_id: o.user_id,
-                type: 'refund',
-                reason: 'Đơn đã thanh toán bị hủy',
-                status: 'approved',
-                handler_id: req.user.id,
-              });
-          }
-        }
-        if (status === 'delivered' && o.payment_method === 'cod') {
-          await d.update(
-            'don_hang',
-            {
-              payment_status: 'paid',
-            },
-            o.id,
-          );
-          await d.insert('giao_dich_thanh_toan', {
-            order_id: o.id,
-            reference: `COD-${randomUUID()}`,
-            type: 'payment',
-            provider: 'cod',
-            amount: o.total,
-            status: 'success',
-          });
-        }
-        await setOrderStatus(
-          d,
-          o.id,
-          status,
-          req.user.id,
-          text(req.body.note, 1000),
-        );
-        await audit(d, req.user.id, 'order.status', 'order', o.id, {
-          from: o.status,
-          to: status,
+        await d.update('don_hang', patch, o.id);
+        await audit(d, req.user.id, 'order.fulfillment', 'order', o.id, {
+          shippingCarrier: patch.shipping_carrier,
+          trackingCode: patch.tracking_code,
+          addressUpdated: req.body.address !== undefined,
+          internalNoteUpdated: req.body.internalNote !== undefined,
         });
       });
       res.json({
-        data: await orderView(d, o.id),
+        data: await orderView(d, o.id, { includeInternal: true }),
+      });
+    }),
+  );
+  app.post(
+    '/api/admin/orders/:id/expire',
+    permission('orders'),
+    transactionJson(d, async (req, res) => {
+      const o = await d.one('SELECT * FROM don_hang WHERE id=?', req.params.id);
+      assert(o, 404, 'Không tìm thấy đơn.');
+      assert(
+        o.status === 'pending_payment' && o.payment_status !== 'paid',
+        409,
+        'Đơn hàng không ở trạng thái chờ thanh toán.',
+      );
+      const card =
+        o.payment_method === 'vnpay' && (await activeVnpayAttempt(d, o.id));
+      assert(
+        !(card && Date.parse(card.expires_at) + 5 * 60000 > Date.now()),
+        409,
+        'Giao dịch VNPay đang trong thời gian chờ đối soát, chưa thể hủy.',
+      );
+      await d.transaction(async () => {
+        await releaseStock(d, o);
+        await setOrderStatus(
+          d,
+          o.id,
+          'cancelled',
+          req.user.id,
+          text(req.body.note, 1000) || 'Hủy đơn quá hạn thanh toán',
+        );
+        if (o.promotion_id)
+          await d.run(
+            'UPDATE khuyen_mai SET used_count=MAX(0,used_count-1) WHERE id=?',
+            o.promotion_id,
+          );
+        await audit(d, req.user.id, 'order.expire_manual', 'order', o.id);
+      });
+      res.json({
+        data: await orderView(d, o.id, { includeInternal: true }),
+      });
+    }),
+  );
+  app.post(
+    '/api/admin/orders/:id/requests',
+    permission('orders'),
+    transactionJson(d, async (req, res) => {
+      const o = await d.one('SELECT * FROM don_hang WHERE id=?', req.params.id);
+      assert(o, 404, 'Không tìm thấy đơn.');
+      const type = req.body.type;
+      const reason = text(req.body.reason, 2000);
+      const reply = text(req.body.reply, 2000);
+      assert(
+        ['cancel', 'return'].includes(type) && reason.length >= 5,
+        400,
+        'Chọn loại xử lý (hủy hoặc đổi trả) và nhập lý do ít nhất 5 ký tự.',
+      );
+      assert(
+        !(await d.one(
+          "SELECT id FROM yeu_cau_huy_hoan WHERE order_id=? AND (status='pending' OR (status='approved' AND type=?))",
+          o.id,
+          type,
+        )),
+        409,
+        'Đơn đã có yêu cầu loại này đang chờ hoặc đã được chấp nhận.',
+      );
+      if (type === 'return') {
+        assert(o.status === 'delivered', 409, 'Chỉ ghi nhận đổi trả cho đơn đã giao.');
+        const delivered = await d.one(
+          "SELECT created_at FROM order_status_history WHERE order_id=? AND status='delivered' ORDER BY id DESC LIMIT 1",
+          o.id,
+        );
+        assert(
+          Date.now() -
+            new Date(delivered?.created_at || o.created_at).getTime() <=
+            Number((await getSettings(d)).returnWindowDays) * 86400000,
+          409,
+          'Đã quá thời hạn đổi trả theo cấu hình nhà thuốc.',
+        );
+      }
+      await d.transaction(async () => {
+        await applyApprovedCancelOrReturn(d, o, {
+          type,
+          userId: req.user.id,
+          reply: reply || reason,
+          sealed: req.body.sealed === true,
+          storeFault: req.body.storeFault === true,
+          restock: req.body.restock === true,
+        });
+        const id = await d.insert('yeu_cau_huy_hoan', {
+          order_id: o.id,
+          user_id: o.user_id,
+          type,
+          reason,
+          status: 'approved',
+          reply: reply || reason,
+          handler_id: req.user.id,
+          restock: req.body.restock ? 1 : 0,
+          updated_at: now(),
+        });
+        if (type === 'return') {
+          const restockedNow = req.body.restock === true;
+          await d.insert('hang_tra_ve', {
+            request_id: id,
+            order_id: o.id,
+            status: restockedNow ? 'restocked' : 'awaiting',
+            note: restockedNow ? 'Nhập lại kho ngay khi ghi nhận tại quầy.' : '',
+            handler_id: req.user.id,
+            received_at: restockedNow ? now() : null,
+            inspected_at: restockedNow ? now() : null,
+            updated_at: now(),
+          });
+        }
+        await audit(d, req.user.id, 'order.admin_request', 'request', id, {
+          orderId: o.id,
+          type,
+          restock: !!req.body.restock,
+        });
+      });
+      res.status(201).json({
+        data: await orderView(d, o.id, { includeInternal: true }),
       });
     }),
   );
@@ -1420,7 +2110,14 @@ export function installOrders(
     res.json({
       data: (
         await d.all(
-          'SELECT r.*,o.code order_code,o.status order_status,o.payment_status,o.payment_method,o.total,u.name user_name,g.status return_goods_status FROM yeu_cau_huy_hoan r JOIN don_hang o ON o.id=r.order_id JOIN nguoi_dung u ON u.id=r.user_id LEFT JOIN hang_tra_ve g ON g.request_id=r.id ORDER BY r.id DESC',
+          `SELECT r.*,o.code order_code,o.status order_status,o.payment_status,o.payment_method,o.total,o.updated_at order_updated_at,
+            u.name user_name,u.phone user_phone,u.email user_email,h.name handler_name,g.status return_goods_status
+           FROM yeu_cau_huy_hoan r
+           JOIN don_hang o ON o.id=r.order_id
+           JOIN nguoi_dung u ON u.id=r.user_id
+           LEFT JOIN nguoi_dung h ON h.id=r.handler_id
+           LEFT JOIN hang_tra_ve g ON g.request_id=r.id
+           ORDER BY r.id DESC`,
         )
       ).map(requestView),
     }),
@@ -1450,71 +2147,14 @@ export function installOrders(
       const o = await d.one('SELECT * FROM don_hang WHERE id=?', r.order_id);
       await d.transaction(async () => {
         if (status === 'approved') {
-          if (r.type === 'cancel') {
-            assert(
-              [
-                'pending_prescription',
-                'pending_payment',
-                'pending',
-                'confirmed',
-                'packing',
-                'delivery_failed',
-              ].includes(o.status),
-              409,
-              'Đơn đã chuyển giao không thể hủy.',
-            );
-            await releaseStock(d, o);
-            await setOrderStatus(
-              d,
-              o.id,
-              'cancelled',
-              req.user.id,
-              reply || 'Chấp nhận yêu cầu hủy',
-            );
-            if (o.promotion_id)
-              await d.run(
-                'UPDATE khuyen_mai SET used_count=MAX(0,used_count-1) WHERE id=?',
-                o.promotion_id,
-              );
-          }
-          if (r.type === 'return') {
-            assert(
-              o.status === 'delivered',
-              409,
-              'Đơn không còn đủ điều kiện đổi trả.',
-            );
-            assert(
-              req.body.sealed === true || req.body.storeFault === true,
-              400,
-              'Xác nhận sản phẩm đủ điều kiện đổi trả hoặc lỗi thuộc nhà thuốc.',
-            );
-            if (req.body.restock === true) {
-              assert(
-                req.body.sealed === true,
-                400,
-                'Cần xác nhận thuốc còn nguyên niêm phong và đảm bảo chất lượng để nhập lại kho.',
-              );
-              await releaseStock(d, o);
-            }
-            await setOrderStatus(
-              d,
-              o.id,
-              'returned',
-              req.user.id,
-              reply || 'Chấp nhận đổi trả',
-            );
-          }
-          if (
-            ['cancel', 'return'].includes(r.type) &&
-            o.payment_status === 'paid'
-          )
-            await d.update(
-              'don_hang',
-              {
-                payment_status: 'refund_pending',
-              },
-              o.id,
-            );
+          await applyApprovedCancelOrReturn(d, o, {
+            type: r.type,
+            userId: req.user.id,
+            reply,
+            sealed: req.body.sealed === true,
+            storeFault: req.body.storeFault === true,
+            restock: req.body.restock === true,
+          });
         }
         await d.update(
           'yeu_cau_huy_hoan',
@@ -1711,7 +2351,7 @@ export function installOrders(
         });
       });
       res.json({
-        data: await orderView(d, o.id),
+        data: await orderView(d, o.id, { includeInternal: true }),
       });
     },
   );

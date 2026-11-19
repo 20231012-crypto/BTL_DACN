@@ -112,7 +112,9 @@ export function installBankTransfers(app, d, { auth, permission }, config) {
       await audit(d, req.user.id, 'payment.bank_confirm', 'order', order.id, {
         reference,
       });
-      res.json({ data: await orderView(d, order.id) });
+      res.json({
+        data: await orderView(d, order.id, { includeInternal: true }),
+      });
     }),
   );
 }
