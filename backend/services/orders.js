@@ -469,7 +469,7 @@ export function installOrders(
   app.post('/api/orders', auth, async (req, res) => {
     const method = req.body.paymentMethod || 'cod';
     assert(
-      ['cod', 'demo', 'vnpay'].includes(method),
+      ['cod', 'demo', 'vnpay', 'bank_transfer'].includes(method),
       400,
       'Phương thức thanh toán không được hỗ trợ.',
     );
@@ -483,6 +483,7 @@ export function installOrders(
       400,
       'Chưa cấu hình VNPay Sandbox.',
     );
+    assert(method !== 'bank_transfer' || options.bankTransfer, 400, 'Chưa cấu hình tài khoản nhận chuyển khoản.');
     let address;
     if (req.body.addressId) {
       const a = await d.one(
@@ -1618,7 +1619,8 @@ export function installOrders(
       } else {
         assert(
           options.demo ||
-            (payment.provider === 'cod' && req.body.confirmedCash === true),
+            (payment.provider === 'cod' && req.body.confirmedCash === true) ||
+            (payment.provider === 'bank_transfer' && req.body.confirmedTransfer === true && text(req.body.refundReference, 100).length >= 6),
           400,
           'Xác nhận đã hoàn tiền mặt cho đơn COD.',
         );

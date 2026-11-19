@@ -3029,6 +3029,11 @@ export default function Admin({ user, onExit, onLogout, config }) {
                       onChange={change}
                     />
                   )}
+                  {item.paymentMethod === 'bank_transfer' && <>
+                    <Field label="Mã giao dịch hoàn tiền" name="refundReference" value={form.refundReference || ''} onChange={change} minLength={6} required />
+                    <CheckField label="Đã hoàn tiền chuyển khoản cho khách" name="confirmedTransfer" value={form.confirmedTransfer} onChange={change} />
+                  </>}
+
                 </>
               ) : (
                 <div className="adm-info-banner compact">
@@ -3152,6 +3157,15 @@ export default function Admin({ user, onExit, onLogout, config }) {
                 <strong>{money(item.total)}</strong>
               </div>
             </div>
+            {item.paymentMethod === 'bank_transfer' && item.status === 'pending_payment' && <form onSubmit={(event) => submit(event, `/admin/orders/${item.id}/bank-transfer`, 'POST', {
+              amount: form.bankAmount, reference: form.bankReference, confirmed: !!form.bankConfirmed,
+            })}>
+              <h3>Đối soát chuyển khoản</h3>
+              <Field label="Mã giao dịch trên sao kê" name="bankReference" value={form.bankReference || ''} onChange={change} required minLength={6} />
+              <Field label="Số tiền đã nhận" type="number" name="bankAmount" value={form.bankAmount || ''} onChange={change} required />
+              <CheckField label="Đã kiểm tra sao kê ngân hàng" name="bankConfirmed" value={form.bankConfirmed} onChange={change} />
+              <button className="adm-btn primary" disabled={saving}>Xác nhận đã nhận tiền</button>
+            </form>}
             {(ORDER_NEXT[item.status] || []).length > 0 && (
               <form
                 onSubmit={(e) =>

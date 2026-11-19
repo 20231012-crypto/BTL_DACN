@@ -26,6 +26,7 @@ import { googleConfig } from './integrations/google.js';
 import { vnpayConfig } from './integrations/vnpay.js';
 import { installLocations } from './integrations/locations.js';
 import { geminiKeys } from './integrations/gemini-client.js';
+import { bankTransferConfig, installBankTransfers } from './services/bank-transfer.js';
 const root = fileURLToPath(new URL('../', import.meta.url));
 export async function createApp(options = {}) {
   const hosted =
@@ -58,6 +59,7 @@ export async function createApp(options = {}) {
       origin.startsWith('https:'),
     google: googleConfig(origin),
     vnpay: options.vnpay ?? vnpayConfig(origin),
+    bankTransfer: options.bankTransfer ?? bankTransferConfig(),
   };
   if (hosted && !config.attachmentStorage)
     throw new Error('Cần Supabase Storage riêng tư để chạy trên Vercel.');
@@ -214,6 +216,7 @@ export async function createApp(options = {}) {
           'cod',
           ...(config.demo ? ['demo'] : []),
           ...(config.vnpay ? ['vnpay'] : []),
+          ...(config.bankTransfer ? ['bank_transfer'] : []),
         ],
       },
     });
@@ -256,6 +259,7 @@ export async function createApp(options = {}) {
     }),
   );
   installOrders(app, d, guards, config);
+  installBankTransfers(app, d, guards, config.bankTransfer);
   installLocations(app);
   installUploadIntents(app, d, guards.auth, config.attachmentStorage);
   installAdmin(app, d, guards, config);

@@ -4830,3 +4830,8 @@ svg {
 .search-options button { width: 100%; border: 0; background: white; text-align: left; padding: 10px 12px; border-radius: 6px; cursor: pointer; }
 .search-options button:hover, .search-options button[aria-selected="true"] { background: #e7f5ef; }
 .search-options > span { display: block; padding: 12px; color: #667772; }
+
+.bank-transfer { padding: 16px 0; border-top: 1px solid #d9e4e1; }
+.bank-transfer img { display: block; max-width: 100%; height: auto; margin: 12px auto; }
+.bank-transfer dl { display: grid; grid-template-columns: auto 1fr; gap: 7px 12px; font-size: 13px; }
+.bank-transfer dd { margin: 0; overflow-wrap: anywhere; font-weight: 600; }

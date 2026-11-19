@@ -19,3 +19,5 @@ Giữ các khóa dịch vụ trong `.env` ở máy chủ. Bot service account tr
 - [VNPay Sandbox truy vấn và hoàn tiền](https://sandbox.vnpayment.vn/apis/docs/truy-van-hoan-tien/querydr%26refund.html)
 
 Đặt tối đa 5 khóa Gemini trong biến Secret `GEMINI_API_KEYS` trên Vercel, dạng `["key1","key2","key3","key4","key5"]`. Ứng dụng thử khóa tiếp theo khi dịch vụ hoặc khóa hiện tại tạm thời không dùng được. Google tính hạn mức theo project. Sau khi sửa biến, redeploy để áp dụng. Giá trị `[]` giữ tính năng Gemini ở trạng thái chưa cấu hình.
+
+Chuyển khoản VietQR dùng `BANK_TRANSFER_BANK_BIN`, `BANK_TRANSFER_ACCOUNT`, `BANK_TRANSFER_NAME`, `BANK_TRANSFER_BANK_NAME`. QR chứa tổng đơn do máy chủ tính và nội dung `ANTAM<id>`. Nhân viên có quyền xử lý đơn đối soát mã giao dịch, số tiền trên sao kê trước khi xác nhận. VietQR Quick Link tạo mã QR. Việc tự động nhận trạng thái ngân hàng cần dịch vụ webhook và thông tin xác thực riêng. [VietQR Quick Link](https://www.vietqr.io/qr-dong)

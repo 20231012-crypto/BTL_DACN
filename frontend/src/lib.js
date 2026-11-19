@@ -80,6 +80,7 @@ export async function uploadPrescription(file, mode) {
   return api('/prescriptions', { method: 'POST', body: form });
 }
 export const statusLabel = {
+  bank_transfer: 'Chuyển khoản VietQR',
   pending_prescription: 'Chờ duyệt đơn thuốc',
   pending_payment: 'Chờ thanh toán',
   pending: 'Chờ xác nhận',

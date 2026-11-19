@@ -46,6 +46,7 @@ import {
 } from 'lucide-react';
 import Admin from './Admin.jsx';
 import AddressFields from './AddressFields.jsx';
+import BankTransfer from './BankTransfer.jsx';
 import { LogoIcon } from './Logo.jsx';
 import {
   api,
@@ -1482,12 +1483,12 @@ function Checkout() {
                     <CreditCard size={23} />
                     <div>
                       <strong>
-                        {provider === 'demo'
+                        {provider === 'bank_transfer' ? 'Chuyển khoản ngân hàng (VietQR)' : provider === 'demo'
                           ? 'Thanh toán trực tuyến mô phỏng'
                           : 'VNPay Sandbox'}
                       </strong>
                       <span>
-                        {provider === 'demo'
+                        {provider === 'bank_transfer' ? 'Quét mã theo số tiền của đơn. Nhà thuốc xác nhận khi nhận tiền.' : provider === 'demo'
                           ? 'Chọn kết quả thành công hoặc thất bại để kiểm thử luồng.'
                           : 'Chuyển sang cổng thử nghiệm VNPay sau khi tạo đơn.'}
                       </span>
@@ -2214,6 +2215,7 @@ function OrderDetail({ id }) {
                         Thanh toán mở sau khi dược sĩ duyệt đơn thuốc.
                       </p>
                     )}
+                  {order.paymentMethod === 'bank_transfer' && order.status === 'pending_payment' && <BankTransfer orderId={order.id} />}
                   {order.paymentMethod === 'vnpay' &&
                     order.status === 'pending_payment' &&
                     config?.paymentMethods.includes('vnpay') && (

@@ -1051,3 +1051,25 @@ test('delivery addresses accept current two-level locations and retain legacy di
   assert.equal(legacy.data.district, 'Quận Ba Đình');
   assert.equal((await customer('/addresses', 'POST', { ...address, ward: '' })).status, 400);
 });
+
+test('VietQR uses server totals and only staff can reconcile a transfer once', async (t) => {
+  const { login, d } = await fixture(t, { bankTransfer: { bankBin: '970423', account: '123456789', accountName: 'TEST ACCOUNT', bankName: 'TPBank' } });
+  const customer = await login();
+  const staff = await login('duocsi@antam.vn');
+  await add(customer, 1, 1);
+  const created = await order(customer, { paymentMethod: 'bank_transfer' });
+  assert.equal(created.status, 201);
+  const id = created.data.id;
+  const details = await customer(`/orders/${id}/bank-transfer`);
+  assert.equal(details.status, 200);
+  assert.equal(details.data.amount, created.data.total);
+  assert.equal(new URL(details.data.qrUrl).searchParams.get('amount'), String(created.data.total));
+  const payload = { amount: created.data.total, reference: 'TESTBANK00001', confirmed: true };
+  assert.equal((await customer(`/admin/orders/${id}/bank-transfer`, 'POST', payload)).status, 403);
+  assert.equal((await staff(`/admin/orders/${id}/bank-transfer`, 'POST', { ...payload, amount: 1 })).status, 400);
+  const paid = await staff(`/admin/orders/${id}/bank-transfer`, 'POST', payload);
+  assert.equal(paid.status, 200);
+  assert.equal(paid.data.paymentStatus, 'paid');
+  assert.equal((await staff(`/admin/orders/${id}/bank-transfer`, 'POST', payload)).status, 200);
+  assert.equal((await d.one("SELECT COUNT(*) n FROM giao_dich_thanh_toan WHERE provider='bank_transfer' AND status='success'")).n, 1);
+});
