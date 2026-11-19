@@ -180,7 +180,7 @@ export function installChatbot(app, d, { auth }, options) {
         normalized,
       )
     ) {
-      const code = message.match(/MA[A-Z0-9]{6,}/i)?.[0]?.toUpperCase();
+      const code = message.match(/(?:AT|MA)[A-Z0-9]{6,}/i)?.[0]?.toUpperCase();
       let order = code
         ? await d.one(
             'SELECT id FROM don_hang WHERE upper(code)=? AND user_id=?',

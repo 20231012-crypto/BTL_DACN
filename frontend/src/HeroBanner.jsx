@@ -4,11 +4,11 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 const SLIDES = [
   {
     id: 'main',
-    src: '/assets/banners/pharmacy-hero.webp',
-    alt: 'Bao bì sản phẩm chăm sóc sức khỏe An Tâm minh họa',
+    src: '/assets/banners/hero-banner-4.jpg',
+    alt: 'Hộp chăm sóc sức khỏe chính hãng Nhà thuốc An Tâm',
     badge: 'An Tâm chính hãng',
-    title: 'Chăm sóc sức khỏe mỗi ngày',
-    position: 'center 68%',
+    title: 'Chăm sóc sức khỏe mỗi ngày, miễn phí từ 299.000đ',
+    position: 'center 58%',
   },
   {
     id: 'vitamin',
@@ -25,14 +25,6 @@ const SLIDES = [
     badge: 'Dược sĩ đồng hành',
     title: 'Kiểm duyệt tận tâm, tư vấn minh bạch',
     position: 'center 56%',
-  },
-  {
-    id: 'delivery',
-    src: '/assets/banners/hero-banner-4.jpg',
-    alt: 'Hộp chăm sóc sức khỏe giao hàng tận nơi An Tâm',
-    badge: 'Giao hàng thuận tiện',
-    title: 'Đóng gói chu đáo, miễn phí từ 299.000đ',
-    position: 'center 58%',
   },
 ];
 

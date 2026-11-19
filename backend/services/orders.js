@@ -573,7 +573,7 @@ export function installOrders(
             : 'pending';
       const id = await d.insert('don_hang', {
         user_id: req.user.id,
-        code: `MA${new Date().getFullYear()}${Date.now().toString().slice(-8)}${randomUUID().slice(0, 4).toUpperCase()}`,
+        code: `AT${new Date().getFullYear()}${Date.now().toString().slice(-8)}${randomUUID().slice(0, 4).toUpperCase()}`,
         status,
         payment_method: method,
         payment_status: 'unpaid',

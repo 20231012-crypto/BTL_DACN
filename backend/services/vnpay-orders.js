@@ -52,7 +52,7 @@ export function installVnpayOrders(app, d, auth, config, setOrderStatus) {
         );
         const id = await d.insert('giao_dich_thanh_toan', {
           order_id: order.id,
-          reference: `MA${randomUUID().replaceAll('-', '').toUpperCase()}`,
+          reference: `AT${randomUUID().replaceAll('-', '').toUpperCase()}`,
           type: 'payment',
           provider: 'vnpay',
           amount: order.total,

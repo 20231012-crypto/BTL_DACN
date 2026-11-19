@@ -490,7 +490,7 @@ export async function seedDatabase(
           const batch = await d.insert('lo_thuoc', {
             product_id: id,
             receipt_id: receipt,
-            batch_number: `MA${String(id).padStart(3, '0')}${suffix}`,
+            batch_number: `AT${String(id).padStart(3, '0')}${suffix}`,
             quantity,
             cost: Math.round(price * 0.65),
             manufactured_at: daysFromNow(-180),
@@ -511,7 +511,7 @@ export async function seedDatabase(
     const expired = await d.insert('lo_thuoc', {
       product_id: productIds[2],
       receipt_id: receipt,
-      batch_number: 'MA003-HH',
+      batch_number: 'AT003-HH',
       quantity: 8,
       cost: 9000,
       manufactured_at: daysFromNow(-700),
@@ -570,7 +570,7 @@ export async function seedDatabase(
       ).toISOString();
       const id = await d.insert('don_hang', {
         user_id: i % 3 === 0 ? 4 : 1,
-        code: `MA${new Date().getFullYear()}${String(100 + i).padStart(5, '0')}`,
+        code: `AT${new Date().getFullYear()}${String(100 + i).padStart(5, '0')}`,
         status,
         payment_method: i % 2 ? 'cod' : 'demo',
         payment_status: i < 7 || i % 2 === 0 ? 'paid' : 'unpaid',
