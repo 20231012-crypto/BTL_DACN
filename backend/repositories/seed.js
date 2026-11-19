@@ -564,11 +564,35 @@ export async function seedDatabase(
       end_date: daysFromNow(60),
     });
     if (!demoData) return;
-    const address = await d.one(
-      'SELECT * FROM dia_chi_giao_hang WHERE user_id=1',
-    );
+    const addressesByUser = {
+      1: await d.one('SELECT * FROM dia_chi_giao_hang WHERE user_id=1'),
+      4: await d.one('SELECT * FROM dia_chi_giao_hang WHERE user_id=4'),
+    };
+    const statusTimelines = {
+      delivered: [
+        ['pending', 'Tiếp nhận đơn hàng'],
+        ['confirmed', 'Xác nhận đơn và phân bổ tồn kho FEFO'],
+        ['packing', 'Hoàn tất đóng gói tại quầy'],
+        ['shipping', 'Bàn giao đơn vị vận chuyển'],
+        ['delivered', 'Giao hàng thành công'],
+      ],
+      shipping: [
+        ['pending', 'Tiếp nhận đơn hàng'],
+        ['confirmed', 'Xác nhận đơn và xuất kho FEFO'],
+        ['packing', 'Đang đóng gói sản phẩm'],
+        ['shipping', 'Đang giao đến khách hàng'],
+      ],
+      packing: [
+        ['pending', 'Tiếp nhận đơn hàng'],
+        ['confirmed', 'Xác nhận đơn và xuất kho FEFO'],
+        ['packing', 'Đang đóng gói đơn hàng'],
+      ],
+      pending: [['pending', 'Tiếp nhận đơn hàng']],
+    };
     for (let i = 0; i < 10; i++) {
       const age = 9 - i,
+        ownerId = i % 3 === 0 ? 4 : 1,
+        address = addressesByUser[ownerId] || addressesByUser[1],
         product = await d.one('SELECT * FROM thuoc WHERE id=?', (i % 8) + 1),
         qty = (i % 2) + 1,
         subtotal = product.price * qty,
@@ -584,8 +608,16 @@ export async function seedDatabase(
       const created = new Date(
         Date.now() - age * 86400000 - 3600000,
       ).toISOString();
+      const shippingCarrier = ['shipping', 'delivered'].includes(status)
+        ? i % 2 === 0
+          ? 'Nội bộ An Tâm'
+          : 'Giao Hàng Nhanh'
+        : '';
+      const trackingCode = ['shipping', 'delivered'].includes(status)
+        ? `AT-VD-${String(100 + i).padStart(5, '0')}`
+        : '';
       const id = await d.insert('don_hang', {
-        user_id: i % 3 === 0 ? 4 : 1,
+        user_id: ownerId,
         code: `AT${new Date().getFullYear()}${String(100 + i).padStart(5, '0')}`,
         status,
         payment_method: i % 2 ? 'cod' : 'demo',
@@ -601,7 +633,10 @@ export async function seedDatabase(
           district: address.district,
           city: address.city,
         }),
+        shipping_carrier: shippingCarrier,
+        tracking_code: trackingCode,
         created_at: created,
+        updated_at: created,
         stock_deducted: status === 'pending' ? 0 : 1,
       });
       await d.insert('chi_tiet_don_hang', {
@@ -614,13 +649,20 @@ export async function seedDatabase(
         quantity: qty,
         prescription_required: 0,
       });
-      await d.insert('order_status_history', {
-        order_id: id,
-        status,
-        user_id: 2,
-        note: 'Đơn hàng mẫu',
-        created_at: created,
-      });
+      const steps = statusTimelines[status] || [[status, 'Đơn hàng mẫu']];
+      for (let sIdx = 0; sIdx < steps.length; sIdx++) {
+        const [stepStatus, stepNote] = steps[sIdx];
+        const stepTime = new Date(
+          Date.parse(created) + sIdx * 1800000,
+        ).toISOString();
+        await d.insert('order_status_history', {
+          order_id: id,
+          status: stepStatus,
+          user_id: sIdx === 0 ? ownerId : 2,
+          note: stepNote,
+          created_at: stepTime,
+        });
+      }
       if (i < 7 || i % 2 === 0)
         await d.insert('giao_dich_thanh_toan', {
           order_id: id,
