@@ -179,57 +179,129 @@ export function requestView(row) {
   const { evidence_storage_name, evidence_mime_type, ...data } = row;
   return { ...camel(data), evidenceAvailable: Boolean(evidence_storage_name) };
 }
-export async function orderView(d, id) {
+export async function orderView(
+  d,
+  id,
+  { includeInternal = false, settings = null } = {},
+) {
   const o = await d.one('SELECT * FROM don_hang WHERE id=?', Number(id));
   if (!o) return null;
   const p = await d.one(
-    'SELECT id,status,note,approved_product_ids FROM don_thuoc WHERE order_id=?',
+    `SELECT p.id,p.status,p.note,p.approved_product_ids,p.file_name,p.mime_type,p.reviewed_at,u.name reviewer_name
+     FROM don_thuoc p LEFT JOIN nguoi_dung u ON u.id=p.reviewer_id
+     WHERE p.order_id=?`,
     o.id,
   );
   const user = await d.one(
     'SELECT name,email,phone FROM nguoi_dung WHERE id=?',
     o.user_id,
   );
+  const promo = o.promotion_id
+    ? await d.one('SELECT code,name FROM khuyen_mai WHERE id=?', o.promotion_id)
+    : null;
+  const items = (
+    await d.all(
+      `SELECT i.*, EXISTS(SELECT 1 FROM danh_gia r
+      WHERE r.order_id=i.order_id AND r.product_id=i.product_id AND r.user_id=?) reviewed
+      FROM chi_tiet_don_hang i WHERE i.order_id=?`,
+      o.user_id,
+      o.id,
+    )
+  ).map((item) => ({
+    ...camel(item),
+    prescriptionRequired: !!item.prescription_required,
+    reviewed: !!item.reviewed,
+  }));
+  const requestsRows = await d.all(
+    includeInternal
+      ? `SELECT r.*,u.name handler_name,g.status return_goods_status,g.carrier return_carrier,g.tracking_code return_tracking_code
+         FROM yeu_cau_huy_hoan r
+         LEFT JOIN nguoi_dung u ON u.id=r.handler_id
+         LEFT JOIN hang_tra_ve g ON g.request_id=r.id
+         WHERE r.order_id=? ORDER BY r.id DESC`
+      : `SELECT r.*,g.status return_goods_status,g.carrier return_carrier,g.tracking_code return_tracking_code
+         FROM yeu_cau_huy_hoan r
+         LEFT JOIN hang_tra_ve g ON g.request_id=r.id
+         WHERE r.order_id=? ORDER BY r.id DESC`,
+    o.id,
+  );
+  const historyRows = await d.all(
+    includeInternal
+      ? `SELECT h.*,u.name user_name FROM order_status_history h
+         LEFT JOIN nguoi_dung u ON u.id=h.user_id
+         WHERE h.order_id=? ORDER BY h.id`
+      : 'SELECT * FROM order_status_history WHERE order_id=? ORDER BY id',
+    o.id,
+  );
+  const transactions = (
+    await d.all(
+      'SELECT * FROM giao_dich_thanh_toan WHERE order_id=? ORDER BY id',
+      o.id,
+    )
+  ).map(camel);
+
+  let paymentDeadline = null;
+  if (o.status === 'pending_payment' && o.payment_status !== 'paid') {
+    const activeSettings = settings || (await getSettings(d));
+    const timeoutMinutes = Number(activeSettings.paymentTimeoutMinutes) || 30;
+    const baseTime = Date.parse(o.updated_at || o.created_at);
+    if (Number.isFinite(baseTime))
+      paymentDeadline = new Date(
+        baseTime + timeoutMinutes * 60000,
+      ).toISOString();
+  }
+
+  let extraInternal = {};
+  if (includeInternal) {
+    const [allocRows, countRow] = await Promise.all([
+      d.all(
+        `SELECT a.id,a.batch_id,a.quantity,b.batch_number,b.product_id,b.expires_at,b.cost,t.name product_name
+         FROM stock_allocations a
+         JOIN lo_thuoc b ON b.id=a.batch_id
+         JOIN thuoc t ON t.id=b.product_id
+         WHERE a.order_id=? ORDER BY b.expires_at,a.id`,
+        o.id,
+      ),
+      d.one('SELECT COUNT(*) n FROM don_hang WHERE user_id=?', o.user_id),
+    ]);
+    extraInternal = {
+      internalNote: o.internal_note || '',
+      prescriptionFileName: p?.file_name || null,
+      prescriptionMimeType: p?.mime_type || null,
+      prescriptionReviewedAt: p?.reviewed_at || null,
+      prescriptionReviewerName: p?.reviewer_name || null,
+      customerOrderCount: Number(countRow?.n || 0),
+      allocations: allocRows.map(camel),
+    };
+  }
+
+  const { address_json, internal_note, ...baseRow } = o;
   return {
-    ...camel(o),
-    address: JSON.parse(o.address_json),
+    ...camel(baseRow),
+    shippingCarrier: o.shipping_carrier || '',
+    trackingCode: o.tracking_code || '',
+    address: JSON.parse(address_json),
     addressJson: undefined,
     userName: user?.name,
     customerName: user?.name,
     email: user?.email,
     phone: user?.phone,
-    items: (
-      await d.all(
-        `SELECT i.*, EXISTS(SELECT 1 FROM danh_gia r
-      WHERE r.order_id=i.order_id AND r.product_id=i.product_id AND r.user_id=?) reviewed
-      FROM chi_tiet_don_hang i WHERE i.order_id=?`,
-        o.user_id,
-        o.id,
-      )
-    ).map(camel),
+    items,
+    itemCount: items.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
+    lineCount: items.length,
+    requiresPrescription: items.some((item) => item.prescriptionRequired),
+    promotionCode: promo?.code || null,
+    promotionName: promo?.name || null,
+    paymentDeadline,
     prescriptionId: p?.id || null,
     prescriptionStatus: p?.status || null,
     prescriptionNote: p?.note || '',
     prescriptionApprovedProductIds: p?.approved_product_ids
       ? JSON.parse(p.approved_product_ids)
       : [],
-    requests: (
-      await d.all(
-        'SELECT r.*,g.status return_goods_status,g.carrier return_carrier,g.tracking_code return_tracking_code FROM yeu_cau_huy_hoan r LEFT JOIN hang_tra_ve g ON g.request_id=r.id WHERE r.order_id=? ORDER BY r.id DESC',
-        o.id,
-      )
-    ).map(requestView),
-    history: (
-      await d.all(
-        'SELECT * FROM order_status_history WHERE order_id=? ORDER BY id',
-        o.id,
-      )
-    ).map(camel),
-    transactions: (
-      await d.all(
-        'SELECT * FROM giao_dich_thanh_toan WHERE order_id=? ORDER BY id',
-        o.id,
-      )
-    ).map(camel),
+    requests: requestsRows.map(requestView),
+    history: historyRows.map(camel),
+    transactions,
+    ...extraInternal,
   };
 }
