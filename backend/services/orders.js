@@ -61,7 +61,8 @@ export async function validatePromotion(
   );
   let discount =
     p.type === 'percent' ? Math.floor((subtotal * p.value) / 100) : p.value;
-  if (p.max_discount !== null) discount = Math.min(discount, p.max_discount);
+  if (p.max_discount !== null && p.max_discount > 0)
+    discount = Math.min(discount, p.max_discount);
   return { ...camel(p), discount: Math.min(discount, subtotal) };
 }
 export async function reserveStock(d, orderId, items) {
@@ -2002,17 +2003,38 @@ export function installOrders(
         data: await Promise.all(
           (
             await d.all(
-              'SELECT p.id,p.user_id,p.order_id,p.file_name,p.mime_type,p.size,p.status,p.note,p.reviewer_id,p.reviewed_at,p.created_at,u.name user_name,o.code order_code,o.status order_status FROM don_thuoc p JOIN nguoi_dung u ON u.id=p.user_id JOIN don_hang o ON o.id=p.order_id ORDER BY p.id DESC',
+              `SELECT p.id,p.user_id,p.order_id,p.file_name,p.mime_type,p.size,p.status,p.note,p.approved_product_ids,
+                p.reviewer_id,p.reviewed_at,p.created_at,u.name user_name,u.phone user_phone,u.email user_email,
+                r.name reviewer_name,o.code order_code,o.status order_status,o.total order_total
+               FROM don_thuoc p
+               JOIN nguoi_dung u ON u.id=p.user_id
+               LEFT JOIN nguoi_dung r ON r.id=p.reviewer_id
+               JOIN don_hang o ON o.id=p.order_id
+               ORDER BY p.id DESC`,
             )
-          ).map(async (row) => ({
-            ...camel(row),
-            items: (
-              await d.all(
-                'SELECT product_id,name,quantity,unit FROM chi_tiet_don_hang WHERE order_id=? AND prescription_required=1',
-                row.order_id,
-              )
-            ).map(camel),
-          })),
+          ).map(async (row) => {
+            let approvedProductIds = [];
+            try {
+              approvedProductIds = row.approved_product_ids
+                ? JSON.parse(row.approved_product_ids)
+                : [];
+            } catch {
+              approvedProductIds = [];
+            }
+            const { approved_product_ids, ...rest } = row;
+            return {
+              ...camel(rest),
+              approvedProductIds: Array.isArray(approvedProductIds)
+                ? approvedProductIds.map(Number)
+                : [],
+              items: (
+                await d.all(
+                  'SELECT product_id,name,quantity,unit FROM chi_tiet_don_hang WHERE order_id=? AND prescription_required=1',
+                  row.order_id,
+                )
+              ).map(camel),
+            };
+          }),
         ),
       }),
   );
