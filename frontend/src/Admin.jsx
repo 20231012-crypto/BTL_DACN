@@ -3101,7 +3101,9 @@ export default function Admin({ user, onExit, onLogout, config }) {
               <div>
                 <span>Thông tin thanh toán</span>
                 <strong>
-                  {item.paymentMethod === 'cod'
+                  {item.paymentMethod === 'bank_transfer'
+                    ? 'Chuyển khoản VietQR'
+                    : item.paymentMethod === 'cod'
                     ? 'Thanh toán khi nhận hàng'
                     : item.paymentMethod === 'demo'
                       ? 'Thanh toán thử nghiệm'

@@ -1641,7 +1641,7 @@ export function installOrders(
             (payment.provider === 'cod' && req.body.confirmedCash === true) ||
             (payment.provider === 'bank_transfer' && req.body.confirmedTransfer === true && text(req.body.refundReference, 100).length >= 6),
           400,
-          'Xác nhận đã hoàn tiền mặt cho đơn COD.',
+          'Xác nhận đã hoàn tiền và cung cấp mã giao dịch nếu hoàn bằng chuyển khoản.',
         );
       }
       await d.transaction(async () => {
@@ -1659,6 +1659,7 @@ export function installOrders(
             reference,
             type: 'refund',
             provider: payment.provider,
+            provider_reference: payment.provider === 'bank_transfer' ? text(req.body.refundReference, 100) : null,
             amount,
             status: 'success',
           });
