@@ -1305,3 +1305,297 @@ test('pending PostgreSQL migrations are applied once and never block startup', a
     console.error = log;
   }
 });
+
+test('admin reports metrics stay internally consistent across breakdowns and status updates', async (t) => {
+  const { login } = await fixture(t);
+  const admin = await login('admin@antam.vn');
+  const sum = (items, field) =>
+    items.reduce((n, row) => n + (Number(row[field]) || 0), 0);
+
+  const initial = await admin('/admin/reports');
+  assert.equal(initial.status, 200);
+  const r1 = initial.data;
+  assert.equal(sum(r1.dailyRevenue, 'revenue'), r1.revenue);
+  assert.equal(sum(r1.dailyRevenue, 'orders'), r1.orderCount);
+  assert.equal(sum(r1.statusBreakdown, 'orders'), r1.orderCount);
+  assert.equal(sum(r1.paymentBreakdown, 'orders'), r1.orderCount);
+  assert.equal(sum(r1.paymentBreakdown, 'completedOrders'), r1.completedOrders);
+  assert.equal(sum(r1.paymentBreakdown, 'revenue'), r1.revenue);
+  assert.equal(sum(r1.categoryBreakdown, 'revenue'), r1.grossRevenue);
+  assert.equal(
+    r1.grossRevenue + r1.totalShipping - r1.totalDiscount - r1.refundTotal,
+    r1.revenue,
+  );
+  assert.ok(sum(r1.topProducts, 'revenue') <= r1.grossRevenue);
+
+  // Cancel the existing pending order (#10) and verify metrics stay consistent.
+  const orders = await admin('/admin/orders');
+  const pending = orders.data.find((o) => o.status === 'pending');
+  assert.ok(pending);
+  const cancelled = await admin(`/admin/orders/${pending.id}/status`, 'PATCH', {
+    status: 'cancelled',
+    note: 'Kiểm tra thống kê hủy đơn',
+  });
+  assert.equal(cancelled.status, 200);
+  const afterCancel = await admin('/admin/reports');
+  assert.equal(afterCancel.status, 200);
+  const r2 = afterCancel.data;
+  assert.equal(r2.cancelledOrders, r1.cancelledOrders + 1);
+  assert.equal(sum(r2.statusBreakdown, 'orders'), r2.orderCount);
+  assert.equal(sum(r2.paymentBreakdown, 'orders'), r2.orderCount);
+  assert.equal(sum(r2.categoryBreakdown, 'revenue'), r2.grossRevenue);
+  assert.equal(sum(r2.dailyRevenue, 'revenue'), r2.revenue);
+});
+
+test('admin dashboard overview reflects exact business pipeline, inventory health, live queues and permissions', async (t) => {
+  const { login } = await fixture(t);
+  const admin = await login('admin@antam.vn');
+  const pharmacist = await login('duocsi@antam.vn');
+  const customer = await login();
+
+  const badDays = await admin('/admin/dashboard?days=0');
+  assert.equal(badDays.status, 400);
+
+  const d7 = (await admin('/admin/dashboard?days=7')).data;
+  const d30 = (await admin('/admin/dashboard?days=30')).data;
+  const d1 = (await admin('/admin/dashboard?days=1')).data;
+
+  assert.equal(d7.days, 7);
+  assert.equal(d7.revenue, 841000);
+  assert.equal(d7.orderCount, 7);
+  assert.equal(d30.days, 30);
+  assert.equal(d30.revenue, 1424000);
+  assert.equal(d30.orderCount, 10);
+  assert.equal(d1.days, 1);
+  assert.equal(d1.orderCount, 1);
+
+  assert.equal(d7.allTime.revenue, 1424000);
+  assert.equal(d7.allTime.orderCount, 10);
+  assert.equal(d7.allTime.completedOrders, 7);
+  assert.equal(d7.allTime.todayOrders, 1);
+  assert.equal(d7.allTime.todayRevenue, 0);
+  assert.equal(d7.allTime.prepaidInFlightAmount, 110000);
+  assert.equal(d7.allTime.codPendingAmount, 653000);
+  assert.equal(d7.allTime.inFlightAmount, 763000);
+
+  assert.equal(d7.pipeline.activeOrders, 3);
+  const stageSum = d7.pipeline.stages.reduce((n, s) => n + s.count, 0);
+  assert.equal(stageSum, d7.allTime.orderCount);
+  assert.equal(d7.queues.waitingConfirmOrders, 1);
+  assert.equal(d7.queues.packingOrders, 1);
+  assert.equal(d7.queues.shippingOrders, 1);
+  assert.equal(d7.queues.expiredBatches, 1);
+  assert.equal(d7.queues.expiringBatches, 1);
+  assert.equal(d7.queues.outOfStockProducts, 1);
+  assert.equal(d7.queues.lowStockProducts, 2);
+  assert.equal(d7.queues.lowStockOnlyProducts, 1);
+  assert.equal(d7.catalog.activeProducts, 100);
+  assert.equal(d7.catalog.activeCustomers, 2);
+  assert.ok(d7.recentAudit.length > 0);
+  assert.ok(d7.recentOrders[0].customerName);
+
+  // Create a prescription order -> pending_prescription + pendingPrescriptions update
+  const rx = await upload(customer);
+  await add(customer, 10, 1);
+  const rxOrder = await order(customer, { prescriptionId: rx.id });
+  assert.equal(rxOrder.status, 201);
+
+  // Create a support handoff -> openSupport updates
+  const chat = await customer('/chat', 'POST', { message: 'Tôi bị khó thở' });
+  assert.equal(chat.status, 200);
+
+  // Create a cancel request on packing order (#8) -> pendingRequests updates
+  const orders = (await admin('/admin/orders')).data;
+  const packing = orders.find((o) => o.status === 'packing');
+  assert.ok(packing);
+  const reqRes = await customer(`/orders/${packing.id}/requests`, 'POST', {
+    type: 'cancel',
+    reason: 'Khách cần đổi thời gian giao',
+  });
+  assert.equal(reqRes.status, 201);
+
+  const afterMutations = (await admin('/admin/dashboard?days=7')).data;
+  assert.equal(afterMutations.queues.pendingPrescriptions, 1);
+  assert.equal(afterMutations.pipeline.activeOrders, 4);
+  assert.equal(afterMutations.queues.openSupport, 1);
+  assert.equal(afterMutations.queues.pendingRequests.total, 1);
+  assert.equal(afterMutations.queues.pendingRequests.cancel, 1);
+
+  // Pharmacist approves prescription -> moves to pending (waitingConfirmOrders = 2)
+  const approved = await pharmacist(`/admin/prescriptions/${rx.id}`, 'PATCH', {
+    status: 'approved',
+  });
+  assert.equal(approved.status, 200);
+  const afterApprove = (await pharmacist('/admin/dashboard?days=7')).data;
+  assert.equal(afterApprove.queues.pendingPrescriptions, 0);
+  assert.equal(afterApprove.queues.waitingConfirmOrders, 2);
+  assert.deepEqual(afterApprove.recentAudit, []);
+
+  // Staff without orders permission must not receive customer PII in recentOrders
+  const staffRow = (await admin('/admin/users')).data.find(
+    (u) => u.email === 'kho@antam.vn',
+  );
+  await admin(`/admin/users/${staffRow.id}`, 'PATCH', {
+    permissions: ['reports', 'inventory'],
+  });
+  const warehouseOnly = await login('kho@antam.vn');
+  const restricted = (await warehouseOnly('/admin/dashboard?days=7')).data;
+  assert.equal(restricted.recentAudit.length, 0);
+  assert.equal(restricted.recentOrders[0].customerName, undefined);
+  assert.equal(restricted.recentOrders[0].address, undefined);
+});
+
+
+test('admin orders expose internal fulfillment details only to staff, support edits, bulk transitions, assisted creation, requests and CSV export', async (t) => {
+  const { login, d } = await fixture(t);
+  const admin = await login('admin@antam.vn');
+  const customer = await login();
+  const otherCustomer = await login('huong@antam.vn');
+
+  // Seed fix: order #10 belongs to user 4 (Lê Thu Hương) and has her real address
+  const order10 = (await admin('/admin/orders/10')).data;
+  assert.equal(order10.userName, 'Lê Thu Hương');
+  assert.equal(order10.address.recipient, 'Lê Thu Hương');
+  assert.equal(order10.address.phone, '0904445566');
+  assert.equal(order10.itemCount, 2);
+  assert.ok(order10.allocations.length > 0);
+  assert.ok(order10.history[0].userName);
+
+  // Lookup endpoint works for order staff without requiring admin users permission
+  const staff = await login('duocsi@antam.vn');
+  const lookup = await staff('/admin/orders/lookup');
+  assert.equal(lookup.status, 200);
+  assert.ok(lookup.data.customers.length >= 2);
+  assert.ok(lookup.data.products.every((p) => !p.prescriptionRequired));
+
+  // Assisted order creation blocks prescription drugs and calculates server totals for OTC
+  const rxReject = await staff('/admin/orders', 'POST', {
+    userId: 1,
+    address,
+    items: [{ productId: 10, quantity: 1 }],
+    paymentMethod: 'cod',
+  });
+  assert.equal(rxReject.status, 400);
+
+  const assisted = await staff('/admin/orders', 'POST', {
+    userId: 1,
+    address,
+    items: [{ productId: 2, quantity: 2 }],
+    paymentMethod: 'cod',
+    promotionCode: 'KHOEMANH10',
+    note: '=SUM(1,1) Giao chiều',
+    internalNote: 'Khách đặt qua hotline',
+    autoConfirm: false,
+  });
+  assert.equal(assisted.status, 201);
+  assert.equal(assisted.data.promotionCode, 'KHOEMANH10');
+  assert.equal(assisted.data.discount, 43000);
+  assert.equal(assisted.data.total, 387000);
+  assert.equal(assisted.data.internalNote, 'Khách đặt qua hotline');
+  assert.ok(assisted.data.allocations.length > 0);
+
+  // Customer view must NOT leak internalNote or warehouse allocations
+  const customerOwnView = await customer(`/orders/${assisted.data.id}`);
+  assert.equal(customerOwnView.status, 200);
+  assert.equal(customerOwnView.data.internalNote, undefined);
+  assert.equal(customerOwnView.data.allocations, undefined);
+
+  // Fulfillment update (carrier, tracking, internalNote, address before packing)
+  const updatedFulfill = await staff(`/admin/orders/${assisted.data.id}/fulfillment`, 'PATCH', {
+    shippingCarrier: 'Nội bộ An Tâm',
+    trackingCode: 'AT-HOTLINE-01',
+    internalNote: 'Đã gọi xác nhận giờ nhận',
+    address: { ...address, line1: '99 Trần Hưng Đạo' },
+  });
+  assert.equal(updatedFulfill.status, 200);
+  assert.equal(updatedFulfill.data.shippingCarrier, 'Nội bộ An Tâm');
+  assert.equal(updatedFulfill.data.trackingCode, 'AT-HOTLINE-01');
+  assert.equal(updatedFulfill.data.address.line1, '99 Trần Hưng Đạo');
+
+  // Bulk status transition updates eligible orders and reports failures cleanly
+  const onlineUnpaid = await otherCustomer('/cart', 'POST', { productId: 1, quantity: 1 });
+  assert.equal(onlineUnpaid.status, 201);
+  const unpaidOrder = (await order(otherCustomer, { paymentMethod: 'demo' })).data;
+
+  const bulkRes = await staff('/admin/orders/bulk-status', 'POST', {
+    orderIds: [assisted.data.id, unpaidOrder.id],
+    status: 'confirmed',
+  });
+  assert.equal(bulkRes.status, 200);
+  assert.deepEqual(bulkRes.data.updated, [assisted.data.id]);
+  assert.equal(bulkRes.data.failed.length, 1);
+  assert.equal(bulkRes.data.failed[0].id, unpaidOrder.id);
+
+  // Address becomes locked once order enters packing
+  assert.equal(
+    (await staff(`/admin/orders/${assisted.data.id}/status`, 'PATCH', { status: 'packing' })).status,
+    200,
+  );
+  assert.equal(
+    (
+      await staff(`/admin/orders/${assisted.data.id}/fulfillment`, 'PATCH', {
+        address: { ...address, line1: '100 Đường Khác' },
+      })
+    ).status,
+    409,
+  );
+
+  // Cancelling an order directly approves any pending cancel request on that order
+  const pendingCancelReq = await customer(`/orders/${assisted.data.id}/requests`, 'POST', {
+    type: 'cancel',
+    reason: 'Đổi ý không nhận nữa',
+  });
+  assert.equal(pendingCancelReq.status, 201);
+  assert.equal(
+    (
+      await staff(`/admin/orders/${assisted.data.id}/status`, 'PATCH', {
+        status: 'cancelled',
+        note: 'Hủy theo xác nhận với khách',
+      })
+    ).status,
+    200,
+  );
+  const syncedReq = await d.one('SELECT status FROM yeu_cau_huy_hoan WHERE id=?', pendingCancelReq.data.id);
+  assert.equal(syncedReq.status, 'approved');
+
+  // Admin-recorded return on delivered order enforces returnWindowDays and sealed/restock rules
+  const expiredReturn = await staff('/admin/orders/2/requests', 'POST', {
+    type: 'return',
+    reason: 'Thử đổi trả đơn đã quá hạn 7 ngày',
+    sealed: true,
+    restock: true,
+  });
+  assert.equal(expiredReturn.status, 409);
+
+  const deliveredReturn = await staff('/admin/orders/7/requests', 'POST', {
+    type: 'return',
+    reason: 'Khách mang sản phẩm nguyên seal đến đổi tại quầy',
+    sealed: false,
+    storeFault: false,
+    restock: true,
+  });
+  assert.equal(deliveredReturn.status, 400);
+
+  const validReturn = await staff('/admin/orders/7/requests', 'POST', {
+    type: 'return',
+    reason: 'Khách mang sản phẩm nguyên seal đến đổi tại quầy',
+    sealed: true,
+    restock: true,
+  });
+  assert.equal(validReturn.status, 201);
+  assert.equal(validReturn.data.status, 'returned');
+  assert.equal(validReturn.data.paymentStatus, 'refund_pending');
+
+  // Overdue manual expiration cancels unpaid pending_payment orders and frees stock
+  const beforeStock = (await customer('/products/1')).data.stock;
+  const expiredManual = await staff(`/admin/orders/${unpaidOrder.id}/expire`, 'POST', {});
+  assert.equal(expiredManual.status, 200);
+  assert.equal(expiredManual.data.status, 'cancelled');
+  assert.equal((await customer('/products/1')).data.stock, beforeStock + 1);
+
+  // CSV export returns UTF-8 BOM CSV with formula injection neutralized
+  const csvRes = await staff('/admin/orders/export');
+  assert.equal(csvRes.status, 200);
+  assert.match(csvRes.body, /AT202600109/);
+  assert.match(csvRes.body, /'=SUM\(1,1\)/);
+});
