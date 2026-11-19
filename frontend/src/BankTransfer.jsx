@@ -22,7 +22,7 @@ export default function BankTransfer({ orderId }) {
         src={details.qrUrl}
         alt={`Mã VietQR chuyển ${money(details.amount)}`}
         width="260"
-        height="300"
+        height="308"
       />
       <dl>
         <dt>Ngân hàng</dt>
