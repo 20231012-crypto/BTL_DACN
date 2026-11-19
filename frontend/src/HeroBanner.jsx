@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 const SLIDES = [
   {
     id: 'main',
-    src: '/assets/banners/hero-banner-4.jpg',
+    src: '/assets/banners/hero-banner-4.webp',
     alt: 'Hộp chăm sóc sức khỏe chính hãng Nhà thuốc An Tâm',
     badge: 'An Tâm chính hãng',
     title: 'Chăm sóc sức khỏe mỗi ngày, miễn phí từ 299.000đ',
@@ -12,7 +12,7 @@ const SLIDES = [
   },
   {
     id: 'vitamin',
-    src: '/assets/banners/hero-banner-2.jpg',
+    src: '/assets/banners/hero-banner-2.webp',
     alt: 'Bộ sản phẩm Vitamin C, D3 và Omega-3 Nhà thuốc An Tâm',
     badge: 'Tăng cường đề kháng',
     title: 'Vitamin & Thực phẩm bảo vệ sức khỏe',
@@ -20,7 +20,7 @@ const SLIDES = [
   },
   {
     id: 'care',
-    src: '/assets/banners/hero-banner-3.jpg',
+    src: '/assets/banners/hero-banner-3.webp',
     alt: 'Dược sĩ An Tâm kiểm duyệt đơn thuốc và tư vấn sức khỏe',
     badge: 'Dược sĩ đồng hành',
     title: 'Kiểm duyệt tận tâm, tư vấn minh bạch',
@@ -38,7 +38,19 @@ export default function HeroBanner() {
   const [animated, setAnimated] = useState(true);
   const [paused, setPaused] = useState(false);
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
+  // Chỉ ảnh đang hiển thị được tải ngay; các ảnh còn lại tải sau khi trang đã sẵn sàng.
+  const [preloadRest, setPreloadRest] = useState(false);
   const touchStartX = useRef(null);
+
+  useEffect(() => {
+    const start = () => setPreloadRest(true);
+    if (document.readyState === 'complete') {
+      const timer = setTimeout(start, 800);
+      return () => clearTimeout(timer);
+    }
+    window.addEventListener('load', start, { once: true });
+    return () => window.removeEventListener('load', start);
+  }, []);
 
   const activeIndex = pos === 0 ? 0 : START_POS - pos;
 
@@ -129,10 +141,15 @@ export default function HeroBanner() {
             >
               <div className="hero-slide-media">
                 <img
-                  src={slide.src}
+                  src={
+                    slide.id === SLIDES[0].id || preloadRest
+                      ? slide.src
+                      : undefined
+                  }
                   alt={slide.alt}
                   width="1200"
-                  height="900"
+                  height="896"
+                  decoding="async"
                   style={{ objectPosition: slide.position }}
                   fetchPriority={idx === START_POS ? 'high' : undefined}
                 />
