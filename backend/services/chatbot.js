@@ -8,6 +8,7 @@ import {
   orderView,
 } from './shared.js';
 import { generateAnswer } from '../integrations/gemini.js';
+import { geminiKeys } from '../integrations/gemini-client.js';
 export function installChatbot(app, d, { auth }, options) {
   const sessionFor = async (id, userId) => {
     const s = await d.one(
@@ -267,7 +268,7 @@ export function installChatbot(app, d, { auth }, options) {
             ? 'Tôi tìm thấy một số sản phẩm phù hợp với từ khóa của bạn. Bạn hãy xem chi tiết và hỏi dược sĩ nếu cần lựa chọn sản phẩm cho tình trạng sức khỏe cụ thể.'
             : '');
         if (
-          process.env.GEMINI_API_KEY &&
+          geminiKeys().length > 0 &&
           !options.testing &&
           matching[0] &&
           /giao hang|van chuyen|thanh toan|doi tra|hoan tien/.test(
@@ -317,7 +318,7 @@ export function installChatbot(app, d, { auth }, options) {
         products,
         handoff: support,
         createdAt: now(),
-        providerConfigured: !!process.env.GEMINI_API_KEY,
+        providerConfigured: geminiKeys().length > 0,
       },
     });
   });
