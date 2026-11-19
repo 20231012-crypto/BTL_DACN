@@ -54,14 +54,27 @@ async function inventory(d) {
       quantity: b.quantity,
       expiresAt: b.expiresAt,
     }));
-  for (const p of await productList(d, {}, true))
-    if (p.active && p.stock < Number(settings.lowStockThreshold))
+  const allProducts = await productList(d, {}, true);
+  let outOfStockCount = 0;
+  for (const p of allProducts) {
+    if (!p.active) continue;
+    if (p.stock === 0) outOfStockCount += 1;
+    if (p.stock < Number(settings.lowStockThreshold))
       alerts.push({
         type: 'low_stock',
         productId: p.id,
         productName: p.name,
         quantity: p.stock,
       });
+  }
+  const alertOrder = { expired: 0, expiring: 1, low_stock: 2 };
+  alerts.sort(
+    (a, b) =>
+      (alertOrder[a.type] ?? 9) - (alertOrder[b.type] ?? 9) ||
+      (a.type === 'low_stock'
+        ? a.quantity - b.quantity
+        : String(a.expiresAt || '').localeCompare(String(b.expiresAt || ''))),
+  );
   const movements = (
     await d.all(
       'SELECT l.*,t.name product_name,b.batch_number,u.name user_name FROM lich_su_ton_kho l JOIN thuoc t ON t.id=l.product_id JOIN lo_thuoc b ON b.id=l.batch_id LEFT JOIN nguoi_dung u ON u.id=l.user_id ORDER BY l.id DESC LIMIT 300',
@@ -77,10 +90,24 @@ async function inventory(d) {
       expired: batches
         .filter((b) => b.status === 'expired')
         .reduce((n, b) => n + b.quantity, 0),
+      outOfStockCount,
       value: batches.reduce((n, b) => n + b.cost * b.quantity, 0),
     },
   };
 }
+function shiftIsoDate(isoDate, deltaDays) {
+  const date = new Date(isoDate + 'T00:00:00Z');
+  date.setUTCDate(date.getUTCDate() + deltaDays);
+  return date.toISOString().slice(0, 10);
+}
+const isRevenueOrder = (o) =>
+  ['delivered', 'returned'].includes(o.status) &&
+  ['paid', 'refund_pending', 'refunded'].includes(o.payment_status);
+const netOrderRevenue = (list) =>
+  list.reduce((n, o) => n + o.total - o.returned_amount, 0);
+const pctRate = (part, total) =>
+  total ? Number(((part / total) * 100).toFixed(1)) : 0;
+
 async function reports(d, query = {}, includeOrderDetails = false) {
   const from = query.from || daysFromNow(-29),
     to = query.to || today();
@@ -89,23 +116,43 @@ async function reports(d, query = {}, includeOrderDetails = false) {
     400,
     'Khoảng thời gian báo cáo không hợp lệ.',
   );
-  const all = await d.all(
-      `SELECT o.*, date(o.created_at,'+7 hours') report_date,
-        COALESCE((SELECT SUM(t.amount) FROM giao_dich_thanh_toan t WHERE t.order_id=o.id AND t.type='refund' AND t.status='success'),0) returned_amount
-       FROM don_hang o WHERE date(o.created_at,'+7 hours') BETWEEN ? AND ?`,
-      from,
-      to,
+  const spanDays = Math.max(
+      1,
+      Math.round(
+        (Date.parse(to + 'T00:00:00Z') - Date.parse(from + 'T00:00:00Z')) /
+          86400000,
+      ) + 1,
     ),
-    completed = all.filter(
-      (o) =>
-        ['delivered', 'returned'].includes(o.status) &&
-        ['paid', 'refund_pending', 'refunded'].includes(o.payment_status),
+    prevTo = shiftIsoDate(from, -1),
+    prevFrom = shiftIsoDate(from, -spanDays);
+  const [all, prevAll] = await Promise.all([
+      d.all(
+        `SELECT o.*, date(o.created_at,'+7 hours') report_date,
+          COALESCE((SELECT SUM(t.amount) FROM giao_dich_thanh_toan t WHERE t.order_id=o.id AND t.type='refund' AND t.status='success'),0) returned_amount
+         FROM don_hang o WHERE date(o.created_at,'+7 hours') BETWEEN ? AND ?`,
+        from,
+        to,
+      ),
+      d.all(
+        `SELECT o.id, o.status, o.payment_status, o.total,
+          COALESCE((SELECT SUM(t.amount) FROM giao_dich_thanh_toan t WHERE t.order_id=o.id AND t.type='refund' AND t.status='success'),0) returned_amount
+         FROM don_hang o WHERE date(o.created_at,'+7 hours') BETWEEN ? AND ?`,
+        prevFrom,
+        prevTo,
+      ),
+    ]),
+    completed = all.filter(isRevenueOrder),
+    deliveredPaid = all.filter(
+      (o) => o.status === 'delivered' && o.payment_status === 'paid',
+    ),
+    prevCompleted = prevAll.filter(isRevenueOrder),
+    prevDeliveredPaid = prevAll.filter(
+      (o) => o.status === 'delivered' && o.payment_status === 'paid',
     );
-  const revenue = completed.reduce(
-      (n, o) => n + o.total - o.returned_amount,
-      0,
-    ),
-    orderCount = all.length;
+  const revenue = netOrderRevenue(completed),
+    prevRevenue = netOrderRevenue(prevCompleted),
+    orderCount = all.length,
+    prevOrderCount = prevAll.length;
   const dailyRevenue = [];
   for (
     let date = new Date(from + 'T00:00:00Z');
@@ -117,83 +164,419 @@ async function reports(d, query = {}, includeOrderDetails = false) {
       done = completed.filter((o) => o.report_date === day);
     dailyRevenue.push({
       date: day,
-      revenue: done.reduce((n, o) => n + o.total - o.returned_amount, 0),
+      revenue: netOrderRevenue(done),
       orders: orders.length,
     });
   }
-  const topProducts = (
-    await d.all(
-      "SELECT p.id,p.name,SUM(i.quantity) quantity,SUM(i.quantity*i.price) revenue FROM chi_tiet_don_hang i JOIN don_hang o ON o.id=i.order_id JOIN thuoc p ON p.id=i.product_id WHERE o.status='delivered' AND o.payment_status='paid' AND date(o.created_at,'+7 hours') BETWEEN ? AND ? GROUP BY p.id ORDER BY quantity DESC LIMIT 10",
+  const statusMap = new Map(),
+    paymentMap = new Map();
+  for (const o of all) {
+    const statusBucket = statusMap.get(o.status) || {
+      status: o.status,
+      orders: 0,
+      amount: 0,
+    };
+    statusBucket.orders += 1;
+    statusBucket.amount += o.total;
+    statusMap.set(o.status, statusBucket);
+
+    const method = o.payment_method || 'cod';
+    const payBucket = paymentMap.get(method) || {
+      method,
+      orders: 0,
+      completedOrders: 0,
+      revenue: 0,
+    };
+    payBucket.orders += 1;
+    if (o.status === 'delivered' && o.payment_status === 'paid') {
+      payBucket.completedOrders += 1;
+    }
+    if (isRevenueOrder(o)) {
+      payBucket.revenue += o.total - o.returned_amount;
+    }
+    paymentMap.set(method, payBucket);
+  }
+  const [
+    topProductsRaw,
+    categoryBreakdownRaw,
+    prescriptionRows,
+    inv,
+    chatRow,
+    handoffRow,
+    customerRow,
+    pendingOrderRow,
+    pendingRxRow,
+  ] = await Promise.all([
+    d.all(
+      "SELECT p.id,p.name,p.unit,p.image,c.name category_name,SUM(i.quantity) quantity,SUM(i.quantity*i.price) revenue,COUNT(DISTINCT o.id) order_count FROM chi_tiet_don_hang i JOIN don_hang o ON o.id=i.order_id JOIN thuoc p ON p.id=i.product_id JOIN danh_muc c ON c.id=p.category_id WHERE o.status='delivered' AND o.payment_status='paid' AND date(o.created_at,'+7 hours') BETWEEN ? AND ? GROUP BY p.id,p.name,p.unit,p.image,c.name ORDER BY revenue DESC,quantity DESC LIMIT 10",
       from,
       to,
-    )
-  ).map(camel);
-  const inv = await inventory(d),
-    chatCount = (
-      await d.one(
-        "SELECT COUNT(*) n FROM cuoc_hoi_thoai WHERE date(created_at,'+7 hours') BETWEEN ? AND ?",
-        from,
-        to,
-      )
-    ).n;
+    ),
+    d.all(
+      "SELECT c.id,c.name,SUM(i.quantity) quantity,SUM(i.quantity*i.price) revenue,COUNT(DISTINCT o.id) order_count FROM chi_tiet_don_hang i JOIN don_hang o ON o.id=i.order_id JOIN thuoc p ON p.id=i.product_id JOIN danh_muc c ON c.id=p.category_id WHERE o.status='delivered' AND o.payment_status='paid' AND date(o.created_at,'+7 hours') BETWEEN ? AND ? GROUP BY c.id,c.name ORDER BY revenue DESC,quantity DESC",
+      from,
+      to,
+    ),
+    d.all(
+      "SELECT status,COUNT(*) n FROM don_thuoc WHERE date(created_at,'+7 hours') BETWEEN ? AND ? GROUP BY status",
+      from,
+      to,
+    ),
+    inventory(d),
+    d.one(
+      "SELECT COUNT(*) n FROM cuoc_hoi_thoai WHERE date(created_at,'+7 hours') BETWEEN ? AND ?",
+      from,
+      to,
+    ),
+    d.one(
+      "SELECT COUNT(*) n FROM yeu_cau_ho_tro WHERE date(created_at,'+7 hours') BETWEEN ? AND ?",
+      from,
+      to,
+    ),
+    d.one(
+      "SELECT COUNT(DISTINCT u.id) n FROM nguoi_dung u JOIN nguoi_dung_vai_tro uv ON uv.user_id=u.id JOIN vai_tro v ON v.id=uv.role_id WHERE v.name='customer' AND u.active=1",
+    ),
+    d.one(
+      "SELECT COUNT(*) n FROM don_hang WHERE status IN ('pending','pending_payment','pending_prescription')",
+    ),
+    d.one(
+      "SELECT COUNT(*) n FROM don_thuoc WHERE status='pending' AND order_id IS NOT NULL",
+    ),
+  ]);
+  const prescriptionStats = {
+    total: prescriptionRows.reduce((n, r) => n + r.n, 0),
+    approved: prescriptionRows.find((r) => r.status === 'approved')?.n || 0,
+    partial: prescriptionRows.find((r) => r.status === 'partial')?.n || 0,
+    pending: prescriptionRows.find((r) => r.status === 'pending')?.n || 0,
+    rejected: prescriptionRows.find((r) => r.status === 'rejected')?.n || 0,
+  };
+  const inventoryAlerts = inv.alerts.slice(0, 8);
+  const cancelledCount = all.filter((o) => o.status === 'cancelled').length,
+    prevCancelledCount = prevAll.filter((o) => o.status === 'cancelled').length;
   return {
     from,
     to,
+    spanDays,
     revenue,
+    grossRevenue: deliveredPaid.reduce((n, o) => n + (o.subtotal || 0), 0),
+    totalDiscount: deliveredPaid.reduce((n, o) => n + (o.discount || 0), 0),
+    totalShipping: deliveredPaid.reduce((n, o) => n + (o.shipping_fee || 0), 0),
+    refundTotal: all.reduce((n, o) => n + (o.returned_amount || 0), 0),
     orderCount,
-    completedOrders: completed.length,
-    averageOrder: completed.length ? Math.round(revenue / completed.length) : 0,
-    cancellationRate: orderCount
-      ? Number(
-          (
-            (all.filter((o) => o.status === 'cancelled').length / orderCount) *
-            100
-          ).toFixed(1),
-        )
+    completedOrders: deliveredPaid.length,
+    completionRate: pctRate(deliveredPaid.length, orderCount),
+    averageOrder: deliveredPaid.length
+      ? Math.round(netOrderRevenue(deliveredPaid) / deliveredPaid.length)
       : 0,
-    customerCount: (
-      await d.one(
-        'SELECT COUNT(*) n FROM nguoi_dung u JOIN khach_hang k ON k.id=u.id WHERE u.active=1',
-      )
-    ).n,
-    pendingOrders: (
-      await d.one(
-        "SELECT COUNT(*) n FROM don_hang WHERE status IN ('pending','pending_payment','pending_prescription')",
-      )
-    ).n,
-    pendingPrescriptions: (
-      await d.one(
-        "SELECT COUNT(*) n FROM don_thuoc WHERE status='pending' AND order_id IS NOT NULL",
-      )
-    ).n,
+    cancellationRate: pctRate(cancelledCount, orderCount),
+    cancelledOrders: cancelledCount,
+    previous: {
+      from: prevFrom,
+      to: prevTo,
+      revenue: prevRevenue,
+      orderCount: prevOrderCount,
+      completedOrders: prevDeliveredPaid.length,
+      averageOrder: prevDeliveredPaid.length
+        ? Math.round(netOrderRevenue(prevDeliveredPaid) / prevDeliveredPaid.length)
+        : 0,
+      cancellationRate: pctRate(prevCancelledCount, prevOrderCount),
+    },
+    customerCount: customerRow.n,
+    pendingOrders: pendingOrderRow.n,
+    pendingPrescriptions: pendingRxRow.n,
     lowStockCount: inv.alerts.filter((a) => a.type === 'low_stock').length,
-    chatCount,
-    handoffCount: (
-      await d.one(
-        "SELECT COUNT(*) n FROM yeu_cau_ho_tro WHERE date(created_at,'+7 hours') BETWEEN ? AND ?",
-        from,
-        to,
-      )
-    ).n,
+    chatCount: chatRow.n,
+    handoffCount: handoffRow.n,
+    prescriptionStats,
     dailyRevenue,
-    topProducts,
+    statusBreakdown: [...statusMap.values()].sort((a, b) => b.orders - a.orders),
+    paymentBreakdown: [...paymentMap.values()].sort(
+      (a, b) => b.revenue - a.revenue || b.orders - a.orders,
+    ),
+    categoryBreakdown: categoryBreakdownRaw.map(camel),
+    topProducts: topProductsRaw.map(camel),
     inventory: {
       ...inv.summary,
       lowStockCount: inv.alerts.filter((a) => a.type === 'low_stock').length,
       expiringCount: inv.alerts.filter((a) => a.type === 'expiring').length,
       expiredCount: inv.alerts.filter((a) => a.type === 'expired').length,
     },
+    inventoryAlerts,
     recentOrders: await Promise.all(
       (
         await d.all(
           'SELECT id,code,created_at,total,status,payment_status,payment_method FROM don_hang ORDER BY id DESC LIMIT 8',
         )
       ).map(async (o) =>
-        includeOrderDetails ? await orderView(d, o.id) : camel(o),
+        includeOrderDetails
+          ? await orderView(d, o.id, { includeInternal: true })
+          : camel(o),
       ),
     ),
   };
 }
+const ORDER_FLOW_STATES = [
+  'pending_prescription',
+  'pending_payment',
+  'pending',
+  'confirmed',
+  'packing',
+  'shipping',
+  'delivery_failed',
+  'delivered',
+  'cancelled',
+  'returned',
+];
+const ACTIVE_ORDER_STATES = new Set([
+  'pending_prescription',
+  'pending_payment',
+  'pending',
+  'confirmed',
+  'packing',
+  'shipping',
+  'delivery_failed',
+]);
+
+async function dashboardOverview(d, user, query = {}) {
+  const rawDays = query.days === undefined ? 7 : Number(query.days);
+  assert(
+    Number.isSafeInteger(rawDays) && rawDays >= 1 && rawDays <= 90,
+    400,
+    'Khoảng ngày tổng quan không hợp lệ.',
+  );
+  const to = query.to || today();
+  const from = query.from || daysFromNow(-(rawDays - 1));
+  const currentDay = today();
+  const includeOrders = user.permissions.includes('orders');
+  const includeAudit = user.permissions.includes('audit');
+  const [
+    report,
+    orderGroups,
+    allTimeRefundRow,
+    todayOrderRow,
+    todayRefundRow,
+    customerActionRxRow,
+    pendingRequestRows,
+    supportRows,
+    unreviewedKbRow,
+    unverifiedStaffRow,
+    productSummaryRows,
+    activePromosRow,
+    activeStaffRow,
+    settings,
+    recentAuditRows,
+    activeReturnGoodsRow,
+  ] = await Promise.all([
+    reports(d, { from, to }, includeOrders),
+    d.all(
+      'SELECT status, payment_method, payment_status, COUNT(*) n, COALESCE(SUM(total),0) amount FROM don_hang GROUP BY status, payment_method, payment_status',
+    ),
+    d.one(
+      "SELECT COALESCE(SUM(t.amount),0) amount FROM giao_dich_thanh_toan t JOIN don_hang o ON o.id=t.order_id WHERE t.type='refund' AND t.status='success' AND o.status IN ('delivered','returned') AND o.payment_status IN ('paid','refund_pending','refunded')",
+    ),
+    d.one(
+      "SELECT COUNT(*) orders, COALESCE(SUM(CASE WHEN o.status IN ('delivered','returned') AND o.payment_status IN ('paid','refund_pending','refunded') THEN o.total ELSE 0 END),0) gross FROM don_hang o WHERE date(o.created_at,'+7 hours')=?",
+      currentDay,
+    ),
+    d.one(
+      "SELECT COALESCE(SUM(t.amount),0) amount FROM giao_dich_thanh_toan t JOIN don_hang o ON o.id=t.order_id WHERE t.type='refund' AND t.status='success' AND o.status IN ('delivered','returned') AND o.payment_status IN ('paid','refund_pending','refunded') AND date(o.created_at,'+7 hours')=?",
+      currentDay,
+    ),
+    d.one(
+      "SELECT COUNT(*) n FROM don_thuoc p JOIN don_hang o ON o.id=p.order_id WHERE o.status='pending_prescription' AND p.status IN ('partial','rejected')",
+    ),
+    d.all(
+      "SELECT type, COUNT(*) n FROM yeu_cau_huy_hoan WHERE status='pending' GROUP BY type",
+    ),
+    d.all(
+      "SELECT status, COUNT(*) n FROM yeu_cau_ho_tro WHERE status IN ('pending','in_progress') GROUP BY status",
+    ),
+    d.one(
+      'SELECT COUNT(*) n FROM tri_thuc_chatbot WHERE active=1 AND reviewed_at IS NULL',
+    ),
+    d.one(
+      "SELECT COUNT(DISTINCT u.id) n FROM nguoi_dung u JOIN nguoi_dung_vai_tro uv ON uv.user_id=u.id JOIN vai_tro v ON v.id=uv.role_id WHERE v.name IN ('staff','admin') AND u.active=1 AND u.verified=0",
+    ),
+    d.all(
+      'SELECT active, prescription_required, COUNT(*) n FROM thuoc GROUP BY active, prescription_required',
+    ),
+    d.one(
+      'SELECT COUNT(*) n FROM khuyen_mai WHERE active=1 AND start_date<=? AND end_date>=? AND used_count<usage_limit',
+      currentDay,
+      currentDay,
+    ),
+    d.one(
+      "SELECT COUNT(DISTINCT u.id) n FROM nguoi_dung u JOIN nguoi_dung_vai_tro uv ON uv.user_id=u.id JOIN vai_tro v ON v.id=uv.role_id WHERE v.name IN ('staff','admin') AND u.active=1",
+    ),
+    getSettings(d),
+    includeAudit
+      ? d.all(
+          'SELECT l.id, l.action, l.entity, l.entity_id, l.detail, l.created_at, u.name user_name FROM nhat_ky_hoat_dong l LEFT JOIN nguoi_dung u ON u.id=l.user_id ORDER BY l.id DESC LIMIT 6',
+        )
+      : Promise.resolve([]),
+    d
+      .one(
+        "SELECT COUNT(*) n FROM hang_tra_ve WHERE status IN ('awaiting','in_transit','received')",
+      )
+      .catch(() => ({ n: 0 })),
+  ]);
+
+  const stageMap = Object.fromEntries(
+    ORDER_FLOW_STATES.map((status) => [status, { status, count: 0, amount: 0 }]),
+  );
+  let totalOrders = 0;
+  let allTimeGrossRevenue = 0;
+  let allTimeCompletedOrders = 0;
+  let allTimeCancelledOrders = 0;
+  let allTimeReturnedOrders = 0;
+  let activeOrders = 0;
+  let inFlightAmount = 0;
+  let prepaidInFlightAmount = 0;
+  let codPendingAmount = 0;
+  let waitingBankTransfers = 0;
+  let refundPendingCount = 0;
+  let refundPendingAmount = 0;
+
+  for (const row of orderGroups) {
+    const rowCount = Number(row.n || 0);
+    const rowAmount = Number(row.amount || 0);
+    totalOrders += rowCount;
+    if (!stageMap[row.status])
+      stageMap[row.status] = { status: row.status, count: 0, amount: 0 };
+    stageMap[row.status].count += rowCount;
+    stageMap[row.status].amount += rowAmount;
+
+    if (
+      ['delivered', 'returned'].includes(row.status) &&
+      ['paid', 'refund_pending', 'refunded'].includes(row.payment_status)
+    )
+      allTimeGrossRevenue += rowAmount;
+    if (row.status === 'delivered' && row.payment_status === 'paid')
+      allTimeCompletedOrders += rowCount;
+    if (row.status === 'cancelled') allTimeCancelledOrders += rowCount;
+    if (row.status === 'returned') allTimeReturnedOrders += rowCount;
+
+    if (ACTIVE_ORDER_STATES.has(row.status)) {
+      activeOrders += rowCount;
+      inFlightAmount += rowAmount;
+      if (row.payment_status === 'paid') prepaidInFlightAmount += rowAmount;
+      if (row.payment_method === 'cod' && row.payment_status === 'unpaid')
+        codPendingAmount += rowAmount;
+    }
+    if (
+      row.status === 'pending_payment' &&
+      row.payment_method === 'bank_transfer'
+    )
+      waitingBankTransfers += rowCount;
+    if (row.payment_status === 'refund_pending') {
+      refundPendingCount += rowCount;
+      refundPendingAmount += rowAmount;
+    }
+  }
+
+  const requestMap = Object.fromEntries(
+    pendingRequestRows.map((r) => [r.type, Number(r.n || 0)]),
+  );
+  const supportMap = Object.fromEntries(
+    supportRows.map((r) => [r.status, Number(r.n || 0)]),
+  );
+  let activeProducts = 0;
+  let hiddenProducts = 0;
+  let rxProducts = 0;
+  let otcProducts = 0;
+  for (const row of productSummaryRows) {
+    const n = Number(row.n || 0);
+    if (row.active) {
+      activeProducts += n;
+      if (row.prescription_required) rxProducts += n;
+      else otcProducts += n;
+    } else hiddenProducts += n;
+  }
+
+  const outOfStockProducts = Number(report.inventory?.outOfStockCount || 0);
+  const lowStockProducts = Number(report.inventory?.lowStockCount || 0);
+
+  return {
+    ...report,
+    days: report.spanDays,
+    allTime: {
+      revenue: Math.max(
+        0,
+        allTimeGrossRevenue - Number(allTimeRefundRow?.amount || 0),
+      ),
+      orderCount: totalOrders,
+      completedOrders: allTimeCompletedOrders,
+      cancelledOrders: allTimeCancelledOrders,
+      returnedOrders: allTimeReturnedOrders,
+      inFlightAmount,
+      prepaidInFlightAmount,
+      codPendingAmount,
+      refundPendingCount,
+      refundPendingAmount,
+      todayOrders: Number(todayOrderRow?.orders || 0),
+      todayRevenue: Math.max(
+        0,
+        Number(todayOrderRow?.gross || 0) - Number(todayRefundRow?.amount || 0),
+      ),
+    },
+    pipeline: {
+      activeOrders,
+      waitingBankTransfers,
+      stages: ORDER_FLOW_STATES.map((status) => stageMap[status]),
+    },
+    queues: {
+      pendingPrescriptions: report.pendingPrescriptions,
+      customerActionPrescriptions: Number(customerActionRxRow?.n || 0),
+      waitingPaymentOrders: stageMap.pending_payment.count,
+      waitingBankTransfers,
+      waitingConfirmOrders: stageMap.pending.count,
+      confirmedOrders: stageMap.confirmed.count,
+      packingOrders: stageMap.packing.count,
+      shippingOrders: stageMap.shipping.count,
+      deliveryFailedOrders: stageMap.delivery_failed.count,
+      pendingRequests: {
+        total:
+          (requestMap.cancel || 0) +
+          (requestMap.return || 0) +
+          (requestMap.refund || 0),
+        cancel: requestMap.cancel || 0,
+        return: requestMap.return || 0,
+        refund: requestMap.refund || 0,
+      },
+      refundPendingOrders: refundPendingCount,
+      activeReturnGoods: Number(activeReturnGoodsRow?.n || 0),
+      pendingSupport: supportMap.pending || 0,
+      inProgressSupport: supportMap.in_progress || 0,
+      openSupport: (supportMap.pending || 0) + (supportMap.in_progress || 0),
+      unreviewedKnowledge: Number(unreviewedKbRow?.n || 0),
+      expiredBatches: Number(report.inventory?.expiredCount || 0),
+      expiringBatches: Number(report.inventory?.expiringCount || 0),
+      lowStockProducts,
+      outOfStockProducts,
+      lowStockOnlyProducts: Math.max(0, lowStockProducts - outOfStockProducts),
+      unverifiedStaff: Number(unverifiedStaffRow?.n || 0),
+    },
+    catalog: {
+      activeProducts,
+      hiddenProducts,
+      rxProducts,
+      otcProducts,
+      activePromotions: Number(activePromosRow?.n || 0),
+      activeStaff: Number(activeStaffRow?.n || 0),
+      activeCustomers: report.customerCount,
+    },
+    opsSettings: {
+      lowStockThreshold: Number(settings.lowStockThreshold),
+      expiryWarningDays: Number(settings.expiryWarningDays),
+      paymentTimeoutMinutes: Number(settings.paymentTimeoutMinutes),
+      returnWindowDays: Number(settings.returnWindowDays),
+      shippingFee: Number(settings.shippingFee),
+      freeShippingThreshold: Number(settings.freeShippingThreshold),
+    },
+    recentAudit: recentAuditRows.map(camel),
+  };
+}
+
 export function installAdmin(
   app,
   d,
@@ -202,13 +585,7 @@ export function installAdmin(
 ) {
   app.get('/api/admin/dashboard', permission('reports'), async (req, res) =>
     res.json({
-      data: await reports(
-        d,
-        {
-          from: daysFromNow(-6),
-        },
-        req.user.permissions.includes('orders'),
-      ),
+      data: await dashboardOverview(d, req.user, req.query),
     }),
   );
   app.get('/api/admin/products', permission('catalog'), async (req, res) =>
