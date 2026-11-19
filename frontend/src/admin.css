@@ -2374,3 +2374,11 @@
 .adm-support-chat .adm-conversation p { font-size: 13px; color: #31412c; }
 .adm-chat-form textarea { width: 100%; padding: 10px 12px; border: 1px solid #d9e4cf; border-radius: 8px; font: inherit; resize: vertical; }
 .adm-chat-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; }
+
+.adm-badge.is-return_awaiting { background: #fbf4e4; color: #b39b55; }
+.adm-badge.is-return_in_transit,
+.adm-badge.is-return_received { background: #edf3fa; color: #6c8ca9; }
+.adm-badge.is-return_restocked { background: #edf6eb; color: #5f8c52; }
+.adm-badge.is-return_discarded { background: #fbeee9; color: #ba8775; }
+.adm-return-items { margin: 8px 0 0; padding-left: 18px; font-size: 13px; }
+.adm-return-timeline { display: grid; gap: 4px; margin-top: 10px; font-size: 12px; color: #6f7f67; }

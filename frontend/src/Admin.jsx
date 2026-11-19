@@ -68,6 +68,26 @@ const VIEW_PERMISSION = {
   settings: 'settings',
   audit: 'audit',
 };
+const RETURN_GOODS_STATES = [
+  'awaiting',
+  'in_transit',
+  'received',
+  'restocked',
+  'discarded',
+];
+const RETURN_GOODS_NEXT = {
+  awaiting: ['in_transit', 'received'],
+  in_transit: ['received'],
+  received: ['restocked', 'discarded'],
+  restocked: [],
+  discarded: [],
+};
+const RETURN_GOODS_ACTION = {
+  in_transit: 'Khách đang gửi hàng về',
+  received: 'Đã nhận hàng trả về',
+  restocked: 'Kiểm đạt, nhập lại kho',
+  discarded: 'Không đạt, loại bỏ',
+};
 const ORDER_STATES = [
   'pending_prescription',
   'pending_payment',
@@ -425,6 +445,8 @@ export default function Admin({ user, onExit, onLogout, config }) {
       let result;
       if (view === 'orders' && tab === 'requests')
         result = await api('/admin/requests');
+      else if (view === 'orders' && tab === 'returns')
+        result = await api('/admin/return-goods');
       else if (view === 'catalog') result = await api(`/admin/${tab}`);
       else if (view === 'chatbot')
         result = await api(
@@ -791,7 +813,7 @@ export default function Admin({ user, onExit, onLogout, config }) {
     <section className="adm-panel">
       <div className="adm-tabs">
         <button
-          className={tab !== 'requests' ? 'active' : ''}
+          className={tab !== 'requests' && tab !== 'returns' ? 'active' : ''}
           onClick={() => {
             setTab('orders');
             setFilter('');
@@ -808,16 +830,92 @@ export default function Admin({ user, onExit, onLogout, config }) {
         >
           Yêu cầu hủy, đổi trả & hoàn tiền
         </button>
+        <button
+          className={tab === 'returns' ? 'active' : ''}
+          onClick={() => {
+            setTab('returns');
+            setFilter('');
+          }}
+        >
+          Hàng trả về
+        </button>
       </div>
       {toolBar(
-        'Tìm theo mã đơn, khách hàng...',
-        selectFilter(
-          tab === 'requests'
-            ? ['pending', 'approved', 'rejected']
-            : ORDER_STATES,
+        'Tìm theo mã đơn, khách hàng, mã vận đơn...',
+        tab === 'returns' ? (
+          <select
+            className="adm-select"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          >
+            <option value="">Tất cả trạng thái</option>
+            {RETURN_GOODS_STATES.map((v) => (
+              <option key={v} value={v}>
+                {label(`return_${v}`)}
+              </option>
+            ))}
+          </select>
+        ) : (
+          selectFilter(
+            tab === 'requests'
+              ? ['pending', 'approved', 'rejected']
+              : ORDER_STATES,
+          )
         ),
       )}
-      {tab === 'requests' ? (
+      {tab === 'returns' ? (
+        <Table
+          columns={[
+            'Đơn hàng',
+            'Khách hàng',
+            'Sản phẩm trả về',
+            'Vận chuyển',
+            'Cập nhật',
+            'Trạng thái',
+            '',
+          ]}
+          rows={filtered(data)}
+          empty="Chưa có hàng trả về"
+        >
+          {filtered(data).map((g) => (
+            <tr key={g.id}>
+              <td>
+                <strong>{g.orderCode || `#${g.orderId}`}</strong>
+                <small>{money(g.total)}</small>
+              </td>
+              <td>{g.userName}</td>
+              <td className="adm-truncate">
+                {(g.items || [])
+                  .map((item) => `${item.name} × ${item.quantity}`)
+                  .join(', ')}
+              </td>
+              <td>
+                {g.trackingCode ? (
+                  <>
+                    <strong>{g.trackingCode}</strong>
+                    <small>{g.carrier || 'Đơn vị vận chuyển'}</small>
+                  </>
+                ) : (
+                  '—'
+                )}
+              </td>
+              <td>{fmtDate(g.updatedAt || g.createdAt)}</td>
+              <td>
+                <Badge value={`return_${g.status}`} />
+              </td>
+              <td>
+                <button
+                  className="adm-btn small"
+                  onClick={() => open('returnGoods', g)}
+                >
+                  <Eye size={14} />
+                  Xử lý
+                </button>
+              </td>
+            </tr>
+          ))}
+        </Table>
+      ) : tab === 'requests' ? (
         <Table
           columns={[
             'Đơn hàng',
@@ -2912,6 +3010,116 @@ export default function Admin({ user, onExit, onLogout, config }) {
           </form>
         </Modal>
       );
+    if (type === 'returnGoods') {
+      const next = RETURN_GOODS_NEXT[item.status] || [];
+      return (
+        <Modal title={`Hàng trả về · ${item.orderCode}`} onClose={close}>
+          <form
+            onSubmit={(e) =>
+              submit(e, `/admin/return-goods/${item.id}`, 'PATCH', {
+                status: form.nextStatus,
+                carrier: form.carrier,
+                trackingCode: form.trackingCode,
+                note: form.note,
+                sealed: !!form.sealed,
+              })
+            }
+          >
+            <div className="adm-modal-body">
+              <div className="adm-message-preview">
+                <strong>
+                  {item.orderCode} · {item.userName}
+                  {item.userPhone ? ` · ${item.userPhone}` : ''}
+                </strong>
+                <p>Lý do trả hàng: {item.reason}</p>
+                <Badge value={`return_${item.status}`} />
+                <ul className="adm-return-items">
+                  {(item.items || []).map((product) => (
+                    <li key={product.productId}>
+                      {product.name} × {product.quantity} {product.unit}
+                    </li>
+                  ))}
+                </ul>
+                <div className="adm-return-timeline">
+                  {item.trackingCode && (
+                    <span>
+                      Vận đơn: {item.trackingCode}
+                      {item.carrier ? ` (${item.carrier})` : ''}
+                    </span>
+                  )}
+                  {item.receivedAt && (
+                    <span>Nhận hàng: {dateTime(item.receivedAt)}</span>
+                  )}
+                  {item.inspectedAt && (
+                    <span>
+                      Kiểm hàng: {dateTime(item.inspectedAt)}
+                      {item.handlerName ? ` · ${item.handlerName}` : ''}
+                    </span>
+                  )}
+                  {item.note && <span>Ghi chú: {item.note}</span>}
+                </div>
+              </div>
+              {next.length > 0 ? (
+                <>
+                  <Field label="Cập nhật trạng thái" required>
+                    <select
+                      name="nextStatus"
+                      value={form.nextStatus || ''}
+                      onChange={change}
+                      required
+                    >
+                      <option value="">Chọn bước tiếp theo</option>
+                      {next.map((v) => (
+                        <option key={v} value={v}>
+                          {RETURN_GOODS_ACTION[v]}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  {form.nextStatus === 'in_transit' &&
+                    fields([
+                      ['carrier', 'Đơn vị vận chuyển'],
+                      ['trackingCode', 'Mã vận đơn', 'text', true],
+                    ])}
+                  {form.nextStatus === 'restocked' && (
+                    <CheckField
+                      label="Thuốc còn niêm phong và được bảo quản đúng"
+                      name="sealed"
+                      value={form.sealed}
+                      onChange={change}
+                    />
+                  )}
+                  {fields([
+                    [
+                      'note',
+                      form.nextStatus === 'discarded'
+                        ? 'Lý do loại bỏ'
+                        : 'Ghi chú (không bắt buộc)',
+                      'textarea',
+                      form.nextStatus === 'discarded',
+                    ],
+                  ])}
+                </>
+              ) : (
+                <div className="adm-info-banner compact">
+                  <ClipboardCheck size={18} />
+                  <p>Hàng trả về đã xử lý xong, không thể thay đổi thêm.</p>
+                </div>
+              )}
+            </div>
+            {next.length > 0 ? (
+              footer('Cập nhật')
+            ) : (
+              <div className="adm-modal-footer">
+                <button type="button" className="adm-btn" onClick={close}>
+                  Đóng
+                </button>
+              </div>
+            )}
+          </form>
+        </Modal>
+      );
+    }
     if (type === 'request')
       return (
         <Modal
@@ -2942,6 +3150,9 @@ export default function Admin({ user, onExit, onLogout, config }) {
                 </strong>
                 <p>{item.reason}</p>
                 <Badge value={item.status} />
+                {item.returnGoodsStatus && (
+                  <Badge value={`return_${item.returnGoodsStatus}`} />
+                )}
                 {item.evidenceAvailable && (
                   <a
                     className="adm-text-btn"
@@ -2990,11 +3201,15 @@ export default function Admin({ user, onExit, onLogout, config }) {
                         onChange={change}
                       />
                       <CheckField
-                        label="Nhập lại sản phẩm vào kho"
+                        label="Đã nhận và kiểm hàng, nhập lại kho ngay"
                         name="restock"
                         value={form.restock}
                         onChange={change}
                       />
+                      <p className="field-help">
+                        Nếu chưa nhận được hàng, để trống ô trên: yêu cầu sẽ
+                        được theo dõi ở tab Hàng trả về cho đến khi kiểm hàng.
+                      </p>
                     </>
                   )}
                 </>
