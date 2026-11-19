@@ -1038,3 +1038,16 @@ test('last admin is protected and permission deny overrides role default grants'
   assert.equal((await pharmacy('/admin/reports')).status, 403);
   assert.equal((await pharmacy('/admin/inventory')).status, 200);
 });
+
+test('delivery addresses accept current two-level locations and retain legacy districts', async (t) => {
+  const { login } = await fixture(t);
+  const customer = await login();
+  const address = { recipient: 'Khách hàng', phone: '0901234567', line1: '12 Đường Mới', city: 'Thành phố Hà Nội', ward: 'Phường Ba Đình', district: '' };
+  const modern = await customer('/addresses', 'POST', address);
+  assert.equal(modern.status, 201);
+  assert.equal(modern.data.district, '');
+  const legacy = await customer('/addresses', 'POST', { ...address, district: 'Quận Ba Đình' });
+  assert.equal(legacy.status, 201);
+  assert.equal(legacy.data.district, 'Quận Ba Đình');
+  assert.equal((await customer('/addresses', 'POST', { ...address, ward: '' })).status, 400);
+});

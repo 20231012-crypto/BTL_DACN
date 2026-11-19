@@ -4823,3 +4823,10 @@ svg {
     font-size: 11px;
   }
 }
+
+.search-select { position: relative; }
+.search-select > label { color: var(--text); font-size: 13px; font-weight: 600; }
+.search-options { position: absolute; inset: 100% 0 auto; z-index: 40; max-height: 240px; overflow-y: auto; background: white; border: 1px solid #d9e4e1; border-radius: 10px; box-shadow: 0 8px 24px #123d3420; padding: 5px; }
+.search-options button { width: 100%; border: 0; background: white; text-align: left; padding: 10px 12px; border-radius: 6px; cursor: pointer; }
+.search-options button:hover, .search-options button[aria-selected="true"] { background: #e7f5ef; }
+.search-options > span { display: block; padding: 12px; color: #667772; }

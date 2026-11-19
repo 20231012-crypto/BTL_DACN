@@ -45,6 +45,7 @@ import {
   CircleHelp,
 } from 'lucide-react';
 import Admin from './Admin.jsx';
+import AddressFields from './AddressFields.jsx';
 import { LogoIcon } from './Logo.jsx';
 import {
   api,
@@ -1405,28 +1406,7 @@ function Checkout() {
                   </div>
                 )}
                 {addressId === 'new' && (
-                  <div className="form-grid">
-                    {[
-                      ['recipient', 'Họ tên người nhận'],
-                      ['phone', 'Số điện thoại'],
-                      ['city', 'Tỉnh / Thành phố'],
-                      ['district', 'Quận / Huyện'],
-                      ['ward', 'Phường / Xã'],
-                      ['line1', 'Số nhà, tên đường'],
-                    ].map(([key, title]) => (
-                      <Field
-                        key={key}
-                        label={title}
-                        required
-                        value={address[key]}
-                        maxLength={key === 'phone' ? 15 : 200}
-                        autoComplete={key === 'phone' ? 'tel' : undefined}
-                        onChange={(e) =>
-                          setAddress({ ...address, [key]: e.target.value })
-                        }
-                      />
-                    ))}
-                  </div>
+                  <AddressFields address={address} onChange={setAddress} />
                 )}
               </section>
               {rx && (
@@ -3105,26 +3085,7 @@ function Account() {
             onClose={() => setEditing(null)}
           >
             <form onSubmit={saveAddress}>
-              <div className="form-grid">
-                {[
-                  ['recipient', 'Họ tên người nhận'],
-                  ['phone', 'Số điện thoại'],
-                  ['city', 'Tỉnh / Thành phố'],
-                  ['district', 'Quận / Huyện'],
-                  ['ward', 'Phường / Xã'],
-                  ['line1', 'Số nhà, tên đường'],
-                ].map(([key, title]) => (
-                  <Field
-                    key={key}
-                    label={title}
-                    required
-                    value={address[key] || ''}
-                    onChange={(e) =>
-                      setAddress({ ...address, [key]: e.target.value })
-                    }
-                  />
-                ))}
-              </div>
+              <AddressFields address={address} onChange={setAddress} />
               <label className="radio-line">
                 <input
                   type="checkbox"

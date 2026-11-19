@@ -445,10 +445,9 @@ export function installAuth(app, d, options) {
     assert(
       text(b.line1, 255) &&
         text(b.city, 100) &&
-        text(b.ward, 100) &&
-        text(b.district, 100),
+        text(b.ward, 100),
       400,
-      'Vui lòng nhập đủ địa chỉ, phường/xã, quận/huyện và tỉnh/thành phố.',
+      'Vui lòng nhập đủ số nhà, đường, phường/xã và tỉnh/thành phố.',
     );
     return {
       recipient: text(b.recipient, 100),

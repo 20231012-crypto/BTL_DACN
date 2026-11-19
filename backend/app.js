@@ -24,6 +24,7 @@ import {
 } from './services/attachments.js';
 import { googleConfig } from './integrations/google.js';
 import { vnpayConfig } from './integrations/vnpay.js';
+import { installLocations } from './integrations/locations.js';
 const root = fileURLToPath(new URL('../', import.meta.url));
 export async function createApp(options = {}) {
   const hosted =
@@ -254,6 +255,7 @@ export async function createApp(options = {}) {
     }),
   );
   installOrders(app, d, guards, config);
+  installLocations(app);
   installUploadIntents(app, d, guards.auth, config.attachmentStorage);
   installAdmin(app, d, guards, config);
   installBackup(app, d, guards);
