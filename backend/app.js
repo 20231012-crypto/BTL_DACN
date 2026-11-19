@@ -20,6 +20,7 @@ import { installBackup } from './services/backup.js';
 import { installChatbot } from './services/chatbot.js';
 import { installConsultation } from './services/consultation.js';
 import { installReturnGoods } from './services/return-goods.js';
+import { applyPendingMigrations } from './repositories/postgres-migrations.js';
 import {
   installUploadIntents,
   supabaseStorage,
@@ -81,9 +82,10 @@ export async function createApp(options = {}) {
               config.demo,
           });
         } else {
-          const initialized = await d.one(
-            "SELECT value FROM settings WHERE key='storeName'",
-          );
+          const [initialized] = await Promise.all([
+            d.one("SELECT value FROM settings WHERE key='storeName'"),
+            applyPendingMigrations(d),
+          ]);
           if (!initialized)
             throw new Error(
               'Chạy npm run db:setup trước khi khởi động PostgreSQL.',

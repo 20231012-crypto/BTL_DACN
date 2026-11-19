@@ -6,7 +6,7 @@ import path from 'node:path';
 import { createHmac } from 'node:crypto';
 import { createApp } from '../backend/app.js';
 import { openPostgres } from '../backend/repositories/postgres.js';
-import { initializePostgresSchema } from '../backend/repositories/postgres-migrations.js';
+import { initializePostgresSchema, applyPendingMigrations } from '../backend/repositories/postgres-migrations.js';
 import { createTestDatabase } from './postgres-fixture.js';
 import { resolveApiUrl } from '../api/index.js';
 async function fixture(t, options = {}) {
@@ -1277,4 +1277,31 @@ test('returned goods are tracked from approval to restock or discard', async (t)
   const direct = await deliveredReturn();
   assert.equal((await staff(`/admin/requests/${direct.requestId}`, 'PATCH', { status: 'approved', sealed: true, restock: true })).status, 200);
   assert.equal((await staff('/admin/return-goods')).data.find((row) => row.requestId === direct.requestId).status, 'restocked', 'restock at approval keeps working and is recorded');
+});
+
+test('pending PostgreSQL migrations are applied once and never block startup', async () => {
+  const run = async (present, options = {}) => {
+    const sql = [];
+    const store = {
+      one: async () => ({ present }),
+      transaction: async (work) => work(),
+      migrate: async (statement) => {
+        if (options.fail) throw Object.assign(new Error('denied'), { code: '42501' });
+        sql.push(statement);
+      },
+    };
+    await applyPendingMigrations(store);
+    return sql;
+  };
+  assert.equal((await run(true)).length, 0, 'existing table: no DDL');
+  const applied = await run(false);
+  assert.equal(applied.length, 1);
+  assert.match(applied[0], /CREATE TABLE IF NOT EXISTS antam\.hang_tra_ve/);
+  const log = console.error;
+  console.error = () => {};
+  try {
+    assert.deepEqual(await run(false, { fail: true }), [], 'a permission error is logged, not thrown');
+  } finally {
+    console.error = log;
+  }
 });
