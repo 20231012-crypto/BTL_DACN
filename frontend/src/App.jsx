@@ -677,15 +677,20 @@ function ProductCard({ product: p }) {
 }
 
 function Catalog() {
-  const { route, categories, manufacturers, navigate } = useApp();
+  const { route, categories, manufacturers, navigate, notify } = useApp();
   const params = new URLSearchParams(route.split('?')[1]);
   const [search, setSearch] = useState(params.get('search') || '');
   const [items, setItems] = useState(null);
   const [error, setError] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const digitsOnly = (v) => String(v || '').replace(/\D/g, '').slice(0, 12);
+  const formatPriceInput = (v) => {
+    const digits = digitsOnly(v);
+    return digits ? Number(digits).toLocaleString('vi-VN') : '';
+  };
   const [price, setPrice] = useState({
-    minPrice: params.get('minPrice') || '',
-    maxPrice: params.get('maxPrice') || '',
+    minPrice: digitsOnly(params.get('minPrice')),
+    maxPrice: digitsOnly(params.get('maxPrice')),
   });
   const update = (key, value) => {
     const next = new URLSearchParams(params);
@@ -788,6 +793,14 @@ function Catalog() {
             className="catalog-price-filter"
             onSubmit={(e) => {
               e.preventDefault();
+              if (
+                price.minPrice &&
+                price.maxPrice &&
+                Number(price.minPrice) > Number(price.maxPrice)
+              ) {
+                notify('Giá "Từ" không được lớn hơn giá "Đến".', 'error');
+                return;
+              }
               const next = new URLSearchParams(params);
               for (const [key, value] of Object.entries(price))
                 value ? next.set(key, value) : next.delete(key);
@@ -796,18 +809,23 @@ function Catalog() {
           >
             <Field
               label="Từ (đ)"
-              type="number"
-              min="0"
-              max={price.maxPrice || undefined}
-              value={price.minPrice}
-              onChange={(e) => setPrice({ ...price, minPrice: e.target.value })}
+              type="text"
+              inputMode="numeric"
+              placeholder="0"
+              value={formatPriceInput(price.minPrice)}
+              onChange={(e) =>
+                setPrice({ ...price, minPrice: digitsOnly(e.target.value) })
+              }
             />
             <Field
               label="Đến (đ)"
-              type="number"
-              min={price.minPrice || '0'}
-              value={price.maxPrice}
-              onChange={(e) => setPrice({ ...price, maxPrice: e.target.value })}
+              type="text"
+              inputMode="numeric"
+              placeholder="500.000"
+              value={formatPriceInput(price.maxPrice)}
+              onChange={(e) =>
+                setPrice({ ...price, maxPrice: digitsOnly(e.target.value) })
+              }
             />
             <button
               type="submit"
