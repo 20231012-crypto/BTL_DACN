@@ -1,5 +1,4 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
-import { searchScore } from '../../shared/search.js';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   LayoutDashboard,
   Package,
@@ -12,7 +11,6 @@ import {
   Settings,
   ScrollText,
   ArrowUpRight,
-  Search,
   Plus,
   X,
   Check,
@@ -21,15 +19,11 @@ import {
   LogOut,
   Menu,
   LoaderCircle,
-  Download,
   AlertTriangle,
-  Pencil,
   Trash2,
   RefreshCw,
-  Building2,
   Tags,
   ExternalLink,
-  Eye,
   ShieldCheck,
   Pill,
   TrendingUp,
@@ -41,26 +35,42 @@ import {
   BarChart3,
   Wallet,
   CheckCircle2,
+  Download,
 } from 'lucide-react';
 import { LogoIcon } from './Logo.jsx';
 import SupportChat from './SupportChat.jsx';
-import Pagination from './Pagination.jsx';
 import AdminDashboard from './AdminDashboard.jsx';
 import AdminOrders, {
   CreateOrderContent,
   OrderDetailContent,
 } from './AdminOrders.jsx';
 import {
+  AdminChatbot,
+  AdminInventory,
+  AdminPrescriptions,
+} from './AdminPharmacyOps.jsx';
+import {
+  AdminCatalogEntities,
+  AdminProducts,
+  AdminPromotions,
+} from './AdminCatalog.jsx';
+import { AdminAudit, AdminSettings, AdminUsers } from './AdminSystem.jsx';
+import {
+  AUDIT_LABELS,
+  CheckField,
+  DEFAULT_ROLE_PERMISSIONS,
+  ENTITY_LABELS,
+  Field,
+  Modal,
+  PERMISSION_LABELS,
   VIEW_PERMISSION,
-  ORDER_STATES,
-  ORDER_NEXT,
   RETURN_GOODS_NEXT,
   RETURN_GOODS_ACTION,
+  formatAuditDetail,
   label,
   list,
   fmtDate,
   safeJson,
-  text,
   count,
   vnDate,
   paymentLabel,
@@ -84,132 +94,31 @@ const NAV = [
   ['promotions', TicketPercent, 'Khuyến mãi'],
   ['users', Users, 'Tài khoản', true],
   ['chatbot', MessageSquare, 'Tư vấn & chatbot'],
-  ['reports', LayoutDashboard, 'Thống kê báo cáo'],
+  ['reports', BarChart3, 'Thống kê báo cáo'],
   ['settings', Settings, 'Cấu hình', true],
   ['audit', ScrollText, 'Nhật ký hệ thống', true],
 ];
 const TITLES = Object.fromEntries(NAV.map(([key, , name]) => [key, name]));
-function Field({
-  label: fieldLabel,
-  name,
-  value,
-  onChange,
-  type = 'text',
-  required = false,
-  children,
-  ...props
-}) {
-  return (
-    <label className={`adm-field ${props.wide ? 'is-wide' : ''}`}>
-      <span>
-        {fieldLabel}
-        {required && <i> *</i>}
-      </span>
-      {children ||
-        (type === 'textarea' ? (
-          <textarea
-            name={name}
-            value={value ?? ''}
-            onChange={onChange}
-            required={required}
-            rows="3"
-            {...Object.fromEntries(
-              Object.entries(props).filter(([k]) => k !== 'wide'),
-            )}
-          />
-        ) : (
-          <input
-            name={name}
-            value={value ?? ''}
-            onChange={onChange}
-            type={type}
-            required={required}
-            {...Object.fromEntries(
-              Object.entries(props).filter(([k]) => k !== 'wide'),
-            )}
-          />
-        ))}
-    </label>
-  );
-}
-function CheckField({ name, value, onChange, label: fieldLabel }) {
-  return (
-    <label className="adm-check">
-      <input
-        type="checkbox"
-        name={name}
-        checked={!!value}
-        onChange={onChange}
-      />
-      <span>{fieldLabel}</span>
-    </label>
-  );
-}
-function Modal({ title, children, onClose, wide = false }) {
-  const panel = useRef(null),
-    closeRef = useRef(onClose);
-  closeRef.current = onClose;
-  useEffect(() => {
-    const previous = document.activeElement,
-      overflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const controls = () =>
-      [
-        ...panel.current.querySelectorAll(
-          'button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex="0"]',
-        ),
-      ].filter((el) => el.offsetParent !== null);
-    controls()[0]?.focus();
-    const handle = (e) => {
-      if (e.key === 'Escape') closeRef.current();
-      if (e.key === 'Tab') {
-        const els = controls(),
-          first = els[0],
-          last = els.at(-1);
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last?.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first?.focus();
-        }
-      }
-    };
-    document.addEventListener('keydown', handle);
-    return () => {
-      document.removeEventListener('keydown', handle);
-      document.body.style.overflow = overflow;
-      previous?.focus();
-    };
-  }, []);
-  return (
-    <div
-      className="adm-modal-backdrop"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <section
-        ref={panel}
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className={`adm-modal ${wide ? 'is-wide' : ''}`}
-      >
-        <div className="adm-modal-head">
-          <div>
-            <span className="adm-eyebrow">NHÀ THUỐC AN TÂM</span>
-            <h2>{title}</h2>
-          </div>
-          <button className="adm-icon-btn" onClick={onClose} aria-label="Đóng">
-            <X size={20} />
-          </button>
-        </div>
-        {children}
-      </section>
-    </div>
-  );
-}
+const SUBTITLES = {
+  orders:
+    'Quản lý đơn hàng xuyên suốt từ tiếp nhận, kiểm hàng đến giao thành công.',
+  prescriptions:
+    'Đảm bảo mỗi đơn thuốc kê đơn được kiểm tra đúng chuyên môn dược sĩ.',
+  products:
+    'Quản lý thông tin, giá bán, tồn kho và hiển thị danh mục sản phẩm.',
+  inventory: 'Kiểm soát tồn kho theo lô, hạn dùng FEFO và lịch sử xuất nhập.',
+  catalog: 'Quản lý danh mục thuốc, nhà cung cấp và nhà sản xuất đối tác.',
+  promotions: 'Thiết lập mã giảm giá, hạn mức sử dụng và thời gian hiệu lực.',
+  users: 'Quản lý tài khoản khách hàng, nhân sự và phân quyền theo chức danh.',
+  chatbot:
+    'Tiếp nhận tư vấn trực tuyến, duyệt tri thức y khoa và quy tắc an toàn.',
+  reports:
+    'Theo dõi doanh thu, cơ cấu đơn hàng, sản phẩm bán chạy và cảnh báo kho.',
+  settings:
+    'Thiết lập thông số vận hành, chính sách đổi trả, tích hợp và sao lưu.',
+  audit:
+    'Tra cứu chi tiết lịch sử thao tác quản trị và thay đổi dữ liệu hệ thống.',
+};
 
 const STATUS_BUCKETS = [
   ['Hoàn tất (đã giao)', ['delivered'], '#2d7a55'],
@@ -291,14 +200,14 @@ function StatusDonut({ breakdown = [], totalOrders = 0 }) {
 }
 
 export default function Admin({ user, onExit, onLogout, config }) {
-  const searchId = useId();
   const hasPermission = (permission) => user?.permissions?.includes(permission);
   const canReviewKnowledge = hasPermission('prescriptions');
   const allowedNav = NAV.filter(
     ([key, , , adminOnly]) =>
       (!adminOnly || user?.role === 'admin') &&
       (hasPermission(VIEW_PERMISSION[key]) ||
-        (key === 'chatbot' && hasPermission('knowledge'))),
+        (key === 'chatbot' &&
+          (hasPermission('knowledge') || canReviewKnowledge))),
   );
   const [view, setView] = useState(() => allowedNav[0]?.[0] || 'dashboard');
   const [data, setData] = useState(null),
@@ -322,6 +231,7 @@ export default function Admin({ user, onExit, onLogout, config }) {
   const [range, setRange] = useState({ from: '', to: '' });
   const [dashDays, setDashDays] = useState(7);
   const [dashRefreshing, setDashRefreshing] = useState(false);
+  const [navCounts, setNavCounts] = useState(null);
   const isAdmin = user?.role === 'admin';
   useEffect(() => {
     setPage(1);
@@ -334,6 +244,15 @@ export default function Admin({ user, onExit, onLogout, config }) {
     const timer = setTimeout(() => setToast(null), 5000);
     return () => clearTimeout(timer);
   }, [toast]);
+  const refreshNavCounts = async () => {
+    if (!hasPermission('reports')) return;
+    try {
+      const overview = await api('/admin/dashboard?days=7');
+      if (overview?.queues) setNavCounts(overview.queues);
+    } catch {
+      // Bỏ qua nếu không tải được số đếm tổng quan.
+    }
+  };
   const go = (next, opts = {}) => {
     const defaultTab =
       next === 'chatbot'
@@ -383,17 +302,21 @@ export default function Admin({ user, onExit, onLogout, config }) {
         result = await api(`/admin/dashboard?days=${customDashDays}`);
       else result = await api(`/admin/${view}`);
       setData(result);
+      if (view === 'dashboard' && result?.queues) setNavCounts(result.queues);
       if (view === 'products' || view === 'inventory') {
+        const safeGet = (path) => api(path).catch(() => []);
         const [p, c, s, m] = await Promise.all([
-          api('/admin/products'),
-          api('/admin/categories'),
-          api('/admin/suppliers'),
-          api('/admin/manufacturers'),
+          safeGet('/admin/products'),
+          hasPermission('catalog') ? safeGet('/admin/categories') : Promise.resolve([]),
+          safeGet('/admin/suppliers'),
+          hasPermission('catalog') ? safeGet('/admin/manufacturers') : Promise.resolve([]),
         ]);
         setProducts(list(p));
-        setCategories(list(c));
+        if (hasPermission('catalog')) {
+          setCategories(list(c));
+          setManufacturers(list(m));
+        }
         setSuppliers(list(s));
-        setManufacturers(list(m));
       }
       if (view === 'settings') setForm(result || {});
     } catch (e) {
@@ -412,8 +335,14 @@ export default function Admin({ user, onExit, onLogout, config }) {
     }
   };
   useEffect(() => {
-    load(view === 'orders' && Array.isArray(data));
+    const keepSilent =
+      (view === 'orders' && Array.isArray(data)) ||
+      (view === 'inventory' && Boolean(data?.batches));
+    load(keepSilent);
   }, [view, tab]);
+  useEffect(() => {
+    if (view !== 'dashboard') refreshNavCounts();
+  }, [view]);
   // Danh sách yêu cầu hỗ trợ tự làm mới để dược sĩ thấy yêu cầu tư vấn mới.
   useEffect(() => {
     if (view !== 'chatbot' || tab !== 'support' || modal) return undefined;
@@ -436,8 +365,46 @@ export default function Admin({ user, onExit, onLogout, config }) {
       prepared.keywords = prepared.keywords.join(', ');
     if (type === 'order' && prepared.bankAmount === undefined && item.total)
       prepared.bankAmount = item.total;
+    if (type === 'prescription')
+      prepared.productIds = Array.isArray(item.approvedProductIds)
+        ? [...item.approvedProductIds]
+        : [];
     setForm(prepared);
     setModal({ type, data: item });
+  };
+  const openReceiptModal = async (prefill = {}) => {
+    let prodList = products;
+    let supList = suppliers;
+    if (!prodList.length || !supList.length) {
+      try {
+        const [p, s] = await Promise.all([
+          api('/admin/products'),
+          api('/admin/suppliers'),
+        ]);
+        prodList = list(p);
+        supList = list(s);
+        setProducts(prodList);
+        setSuppliers(supList);
+      } catch {
+        // Sẽ hiển thị danh sách trống nếu không tải được.
+      }
+    }
+    const activeSupplier =
+      supList.find((s) => s.active !== false)?.id || supList[0]?.id || '';
+    const firstProductId = prefill.productId || prodList[0]?.id || '';
+    open('receipt', prefill, {
+      supplierId: prefill.supplierId || activeSupplier,
+      items: [
+        {
+          productId: firstProductId,
+          batchNumber: '',
+          quantity: 10,
+          cost: '',
+          manufacturedAt: vnDate(0),
+          expiresAt: vnDate(365),
+        },
+      ],
+    });
   };
   const close = () => {
     if (saving) return;
@@ -451,7 +418,10 @@ export default function Admin({ user, onExit, onLogout, config }) {
       await api(path, { method, body: payload });
       setModal(null);
       notify('Đã lưu thay đổi thành công.');
-      await load(true);
+      await Promise.all([
+        load(true),
+        view !== 'dashboard' ? refreshNavCounts() : Promise.resolve(),
+      ]);
       return true;
     } catch (err) {
       notify(err.message, 'error');
@@ -460,23 +430,26 @@ export default function Admin({ user, onExit, onLogout, config }) {
       setSaving(false);
     }
   };
-  const filtered = (rows) =>
-    list(rows).filter(
-      (item) =>
-        (!query ||
-          Object.values(item).some(
-            (v) =>
-              typeof v === 'string' &&
-              searchScore(v, query) > 0,
-          )) &&
-        (!filter ||
-          item.status === filter ||
-          item.role === filter ||
-          (filter === 'rx' && item.prescriptionRequired) ||
-          (filter === 'otc' && !item.prescriptionRequired) ||
-          (filter === 'active' && item.active) ||
-          (filter === 'inactive' && !item.active)),
-    );
+  const toggleActive = async (resource, item, nextActive) => {
+    setSaving(true);
+    try {
+      await api(`/admin/${resource}/${item.id}`, {
+        method: 'PATCH',
+        body: { active: nextActive },
+      });
+      notify(
+        nextActive ? 'Đã kích hoạt lại thành công.' : 'Đã cập nhật trạng thái.',
+      );
+      await Promise.all([
+        load(true),
+        view !== 'dashboard' ? refreshNavCounts() : Promise.resolve(),
+      ]);
+    } catch (err) {
+      notify(err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
   const orderDetail = async (order, extraForm = {}) => {
     try {
       const details = await api(`/admin/orders/${order.id}`);
@@ -503,82 +476,6 @@ export default function Admin({ user, onExit, onLogout, config }) {
       notify(e.message, 'error');
     }
   };
-  const toolBar = (placeholder, children, action) => (
-    <div className="adm-toolbar">
-      <div className="adm-search">
-        <Search size={17} />
-        <input
-          list={searchId}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={placeholder}
-          aria-label={placeholder}
-        />
-        <datalist id={searchId}>{filtered(data).slice(0, 8).map((item, index) => {
-          const title = item.name || item.title || item.code || item.customerName;
-          return title ? <option value={title} key={index} /> : null;
-        })}</datalist>
-      </div>
-      <div className="adm-toolbar-right">
-        {children}
-        {action}
-      </div>
-    </div>
-  );
-  const selectFilter = (
-    options,
-    placeholder = 'Tất cả trạng thái',
-    labelFn = label,
-  ) => (
-    <select
-      className="adm-select"
-      value={filter}
-      onChange={(e) => setFilter(e.target.value)}
-    >
-      <option value="">{placeholder}</option>
-      {options.map((v) => (
-        <option key={v} value={v}>
-          {labelFn(v)}
-        </option>
-      ))}
-    </select>
-  );
-  const addButton = (title, type, defaults = {}) => (
-    <button className="adm-btn primary" onClick={() => open(type, defaults)}>
-      <Plus size={17} />
-      {title}
-    </button>
-  );
-  const actions = (item, type) => (
-    <div className="adm-row-actions">
-      <button
-        className="adm-icon-btn"
-        aria-label={`Sửa ${item.name || item.title || item.code || ''}`}
-        onClick={() => open(type, item)}
-      >
-        <Pencil size={16} />
-      </button>
-      <button
-        className="adm-icon-btn danger"
-        aria-label={`Xóa ${item.name || item.title || item.code || ''}`}
-        onClick={() =>
-          open('delete', {
-            ...item,
-            resource:
-              type === 'product'
-                ? 'products'
-                : type === 'knowledge'
-                  ? 'knowledge'
-                  : type === 'promotion'
-                    ? 'promotions'
-                    : tab,
-          })
-        }
-      >
-        <Trash2 size={16} />
-      </button>
-    </div>
-  );
 
   const orderTable = (orders) => (
     <Table
@@ -682,717 +579,114 @@ export default function Admin({ user, onExit, onLogout, config }) {
     />
   );
   const prescriptionsView = () => (
-    <>
-      <div className="adm-info-banner">
-        <ShieldCheck size={21} />
-        <div>
-          <strong>Kiểm duyệt bởi dược sĩ</strong>
-          <p>
-            Kiểm tra tệp đơn thuốc và ghi rõ lý do khi từ chối. Tệp chỉ được xem
-            bởi người có quyền.
-          </p>
-        </div>
-      </div>
-      <section className="adm-panel">
-        {toolBar(
-          'Tìm đơn thuốc, khách hàng...',
-          selectFilter(
-            ['pending', 'partial', 'approved', 'rejected'],
-            'Tất cả trạng thái',
-            (v) => (v === 'pending' ? 'Chờ duyệt' : label(v)),
-          ),
-        )}
-        <Table
-          columns={[
-            'Đơn thuốc',
-            'Khách hàng',
-            'Đơn hàng',
-            'Ngày gửi',
-            'Trạng thái',
-            'Thao tác',
-          ]}
-          rows={filtered(data)}
-        >
-          {filtered(data).map((rx) => (
-            <tr key={rx.id}>
-              <td>
-                <strong>Đơn thuốc #{rx.id}</strong>
-                <small>
-                  {rx.originalName || rx.fileName || 'Tệp đính kèm'}
-                </small>
-              </td>
-              <td>
-                {rx.customerName || rx.userName || rx.name || 'Khách hàng'}
-              </td>
-              <td>{rx.orderCode || 'Chưa gắn đơn hàng'}</td>
-              <td>{fmtDate(rx.createdAt)}</td>
-              <td>
-                <Badge value={rx.status}>
-                  {rx.status === 'pending' ? 'Chờ duyệt' : undefined}
-                </Badge>
-              </td>
-              <td>
-                <button
-                  className="adm-btn small"
-                  onClick={() => open('prescription', rx)}
-                >
-                  <Eye size={15} />
-                  Kiểm tra
-                </button>
-              </td>
-            </tr>
-          ))}
-        </Table>
-      </section>
-    </>
+    <AdminPrescriptions
+      rows={data}
+      query={query}
+      setQuery={setQuery}
+      filter={filter}
+      setFilter={setFilter}
+      page={page}
+      setPage={setPage}
+      onOpenPrescription={(rx) => open('prescription', rx)}
+      onOpenOrder={orderDetail}
+    />
   );
-  const productsView = () => {
-    const rows = filtered(data);
-    const totalPages = Math.max(1, Math.ceil(rows.length / 9));
-    const currentPage = Math.min(page, totalPages);
-    const visible = rows.slice((currentPage - 1) * 9, currentPage * 9);
-    return (
-      <section className="adm-panel">
-        {toolBar(
-          'Tên thuốc, hoạt chất, nhà sản xuất...',
-          selectFilter(['otc', 'rx'], 'Tất cả loại sản phẩm'),
-          addButton('Thêm sản phẩm', 'product', {
-            unit: 'Hộp',
-            price: 0,
-            categoryId: categories[0]?.id,
-            prescriptionRequired: false,
-            active: true,
-          }),
-        )}
-        <Table
-          columns={[
-            'Sản phẩm',
-            'Danh mục',
-            'Giá bán',
-            'Tồn khả dụng',
-            'Phân loại',
-            'Hiển thị',
-            '',
-          ]}
-          rows={visible}
-        >
-          {visible.map((p) => (
-            <tr key={p.id}>
-              <td>
-                <div className="adm-product-cell">
-                  <div className="adm-product-thumb">
-                    {p.image?.startsWith('/') || p.image?.startsWith('http') ? (
-                      <img
-                        src={p.image}
-                        alt=""
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      <Pill size={22} />
-                    )}
-                  </div>
-                  <div>
-                    <strong>{p.name}</strong>
-                    <small>
-                      {p.manufacturer || p.ingredient || `SP-${p.id}`}
-                    </small>
-                  </div>
-                </div>
-              </td>
-              <td>
-                {p.categoryName ||
-                  categories.find((c) => c.id === p.categoryId)?.name ||
-                  '—'}
-              </td>
-              <td>
-                <strong>{money(p.price)}</strong>
-                <small>/ {p.unit}</small>
-              </td>
-              <td>
-                <span className={`adm-stock ${p.stock < 10 ? 'low' : ''}`}>
-                  {count(p.stock)}
-                </span>
-              </td>
-              <td>
-                <Badge
-                  value={
-                    p.prescriptionRequired ? 'pending_prescription' : 'active'
-                  }
-                >
-                  {p.prescriptionRequired ? 'Kê đơn' : 'Không kê đơn'}
-                </Badge>
-              </td>
-              <td>
-                <Badge value={p.active === false ? 'inactive' : 'active'}>
-                  {p.active === false ? 'Đã ẩn' : 'Đang bán'}
-                </Badge>
-              </td>
-              <td>{actions(p, 'product')}</td>
-            </tr>
-          ))}
-        </Table>
-        <Pagination
-          page={currentPage}
-          totalItems={rows.length}
-          perPage={9}
-          onChange={setPage}
-          className="adm-pagination"
-          noun="sản phẩm"
-        />
-      </section>
-    );
-  };
-  const inventoryView = () => {
-    const invKey = tab === 'alerts' ? 'alerts' : tab === 'movements' ? 'movements' : 'batches';
-    const invRows = filtered(data?.[invKey]);
-    const invTotalPages = Math.max(1, Math.ceil(invRows.length / 12));
-    const invPage = Math.min(page, invTotalPages);
-    const invVisible = invRows.slice((invPage - 1) * 12, invPage * 12);
-    const invNoun = tab === 'alerts' ? 'cảnh báo' : tab === 'movements' ? 'biến động' : 'lô thuốc';
-    return (
-      <>
-        <div className="adm-inventory-summary">
-          <div className="adm-mini-stat">
-            <Boxes size={22} />
-            <div>
-              <strong>{count(data?.batches?.length)}</strong>
-              <span>Lô thuốc đang quản lý</span>
-            </div>
-          </div>
-          <div className="adm-mini-stat warning">
-            <AlertTriangle size={22} />
-            <div>
-              <strong>
-                {count(data?.alerts?.filter((a) => a.type === 'expiring').length)}
-              </strong>
-              <span>Lô sắp hết hạn</span>
-            </div>
-          </div>
-          <div className="adm-mini-stat danger">
-            <Package size={22} />
-            <div>
-              <strong>
-                {count(
-                  data?.alerts?.filter((a) => a.type === 'low_stock').length,
-                )}
-              </strong>
-              <span>Sản phẩm sắp hết</span>
-            </div>
-          </div>
-        </div>
-        <section className="adm-panel">
-          <div className="adm-tabs">
-            {[
-              ['batches', 'Danh sách lô thuốc'],
-              ['alerts', 'Cảnh báo tồn kho'],
-              ['movements', 'Lịch sử biến động'],
-            ].map(([key, title]) => (
-              <button
-                className={tab === key ? 'active' : ''}
-                key={key}
-                onClick={() => setTab(key)}
-              >
-                {title}
-                {key === 'alerts' && !!data?.alerts?.length && (
-                  <span>{data.alerts.length}</span>
-                )}
-              </button>
-            ))}
-          </div>
-          {toolBar(
-            'Tìm thuốc, mã lô...',
-            null,
-            addButton('Nhập kho', 'receipt', {
-              supplierId: suppliers[0]?.id,
-              productId: products[0]?.id,
-              quantity: 1,
-              cost: 0,
-              batchNumber: '',
-              manufacturedAt: new Date().toISOString().slice(0, 10),
-              expiresAt: '',
-            }),
-          )}
-          {tab === 'alerts' ? (
-            <Table
-              columns={['Mức cảnh báo', 'Sản phẩm', 'Tồn kho', 'Hạn dùng']}
-              rows={invVisible}
-            >
-              {invVisible.map((a, i) => (
-                <tr key={i}>
-                  <td>
-                    <Badge value={a.type} />
-                  </td>
-                  <td>
-                    <strong>{a.productName}</strong>
-                    <small>{a.batchNumber || `Mã SP: ${a.productId}`}</small>
-                  </td>
-                  <td>{count(a.quantity)}</td>
-                  <td>{fmtDate(a.expiresAt)}</td>
-                </tr>
-              ))}
-            </Table>
-          ) : tab === 'movements' ? (
-            <Table
-              columns={[
-                'Thời gian',
-                'Sản phẩm / Lô',
-                'Loại giao dịch',
-                'Số lượng',
-                'Lý do',
-              ]}
-              rows={invVisible}
-            >
-              {invVisible.map((m) => (
-                <tr key={m.id}>
-                  <td>{dateTime(m.createdAt)}</td>
-                  <td>
-                    <strong>{m.productName}</strong>
-                    <small>{m.batchNumber}</small>
-                  </td>
-                  <td>
-                    <Badge value={m.type} />
-                  </td>
-                  <td
-                    className={Number(m.quantity) < 0 ? 'adm-red' : 'adm-green'}
-                  >
-                    {Number(m.quantity) > 0 ? '+' : ''}
-                    {count(m.quantity)}
-                  </td>
-                  <td>{m.reason}</td>
-                </tr>
-              ))}
-            </Table>
-          ) : (
-            <Table
-              columns={[
-                'Sản phẩm / Mã lô',
-                'Hạn sử dụng',
-                'Tồn thực tế',
-                'Đang giữ',
-                'Khả dụng',
-                'Trạng thái',
-                '',
-              ]}
-              rows={invVisible}
-            >
-              {invVisible.map((b) => (
-                <tr key={b.id}>
-                  <td>
-                    <strong>{b.productName}</strong>
-                    <small>{b.batchNumber}</small>
-                  </td>
-                  <td>{fmtDate(b.expiresAt)}</td>
-                  <td>{count(b.quantity)}</td>
-                  <td>{count(b.reserved)}</td>
-                  <td>
-                    <strong>
-                      {count(b.available ?? b.quantity - b.reserved)}
-                    </strong>
-                  </td>
-                  <td>
-                    <Badge value={b.status || 'available'} />
-                  </td>
-                  <td>
-                    <button
-                      className="adm-btn small"
-                      onClick={() =>
-                        open('adjustment', {
-                          batchId: b.id,
-                          productName: b.productName,
-                          batchNumber: b.batchNumber,
-                          quantity: 0,
-                          reason: '',
-                        })
-                      }
-                    >
-                      Điều chỉnh
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </Table>
-          )}
-          <Pagination
-            page={invPage}
-            totalItems={invRows.length}
-            perPage={12}
-            onChange={setPage}
-            className="adm-pagination"
-            noun={invNoun}
-          />
-        </section>
-      </>
-    );
-  };
+  const productsView = () => (
+    <AdminProducts
+      rows={data}
+      categories={categories}
+      query={query}
+      setQuery={setQuery}
+      filter={filter}
+      setFilter={setFilter}
+      page={page}
+      setPage={setPage}
+      lowStockThreshold={config?.lowStockThreshold || 15}
+      canManageInventory={hasPermission('inventory')}
+      onOpenProduct={(item) => open('product', item)}
+      onOpenReceipt={openReceiptModal}
+      onOpenDelete={(item) => open('delete', item)}
+      onToggleActive={toggleActive}
+    />
+  );
+  const inventoryView = () => (
+    <AdminInventory
+      data={data}
+      tab={tab}
+      setTab={setTab}
+      query={query}
+      setQuery={setQuery}
+      page={page}
+      setPage={setPage}
+      lowStockThreshold={config?.lowStockThreshold || 15}
+      onOpenReceipt={openReceiptModal}
+      onOpenAdjustment={(item) => open('adjustment', item)}
+    />
+  );
   const catalogView = () => (
-    <section className="adm-panel">
-      <div className="adm-tabs">
-        {[
-          ['categories', 'Danh mục'],
-          ['suppliers', 'Nhà cung cấp'],
-          ['manufacturers', 'Nhà sản xuất'],
-        ].map(([k, t]) => (
-          <button
-            key={k}
-            className={tab === k ? 'active' : ''}
-            onClick={() => {
-              setTab(k);
-              setQuery('');
-            }}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-      {toolBar(
-        'Tìm kiếm theo tên...',
-        null,
-        addButton(
-          `Thêm ${tab === 'categories' ? 'danh mục' : tab === 'suppliers' ? 'nhà cung cấp' : 'nhà sản xuất'}`,
-          'catalog',
-          { active: true },
-        ),
-      )}
-      <Table
-        columns={
-          tab === 'categories'
-            ? ['Danh mục', 'Mã danh mục', 'Mô tả', 'Trạng thái', '']
-            : tab === 'suppliers'
-              ? ['Nhà cung cấp', 'Liên hệ', 'Địa chỉ', 'Trạng thái', '']
-              : ['Nhà sản xuất', 'Quốc gia', 'Trạng thái', '']
-        }
-        rows={filtered(data)}
-      >
-        {filtered(data).map((item) => (
-          <tr key={item.id}>
-            <td>
-              <strong>{item.name}</strong>
-            </td>
-            {tab === 'categories' ? (
-              <>
-                <td>
-                  <code>{item.slug}</code>
-                </td>
-                <td className="adm-truncate">{text(item.description)}</td>
-              </>
-            ) : tab === 'suppliers' ? (
-              <>
-                <td>
-                  {text(item.phone)}
-                  <small>{item.email}</small>
-                </td>
-                <td>{text(item.address)}</td>
-              </>
-            ) : (
-              <td>{text(item.country)}</td>
-            )}
-            <td>
-              <Badge value={item.active === false ? 'inactive' : 'active'} />
-            </td>
-            <td>{actions(item, 'catalog')}</td>
-          </tr>
-        ))}
-      </Table>
-    </section>
+    <AdminCatalogEntities
+      rows={data}
+      tab={tab}
+      setTab={setTab}
+      query={query}
+      setQuery={setQuery}
+      filter={filter}
+      setFilter={setFilter}
+      page={page}
+      setPage={setPage}
+      onOpenCatalog={(item) => open('catalog', item)}
+      onOpenDelete={(item) => open('delete', item)}
+      onToggleActive={toggleActive}
+    />
   );
   const promotionsView = () => (
-    <section className="adm-panel">
-      {toolBar(
-        'Tìm mã hoặc tên khuyến mãi...',
-        selectFilter(['active', 'inactive']),
-        addButton('Tạo khuyến mãi', 'promotion', {
-          type: 'percent',
-          value: 10,
-          minOrder: 0,
-          maxDiscount: 0,
-          usageLimit: 100,
-          startDate: new Date().toISOString().slice(0, 10),
-          endDate: '',
-          active: true,
-        }),
-      )}
-      <Table
-        columns={[
-          'Khuyến mãi',
-          'Giảm giá',
-          'Điều kiện',
-          'Thời gian',
-          'Lượt dùng',
-          'Trạng thái',
-          '',
-        ]}
-        rows={filtered(data)}
-      >
-        {filtered(data).map((p) => (
-          <tr key={p.id}>
-            <td>
-              <strong>{p.code}</strong>
-              <small>{p.name}</small>
-            </td>
-            <td className="adm-green">
-              <strong>
-                {p.type === 'percent' ? `${p.value}%` : money(p.value)}
-              </strong>
-              {!!p.maxDiscount && <small>Tối đa {money(p.maxDiscount)}</small>}
-            </td>
-            <td>Từ {money(p.minOrder)}</td>
-            <td>
-              {fmtDate(p.startDate)}
-              <small>đến {fmtDate(p.endDate)}</small>
-            </td>
-            <td>
-              {p.usedCount || 0} / {p.usageLimit || '∞'}
-            </td>
-            <td>
-              <Badge value={p.active ? 'active' : 'inactive'} />
-            </td>
-            <td>{actions(p, 'promotion')}</td>
-          </tr>
-        ))}
-      </Table>
-    </section>
+    <AdminPromotions
+      rows={data}
+      query={query}
+      setQuery={setQuery}
+      filter={filter}
+      setFilter={setFilter}
+      page={page}
+      setPage={setPage}
+      onOpenPromotion={(item) => open('promotion', item)}
+      onOpenDelete={(item) => open('delete', item)}
+      onToggleActive={toggleActive}
+    />
   );
   const usersView = () => (
-    <section className="adm-panel">
-      {toolBar(
-        'Tìm theo tên, email, số điện thoại...',
-        selectFilter(
-          ['customer', 'staff', 'admin', 'active', 'inactive'],
-          'Tất cả tài khoản',
-        ),
-        addButton('Thêm nhân viên', 'invite', { jobTitle: 'sales' }),
-      )}
-      <Table
-        columns={[
-          'Người dùng',
-          'Liên hệ',
-          'Vai trò',
-          'Chức danh',
-          'Trạng thái',
-          '',
-        ]}
-        rows={filtered(data)}
-      >
-        {filtered(data).map((u) => (
-          <tr key={u.id}>
-            <td>
-              <div className="adm-person">
-                <span>{u.name?.slice(0, 1)}</span>
-                <div>
-                  <strong>{u.name}</strong>
-                  <small>
-                    #{u.id}
-                    {u.id === user.id ? ' · Tài khoản của bạn' : ''}
-                  </small>
-                </div>
-              </div>
-            </td>
-            <td>
-              {u.email}
-              <small>{u.phone}</small>
-            </td>
-            <td>
-              <Badge value={u.role} />
-            </td>
-            <td>{label(u.jobTitle)}</td>
-            <td>
-              <Badge value={u.active ? 'active' : 'inactive'} />
-              {!u.verified && <small>Chờ kích hoạt</small>}
-            </td>
-            <td>
-              <button className="adm-btn small" onClick={() => open('user', u)}>
-                <ShieldCheck size={14} />
-                Chỉnh sửa
-              </button>
-            </td>
-          </tr>
-        ))}
-      </Table>
-    </section>
+    <AdminUsers
+      rows={data}
+      currentUser={user}
+      query={query}
+      setQuery={setQuery}
+      filter={filter}
+      setFilter={setFilter}
+      page={page}
+      setPage={setPage}
+      onInvite={(defaults) => open('invite', defaults)}
+      onEditUser={(u) => open('user', u)}
+    />
   );
   const chatbotView = () => (
-    <section className="adm-panel">
-      <div className="adm-tabs">
-        {hasPermission('support') && (
-          <button
-            className={tab === 'support' ? 'active' : ''}
-            onClick={() => {
-              setTab('support');
-              setFilter('');
-            }}
-          >
-            Yêu cầu hỗ trợ
-          </button>
-        )}
-        {(hasPermission('knowledge') || canReviewKnowledge) && (
-          <>
-            <button
-              className={tab === 'knowledge' ? 'active' : ''}
-              onClick={() => {
-                setTab('knowledge');
-                setFilter('');
-              }}
-            >
-              Cơ sở tri thức
-            </button>
-            {hasPermission('knowledge') && (
-              <button
-                className={tab === 'rules' ? 'active' : ''}
-                onClick={() => {
-                  setTab('rules');
-                  setFilter('');
-                }}
-              >
-                Quy tắc an toàn
-              </button>
-            )}
-          </>
-        )}
-      </div>
-      {toolBar(
-        tab === 'support'
-          ? 'Tìm nội dung hỗ trợ...'
-          : 'Tìm tiêu đề, từ khóa...',
-        tab === 'support'
-          ? selectFilter(
-              ['pending', 'in_progress', 'resolved'],
-              'Tất cả trạng thái',
-              (v) => (v === 'pending' ? 'Chờ hỗ trợ' : label(v)),
-            )
-          : null,
-        tab === 'knowledge' && hasPermission('knowledge')
-          ? addButton('Thêm tri thức', 'knowledge', { active: true })
-          : null,
-      )}
-      {tab === 'knowledge' ? (
-        <Table
-          columns={['Nội dung tri thức', 'Từ khóa', 'Trạng thái', '']}
-          rows={filtered(data)}
-        >
-          {filtered(data).map((k) => (
-            <tr key={k.id}>
-              <td>
-                <strong>{k.title}</strong>
-                <small className="adm-truncate">{k.content}</small>
-              </td>
-              <td className="adm-truncate">
-                {Array.isArray(k.keywords) ? k.keywords.join(', ') : k.keywords}
-              </td>
-              <td>
-                <Badge
-                  value={
-                    k.active && k.reviewedAt
-                      ? 'active'
-                      : k.active
-                        ? 'pending'
-                        : 'inactive'
-                  }
-                >
-                  {k.active && !k.reviewedAt
-                    ? 'Chờ dược sĩ rà soát'
-                    : undefined}
-                </Badge>
-              </td>
-              <td>
-                {hasPermission('knowledge') && actions(k, 'knowledge')}
-                {canReviewKnowledge && k.active && !k.reviewedAt && (
-                  <button
-                    className="adm-btn small"
-                    onClick={() => open('knowledgeReview', k)}
-                  >
-                    Rà soát
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </Table>
-      ) : tab === 'rules' ? (
-        <>
-          <div className="adm-info-banner adm-rules-note">
-            <ShieldCheck size={20} />
-            <p>
-              Chatbot kiểm tra từ khóa và quy tắc an toàn trước khi trả lời. Nội
-              dung rủi ro được hướng dẫn liên hệ chuyên môn.
-            </p>
-          </div>
-          <Table
-            columns={[
-              'Quy tắc',
-              'Từ khóa cảnh báo',
-              'Phản hồi',
-              'Trạng thái',
-              '',
-            ]}
-            rows={filtered(data)}
-          >
-            {filtered(data).map((r) => (
-              <tr key={r.id}>
-                <td>
-                  <strong>{r.name}</strong>
-                </td>
-                <td className="adm-truncate">
-                  {Array.isArray(r.keywords)
-                    ? r.keywords.join(', ')
-                    : r.keywords}
-                </td>
-                <td className="adm-truncate">{r.response}</td>
-                <td>
-                  <Badge value={r.active ? 'active' : 'inactive'} />
-                </td>
-                <td>
-                  <button
-                    className="adm-icon-btn"
-                    onClick={() => open('rule', r)}
-                    aria-label={`Sửa quy tắc ${r.name}`}
-                  >
-                    <Pencil size={16} />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </Table>
-        </>
-      ) : (
-        <Table
-          columns={[
-            'Khách hàng',
-            'Nội dung yêu cầu',
-            'Ngày tạo',
-            'Trạng thái',
-            '',
-          ]}
-          rows={filtered(data)}
-        >
-          {filtered(data).map((s) => (
-            <tr key={s.id}>
-              <td>
-                <strong>{s.userName || s.customerName || 'Khách hàng'}</strong>
-                <small>Hội thoại #{s.sessionId}</small>
-              </td>
-              <td className="adm-truncate">
-                {s.message || s.reason || 'Cần dược sĩ hỗ trợ'}
-              </td>
-              <td>{fmtDate(s.createdAt)}</td>
-              <td>
-                <Badge value={s.status} />
-              </td>
-              <td>
-                <button
-                  className="adm-btn small"
-                  onClick={() => supportDetail(s)}
-                >
-                  <MessageSquare size={14} />
-                  Hỗ trợ
-                </button>
-              </td>
-            </tr>
-          ))}
-        </Table>
-      )}
-    </section>
+    <AdminChatbot
+      data={data}
+      tab={tab}
+      setTab={setTab}
+      query={query}
+      setQuery={setQuery}
+      filter={filter}
+      setFilter={setFilter}
+      page={page}
+      setPage={setPage}
+      hasPermission={hasPermission}
+      canReviewKnowledge={canReviewKnowledge}
+      onOpenSupport={supportDetail}
+      onOpenKnowledge={(item) => open('knowledge', item)}
+      onOpenKnowledgeReview={(item) => open('knowledgeReview', item)}
+      onOpenRule={(item) => open('rule', item)}
+      onOpenDelete={(item) => open('delete', item)}
+      onToggleActive={toggleActive}
+    />
   );
   const reportsView = () => {
     const activeFrom = range.from || data?.from || '';
@@ -1852,228 +1146,30 @@ export default function Admin({ user, onExit, onLogout, config }) {
     );
   };
   const settingsView = () => (
-    <form
-      onSubmit={(e) =>
-        submit(
-          e,
-          '/admin/settings',
-          'PATCH',
-          Object.fromEntries(
-            Object.entries(form).map(([k, v]) => [
-              k,
-              typeof data?.[k] === 'number' ? Number(v) : v,
-            ]),
-          ),
-        )
-      }
-    >
-      <div className="adm-settings-layout">
-        <section className="adm-panel adm-settings-card">
-          <div className="adm-panel-head">
-            <div>
-              <h3>Thông tin & vận hành</h3>
-              <p>Thiết lập áp dụng cho toàn bộ hệ thống</p>
-            </div>
-            <Settings size={21} />
-          </div>
-          <div className="adm-form-grid">
-            {[
-              ['storeName', 'Tên nhà thuốc', 'text'],
-              ['shippingFee', 'Phí giao hàng mặc định (đ)', 'number'],
-              ['freeShippingThreshold', 'Miễn phí giao hàng từ (đ)', 'number'],
-              ['lowStockThreshold', 'Ngưỡng tồn kho thấp', 'number'],
-              ['expiryWarningDays', 'Cảnh báo hạn dùng trước (ngày)', 'number'],
-              ['otpTtlMinutes', 'Thời hạn OTP (phút)', 'number'],
-              ['paymentTimeoutMinutes', 'Thời hạn thanh toán (phút)', 'number'],
-            ]
-              .filter(([k]) => k in form)
-              .map(([k, t, type]) => (
-                <Field
-                  key={k}
-                  label={t}
-                  name={k}
-                  value={form[k]}
-                  type={type}
-                  min={type === 'number' ? 0 : undefined}
-                  onChange={change}
-                />
-              ))}
-          </div>
-          {Object.keys(form)
-            .filter(
-              (k) =>
-                ![
-                  'storeName',
-                  'shippingFee',
-                  'freeShippingThreshold',
-                  'lowStockThreshold',
-                  'expiryWarningDays',
-                  'otpTtlMinutes',
-                  'paymentTimeoutMinutes',
-                  'chatbotEnabled',
-                  'demoMode',
-                  'geminiConfigured',
-                  'paymentConfigured',
-                  'emailConfigured',
-                  'smtpConfigured',
-                  'otpMode',
-                  'paymentProvider',
-                  'maxUploadMb',
-                ].includes(k) && typeof form[k] !== 'object',
-            )
-            .map((k) =>
-              typeof form[k] === 'boolean' ? (
-                <CheckField
-                  key={k}
-                  label={
-                    k === 'returnWindowDays'
-                      ? 'Thời hạn gửi yêu cầu đổi trả (ngày)'
-                      : k
-                  }
-                  name={k}
-                  value={form[k]}
-                  onChange={change}
-                />
-              ) : (
-                <Field
-                  key={k}
-                  label={
-                    k === 'returnWindowDays'
-                      ? 'Thời hạn gửi yêu cầu đổi trả (ngày)'
-                      : k
-                  }
-                  name={k}
-                  value={form[k]}
-                  onChange={change}
-                />
-              ),
-            )}
-        </section>
-        <section className="adm-panel adm-settings-card">
-          <div className="adm-panel-head">
-            <div>
-              <h3>Dịch vụ tích hợp</h3>
-              <p>Khóa dịch vụ được cấu hình tại máy chủ</p>
-            </div>
-            <ShieldCheck size={21} />
-          </div>
-          {'chatbotEnabled' in form && (
-            <CheckField
-              label="Bật trợ lý tư vấn chatbot"
-              name="chatbotEnabled"
-              value={form.chatbotEnabled}
-              onChange={change}
-            />
-          )}
-          {'demoMode' in form && (
-            <div className="adm-integration-state">
-              <span>Thanh toán và OTP thử nghiệm</span>
-              <Badge value={form.demoMode ? 'active' : 'inactive'}>
-                {form.demoMode ? 'Đang bật' : 'Đã tắt'}
-              </Badge>
-            </div>
-          )}
-          <div className="adm-info-banner compact">
-            <AlertTriangle size={18} />
-            <p>
-              Chế độ demo phục vụ trình diễn đồ án. Tích hợp thực cần khóa riêng
-              trong cấu hình môi trường máy chủ.
-            </p>
-          </div>
-          <div className="adm-integration-list">
-            {[
-              ['Google Gemini', form.geminiConfigured],
-              ['VNPay Sandbox', form.paymentConfigured],
-              ['Đăng nhập Google', form.googleConfigured],
-              ['Email / OTP', form.smtpConfigured ?? form.emailConfigured],
-            ].map(([n, v]) => (
-              <div key={n}>
-                <span>{n}</span>
-                <Badge value={v ? 'active' : 'inactive'}>
-                  {v ? 'Đã cấu hình' : 'Chưa cấu hình'}
-                </Badge>
-              </div>
-            ))}
-          </div>
-          {isAdmin && hasPermission('backup') && (
-            <div className="adm-backup-actions">
-              <button
-                type="button"
-                className="adm-btn"
-                onClick={() => open('backup', { passphrase: '' })}
-              >
-                <Download size={16} />
-                Tải bản sao lưu
-              </button>
-              <button
-                type="button"
-                className="adm-btn"
-                onClick={() => open('restore', { confirm: '' })}
-              >
-                <RefreshCw size={16} />
-                Phục hồi dữ liệu
-              </button>
-            </div>
-          )}
-        </section>
-      </div>
-      <div className="adm-settings-footer">
-        <span>Thay đổi cấu hình được ghi vào nhật ký hệ thống.</span>
-        <button className="adm-btn primary" disabled={saving} type="submit">
-          {saving ? (
-            <LoaderCircle size={17} className="adm-spin" />
-          ) : (
-            <Check size={17} />
-          )}
-          Lưu cấu hình
-        </button>
-      </div>
-    </form>
+    <AdminSettings
+      data={data}
+      form={form}
+      saving={saving}
+      isAdmin={isAdmin}
+      hasPermission={hasPermission}
+      onChange={change}
+      onReset={() => setForm(data || {})}
+      onSubmit={(e, payload) => submit(e, '/admin/settings', 'PATCH', payload)}
+      onOpenBackup={() => open('backup', { passphrase: '' })}
+      onOpenRestore={() => open('restore', { confirm: '' })}
+    />
   );
   const auditView = () => (
-    <section className="adm-panel">
-      {toolBar('Tìm người thực hiện, hành động...')}
-      <Table
-        columns={[
-          'Thời gian',
-          'Người thực hiện',
-          'Hành động',
-          'Đối tượng',
-          'Chi tiết',
-        ]}
-        rows={filtered(data)}
-      >
-        {filtered(data).map((a, i) => (
-          <tr key={a.id || i}>
-            <td>{dateTime(a.createdAt)}</td>
-            <td>
-              <strong>
-                {a.userName || a.actorName || a.email || `#${a.userId || ''}`}
-              </strong>
-            </td>
-            <td>
-              <code>{a.action}</code>
-            </td>
-            <td>
-              {a.entity || a.targetType || a.resource || '—'}{' '}
-              {a.entityId || a.targetId || ''}
-            </td>
-            <td
-              className="adm-truncate"
-              title={
-                typeof a.details === 'object'
-                  ? JSON.stringify(a.details)
-                  : a.details
-              }
-            >
-              {typeof a.details === 'object'
-                ? JSON.stringify(a.details)
-                : a.details || a.detail || a.description || '—'}
-            </td>
-          </tr>
-        ))}
-      </Table>
-    </section>
+    <AdminAudit
+      rows={data}
+      query={query}
+      setQuery={setQuery}
+      filter={filter}
+      setFilter={setFilter}
+      page={page}
+      setPage={setPage}
+      onOpenDetail={(record) => open('auditDetail', record)}
+    />
   );
 
   const modalContent = () => {
@@ -2110,7 +1206,7 @@ export default function Admin({ user, onExit, onLogout, config }) {
       ));
     if (type === 'delete')
       return (
-        <Modal title="Xác nhận xóa dữ liệu" onClose={close}>
+        <Modal title="Xác nhận ngừng hoạt động / ẩn dữ liệu" onClose={close}>
           <form
             onSubmit={(e) =>
               submit(e, `/admin/${item.resource}/${item.id}`, 'DELETE')
@@ -2120,23 +1216,30 @@ export default function Admin({ user, onExit, onLogout, config }) {
               <div className="adm-info-banner danger">
                 <AlertTriangle size={22} />
                 <p>
-                  Bạn muốn xóa{' '}
+                  Bạn muốn ngừng hoạt động / ẩn{' '}
                   <strong>
                     {item.name ||
                       item.title ||
                       item.code ||
                       `bản ghi #${item.id}`}
                   </strong>
-                  ? Dữ liệu đã tham gia giao dịch có thể chỉ được ẩn để bảo toàn
-                  lịch sử.
+                  ? Dữ liệu lịch sử giao dịch vẫn được bảo toàn và bạn có thể
+                  kích hoạt lại bất cứ lúc nào.
                 </p>
               </div>
             </div>
-            {footer('Xác nhận xóa')}
+            {footer('Xác nhận ngừng')}
           </form>
         </Modal>
       );
-    if (type === 'product')
+    if (type === 'product') {
+      const numPrice = Number(form.price || 0);
+      const numOldPrice = Number(form.oldPrice || 0);
+      const discountPreview =
+        numOldPrice > numPrice && numPrice > 0
+          ? Math.round(((numOldPrice - numPrice) / numOldPrice) * 100)
+          : 0;
+      const oldPriceInvalid = numOldPrice > 0 && numOldPrice <= numPrice;
       return (
         <Modal
           title={edit ? 'Chỉnh sửa sản phẩm' : 'Thêm sản phẩm mới'}
@@ -2152,7 +1255,8 @@ export default function Admin({ user, onExit, onLogout, config }) {
                 {
                   ...form,
                   price: Number(form.price),
-                  oldPrice: Number(form.oldPrice) || 0,
+                  oldPrice:
+                    Number(form.oldPrice) > 0 ? Number(form.oldPrice) : null,
                   categoryId: Number(form.categoryId),
                   manufacturerId: form.manufacturerId
                     ? Number(form.manufacturerId)
@@ -2166,9 +1270,24 @@ export default function Admin({ user, onExit, onLogout, config }) {
                 ['name', 'Tên sản phẩm', 'text', true, { wide: true }],
                 ['slug', 'Mã đường dẫn (để trống để tự tạo)'],
                 ['unit', 'Đơn vị bán', 'text', true],
-                ['price', 'Giá bán (đ)', 'number', true, { min: 0 }],
-                ['oldPrice', 'Giá niêm yết (đ)', 'number', false, { min: 0 }],
+                ['price', 'Giá bán (đ)', 'number', true, { min: 1 }],
+                [
+                  'oldPrice',
+                  'Giá niêm yết (đ, bỏ trống nếu không giảm)',
+                  'number',
+                  false,
+                  { min: 0 },
+                ],
               ])}
+              {(discountPreview > 0 || oldPriceInvalid) && (
+                <div
+                  className={`adm-field is-wide adm-inline-note ${oldPriceInvalid ? 'is-warn' : 'is-ok'}`}
+                >
+                  {oldPriceInvalid
+                    ? 'Lưu ý: Giá niêm yết nên lớn hơn giá bán để hiển thị phần trăm giảm giá hợp lệ.'
+                    : `Hiển thị giảm ${discountPreview}% so với giá niêm yết (${money(numOldPrice)} → ${money(numPrice)}).`}
+                </div>
+              )}
               <Field label="Danh mục" required>
                 <select
                   name="categoryId"
@@ -2206,7 +1325,32 @@ export default function Admin({ user, onExit, onLogout, config }) {
                   false,
                   { wide: true },
                 ],
-                ['image', 'Đường dẫn ảnh', 'text', false, { wide: true }],
+                [
+                  'image',
+                  'Đường dẫn ảnh (/assets/... hoặc https://...)',
+                  'text',
+                  false,
+                  { wide: true },
+                ],
+              ])}
+              {form.image && (
+                <div className="adm-field is-wide">
+                  <div className="adm-img-preview">
+                    <img
+                      src={form.image}
+                      alt="Xem trước ảnh sản phẩm"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                    />
+                    <div>
+                      <strong>Xem trước hình ảnh</strong>
+                      <small>{form.image}</small>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {fields([
                 [
                   'description',
                   'Mô tả sản phẩm',
@@ -2252,6 +1396,7 @@ export default function Admin({ user, onExit, onLogout, config }) {
           </form>
         </Modal>
       );
+    }
     if (type === 'catalog')
       return (
         <Modal
@@ -2300,10 +1445,13 @@ export default function Admin({ user, onExit, onLogout, config }) {
           </form>
         </Modal>
       );
-    if (type === 'promotion')
+    if (type === 'promotion') {
+      const invalidDates =
+        form.startDate && form.endDate && form.startDate > form.endDate;
+      const minLimit = edit ? Math.max(1, Number(item.usedCount || 1)) : 1;
       return (
         <Modal
-          title={edit ? 'Chỉnh sửa khuyến mãi' : 'Tạo khuyến mãi'}
+          title={edit ? 'Chỉnh sửa khuyến mãi' : 'Tạo khuyến mãi mới'}
           onClose={close}
         >
           <form
@@ -2314,18 +1462,27 @@ export default function Admin({ user, onExit, onLogout, config }) {
                 edit ? 'PATCH' : 'POST',
                 {
                   ...form,
-                  ...Object.fromEntries(
-                    ['value', 'minOrder', 'maxDiscount', 'usageLimit'].map(
-                      (k) => [k, Number(form[k]) || 0],
-                    ),
-                  ),
+                  code: String(form.code || '').trim().toUpperCase(),
+                  value: Number(form.value),
+                  minOrder: Number(form.minOrder) || 0,
+                  maxDiscount:
+                    Number(form.maxDiscount) > 0
+                      ? Number(form.maxDiscount)
+                      : null,
+                  usageLimit: Number(form.usageLimit) || 100,
                 },
               )
             }
           >
             <div className="adm-modal-body adm-form-grid">
               {fields([
-                ['code', 'Mã giảm giá', 'text', true],
+                [
+                  'code',
+                  'Mã giảm giá (chữ in hoa, số, _, -)',
+                  'text',
+                  true,
+                  { style: { textTransform: 'uppercase' } },
+                ],
                 ['name', 'Tên khuyến mãi', 'text', true],
               ])}
               <Field label="Hình thức giảm">
@@ -2346,7 +1503,7 @@ export default function Admin({ user, onExit, onLogout, config }) {
                     : 'Số tiền giảm (đ)',
                   'number',
                   true,
-                  { min: 0, max: form.type === 'percent' ? 100 : undefined },
+                  { min: 1, max: form.type === 'percent' ? 100 : undefined },
                 ],
                 [
                   'minOrder',
@@ -2357,7 +1514,7 @@ export default function Admin({ user, onExit, onLogout, config }) {
                 ],
                 [
                   'maxDiscount',
-                  'Giảm tối đa (đ, 0: không giới hạn)',
+                  'Giảm tối đa (đ, bỏ trống hoặc 0: không giới hạn)',
                   'number',
                   false,
                   { min: 0 },
@@ -2366,12 +1523,17 @@ export default function Admin({ user, onExit, onLogout, config }) {
                   'usageLimit',
                   'Giới hạn lượt dùng',
                   'number',
-                  false,
-                  { min: 0 },
+                  true,
+                  { min: minLimit },
                 ],
                 ['startDate', 'Bắt đầu', 'date', true],
                 ['endDate', 'Kết thúc', 'date', true],
               ])}
+              {invalidDates && (
+                <div className="adm-field is-wide adm-inline-note is-warn">
+                  Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu.
+                </div>
+              )}
               <CheckField
                 label="Kích hoạt khuyến mãi"
                 name="active"
@@ -2379,27 +1541,91 @@ export default function Admin({ user, onExit, onLogout, config }) {
                 onChange={change}
               />
             </div>
-            {footer()}
+            <div className="adm-modal-footer">
+              <button type="button" className="adm-btn" onClick={close}>
+                Đóng
+              </button>
+              <button
+                className="adm-btn primary"
+                disabled={saving || invalidDates}
+                type="submit"
+              >
+                {saving ? (
+                  <LoaderCircle className="adm-spin" size={16} />
+                ) : (
+                  <Check size={16} />
+                )}{' '}
+                {edit ? 'Lưu khuyến mãi' : 'Tạo khuyến mãi'}
+              </button>
+            </div>
           </form>
         </Modal>
       );
-    if (type === 'receipt')
+    }
+    if (type === 'receipt') {
+      const todayVn = vnDate(0);
+      const activeSuppliers = suppliers.filter((s) => s.active !== false);
+      const rows = Array.isArray(form.items) && form.items.length
+        ? form.items
+        : [
+            {
+              productId: products[0]?.id || '',
+              batchNumber: '',
+              quantity: 10,
+              cost: '',
+              manufacturedAt: todayVn,
+              expiresAt: vnDate(365),
+            },
+          ];
+      const updateRow = (idx, key, value) =>
+        setForm((f) => ({
+          ...f,
+          items: rows.map((r, i) => (i === idx ? { ...r, [key]: value } : r)),
+        }));
+      const addRow = () =>
+        setForm((f) => ({
+          ...f,
+          items: [
+            ...rows,
+            {
+              productId: products[0]?.id || '',
+              batchNumber: '',
+              quantity: 10,
+              cost: '',
+              manufacturedAt: todayVn,
+              expiresAt: vnDate(365),
+            },
+          ],
+        }));
+      const removeRow = (idx) =>
+        setForm((f) => ({
+          ...f,
+          items: rows.filter((_, i) => i !== idx),
+        }));
+      const receiptTotal = rows.reduce(
+        (sum, r) => sum + (Number(r.quantity) || 0) * (Number(r.cost) || 0),
+        0,
+      );
+      const hasDateIssue = rows.some(
+        (r) =>
+          (r.manufacturedAt && r.manufacturedAt > todayVn) ||
+          (r.expiresAt && r.expiresAt <= todayVn) ||
+          (r.manufacturedAt && r.expiresAt && r.manufacturedAt >= r.expiresAt),
+      );
       return (
-        <Modal title="Nhập kho theo lô" onClose={close}>
+        <Modal title="Nhập kho theo lô (nhiều mặt hàng)" onClose={close} wide>
           <form
             onSubmit={(e) =>
               submit(e, '/admin/inventory/receipts', 'POST', {
                 supplierId: Number(form.supplierId),
-                items: [
-                  {
-                    productId: Number(form.productId),
-                    batchNumber: form.batchNumber,
-                    quantity: Number(form.quantity),
-                    cost: Number(form.cost),
-                    manufacturedAt: form.manufacturedAt,
-                    expiresAt: form.expiresAt,
-                  },
-                ],
+                items: rows.map((r) => ({
+                  productId: Number(r.productId),
+                  batchNumber: String(r.batchNumber || '').trim(),
+                  quantity: Number(r.quantity),
+                  cost: Number(r.cost || 0),
+                  manufacturedAt: r.manufacturedAt,
+                  expiresAt: r.expiresAt,
+                })),
               })
             }
           >
@@ -2407,78 +1633,206 @@ export default function Admin({ user, onExit, onLogout, config }) {
               <div className="adm-info-banner compact">
                 <Boxes size={18} />
                 <p>
-                  Không nhập lô đã hết hạn. Hàng xuất bán được ưu tiên theo hạn
-                  dùng gần nhất (FEFO).
+                  Không nhập lô đã hết hạn. Hàng xuất bán tự động ưu tiên theo
+                  hạn dùng gần nhất (FEFO).
                 </p>
               </div>
-              <div className="adm-form-grid">
-                <Field label="Nhà cung cấp" required wide>
-                  <select
-                    name="supplierId"
-                    value={form.supplierId || ''}
-                    onChange={change}
-                    required
-                  >
-                    <option value="">Chọn nhà cung cấp</option>
-                    {suppliers.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Sản phẩm" required wide>
-                  <select
-                    name="productId"
-                    value={form.productId || ''}
-                    onChange={change}
-                    required
-                  >
-                    <option value="">Chọn sản phẩm</option>
-                    {products.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                {fields([
-                  ['batchNumber', 'Mã lô', 'text', true],
-                  [
-                    'quantity',
-                    'Số lượng nhập',
-                    'number',
-                    true,
-                    { min: 1, step: 1 },
-                  ],
-                  ['cost', 'Đơn giá nhập (đ)', 'number', true, { min: 0 }],
-                  ['manufacturedAt', 'Ngày sản xuất', 'date', true],
-                  ['expiresAt', 'Hạn sử dụng', 'date', true],
-                ])}
+              <Field label="Nhà cung cấp" required>
+                <select
+                  name="supplierId"
+                  value={form.supplierId || ''}
+                  onChange={change}
+                  required
+                >
+                  <option value="">Chọn nhà cung cấp</option>
+                  {activeSuppliers.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <div className="adm-receipt-rows">
+                {rows.map((row, idx) => (
+                  <div className="adm-receipt-row" key={idx}>
+                    <div className="adm-receipt-row-head">
+                      <strong>Dòng lô #{idx + 1}</strong>
+                      <div className="adm-receipt-row-right">
+                        <span>
+                          Thành tiền:{' '}
+                          <b>
+                            {money(
+                              (Number(row.quantity) || 0) *
+                                (Number(row.cost) || 0),
+                            )}
+                          </b>
+                        </span>
+                        {rows.length > 1 && (
+                          <button
+                            type="button"
+                            className="adm-icon-btn danger"
+                            onClick={() => removeRow(idx)}
+                            aria-label={`Xóa dòng ${idx + 1}`}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="adm-form-grid">
+                      <Field label="Sản phẩm" required wide>
+                        <select
+                          value={row.productId || ''}
+                          onChange={(e) =>
+                            updateRow(idx, 'productId', e.target.value)
+                          }
+                          required
+                        >
+                          <option value="">Chọn sản phẩm</option>
+                          {products.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} ({p.unit})
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field
+                        label="Mã lô"
+                        value={row.batchNumber}
+                        onChange={(e) =>
+                          updateRow(idx, 'batchNumber', e.target.value)
+                        }
+                        placeholder="VD: LOT-2026-01"
+                        required
+                      />
+                      <Field
+                        label="Số lượng nhập"
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={row.quantity}
+                        onChange={(e) =>
+                          updateRow(idx, 'quantity', e.target.value)
+                        }
+                        required
+                      />
+                      <Field
+                        label="Đơn giá nhập (đ)"
+                        type="number"
+                        min={0}
+                        value={row.cost}
+                        onChange={(e) => updateRow(idx, 'cost', e.target.value)}
+                        required
+                      />
+                      <Field
+                        label="Ngày sản xuất"
+                        type="date"
+                        max={todayVn}
+                        value={row.manufacturedAt}
+                        onChange={(e) =>
+                          updateRow(idx, 'manufacturedAt', e.target.value)
+                        }
+                        required
+                      />
+                      <Field
+                        label="Hạn sử dụng"
+                        type="date"
+                        value={row.expiresAt}
+                        onChange={(e) =>
+                          updateRow(idx, 'expiresAt', e.target.value)
+                        }
+                        required
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
+              <div className="adm-receipt-bar">
+                <button
+                  type="button"
+                  className="adm-btn"
+                  onClick={addRow}
+                  disabled={rows.length >= 100}
+                >
+                  <Plus size={15} />
+                  Thêm dòng lô
+                </button>
+                <div className="adm-receipt-total">
+                  <span>Tổng giá trị phiếu nhập ({rows.length} dòng)</span>
+                  <strong>{money(receiptTotal)}</strong>
+                </div>
+              </div>
+              {hasDateIssue && (
+                <div className="adm-inline-note is-warn">
+                  Kiểm tra lại ngày sản xuất (≤ hôm nay) và hạn sử dụng (&gt; hôm
+                  nay và lớn hơn ngày sản xuất).
+                </div>
+              )}
             </div>
-            {footer('Xác nhận nhập kho')}
+            <div className="adm-modal-footer">
+              <button type="button" className="adm-btn" onClick={close}>
+                Đóng
+              </button>
+              <button
+                className="adm-btn primary"
+                disabled={saving || hasDateIssue}
+                type="submit"
+              >
+                {saving ? (
+                  <LoaderCircle className="adm-spin" size={16} />
+                ) : (
+                  <Check size={16} />
+                )}{' '}
+                Xác nhận nhập kho
+              </button>
+            </div>
           </form>
         </Modal>
       );
-    if (type === 'adjustment')
+    }
+    if (type === 'adjustment') {
+      const curQty = Number(item.currentQuantity ?? 0);
+      const reserved = Number(item.reserved ?? 0);
+      const delta = Number(form.quantity || 0);
+      const nextQty = curQty + delta;
+      const belowReserved = nextQty < reserved;
+      const invalidDelta = !Number.isSafeInteger(delta) || delta === 0;
+      const shortReason = String(form.reason || '').trim().length < 5;
       return (
-        <Modal title="Điều chỉnh tồn kho" onClose={close}>
+        <Modal title="Điều chỉnh tồn kho lô" onClose={close}>
           <form
             onSubmit={(e) =>
               submit(e, '/admin/inventory/adjustments', 'POST', {
                 batchId: item.batchId,
-                quantity: Number(form.quantity),
+                quantity: delta,
                 reason: form.reason,
               })
             }
           >
             <div className="adm-modal-body">
-              <p className="adm-form-intro">
-                <strong>{item.productName}</strong>
-                <br />
-                Lô: {item.batchNumber}
-              </p>
+              <div className="adm-adjust-summary">
+                <div>
+                  <strong>{item.productName}</strong>
+                  <small>
+                    Lô {item.batchNumber}
+                    {item.expiresAt ? ` · HSD ${fmtDate(item.expiresAt)}` : ''}
+                  </small>
+                </div>
+                <div className="adm-adjust-nums">
+                  <span>
+                    Hiện có: <b>{count(curQty)}</b>
+                  </span>
+                  <span>
+                    Đang giữ: <b>{count(reserved)}</b>
+                  </span>
+                  <span>
+                    Sau điều chỉnh:{' '}
+                    <b className={belowReserved ? 'adm-red' : 'adm-green'}>
+                      {count(nextQty)}
+                    </b>
+                  </span>
+                </div>
+              </div>
               {fields([
                 [
                   'quantity',
@@ -2487,13 +1841,42 @@ export default function Admin({ user, onExit, onLogout, config }) {
                   true,
                   { step: 1 },
                 ],
-                ['reason', 'Lý do điều chỉnh', 'textarea', true],
+                [
+                  'reason',
+                  'Lý do điều chỉnh (tối thiểu 5 ký tự)',
+                  'textarea',
+                  true,
+                  { minLength: 5 },
+                ],
               ])}
+              {belowReserved && (
+                <div className="adm-inline-note is-warn">
+                  Không thể giảm tồn xuống dưới số lượng đang giữ cho đơn (
+                  {count(reserved)}).
+                </div>
+              )}
             </div>
-            {footer('Xác nhận điều chỉnh')}
+            <div className="adm-modal-footer">
+              <button type="button" className="adm-btn" onClick={close}>
+                Đóng
+              </button>
+              <button
+                className="adm-btn primary"
+                disabled={saving || belowReserved || invalidDelta || shortReason}
+                type="submit"
+              >
+                {saving ? (
+                  <LoaderCircle className="adm-spin" size={16} />
+                ) : (
+                  <Check size={16} />
+                )}{' '}
+                Xác nhận điều chỉnh
+              </button>
+            </div>
           </form>
         </Modal>
       );
+    }
     if (type === 'invite')
       return (
         <Modal title="Thêm nhân viên" onClose={close}>
@@ -2566,24 +1949,36 @@ export default function Admin({ user, onExit, onLogout, config }) {
           </div>
         </Modal>
       );
-    if (type === 'user')
+    if (type === 'user') {
+      const isSelf = item.id === user.id;
+      const curPerms = Array.isArray(form.permissions) ? form.permissions : [];
+      const applyDefaultPerms = (roleVal, titleVal) => {
+        const presetKey =
+          roleVal === 'admin'
+            ? 'admin'
+            : roleVal === 'staff'
+              ? titleVal || 'sales'
+              : 'customer';
+        return [...(DEFAULT_ROLE_PERMISSIONS[presetKey] || [])];
+      };
       return (
-        <Modal title="Chỉnh sửa tài khoản" onClose={close}>
+        <Modal title="Chỉnh sửa tài khoản & phân quyền" onClose={close}>
           <form
             onSubmit={(e) =>
               submit(e, `/admin/users/${item.id}`, 'PATCH', {
                 role: form.role,
                 name: form.name,
                 phone: form.phone,
-                active: form.active,
+                active: isSelf ? true : form.active,
                 reason: form.reason,
-                jobTitle: form.role === 'staff' ? form.jobTitle : null,
+                jobTitle: form.role === 'staff' ? form.jobTitle || 'sales' : null,
                 permissions:
-                  form.role !== 'customer' && Array.isArray(form.permissions)
-                    ? form.permissions.filter(
+                  form.role !== 'customer'
+                    ? curPerms.filter(
                         (code) =>
                           code !== 'prescriptions' ||
-                          form.jobTitle === 'pharmacist',
+                          (form.role === 'staff' &&
+                            form.jobTitle === 'pharmacist'),
                       )
                     : [],
               })
@@ -2591,9 +1986,12 @@ export default function Admin({ user, onExit, onLogout, config }) {
           >
             <div className="adm-modal-body">
               <div className="adm-profile-summary">
-                <span>{item.name?.[0]}</span>
+                <span>{item.name?.[0] || 'A'}</span>
                 <div>
-                  <strong>{item.name}</strong>
+                  <strong>
+                    {item.name}
+                    {isSelf ? ' (Tài khoản của bạn)' : ''}
+                  </strong>
                   <p>{item.email}</p>
                 </div>
               </div>
@@ -2602,7 +2000,38 @@ export default function Admin({ user, onExit, onLogout, config }) {
                 ['phone', 'Số điện thoại', 'tel', false],
               ])}
               <Field label="Vai trò">
-                <select name="role" value={form.role} onChange={change}>
+                <select
+                  name="role"
+                  value={form.role}
+                  disabled={isSelf}
+                  onChange={(e) => {
+                    const nextRole = e.target.value;
+                    setForm((f) => {
+                      const nextTitle =
+                        nextRole === 'staff' ? f.jobTitle || 'sales' : null;
+                      const prevPerms = Array.isArray(f.permissions)
+                        ? f.permissions
+                        : [];
+                      const nextPerms =
+                        nextRole === 'customer'
+                          ? []
+                          : prevPerms.length === 0
+                            ? applyDefaultPerms(nextRole, nextTitle)
+                            : prevPerms.filter(
+                                (p) =>
+                                  p !== 'prescriptions' ||
+                                  (nextRole === 'staff' &&
+                                    nextTitle === 'pharmacist'),
+                              );
+                      return {
+                        ...f,
+                        role: nextRole,
+                        jobTitle: nextTitle,
+                        permissions: nextPerms,
+                      };
+                    });
+                  }}
+                >
                   {['customer', 'staff', 'admin'].map((r) => (
                     <option key={r} value={r}>
                       {label(r)}
@@ -2615,7 +2044,19 @@ export default function Admin({ user, onExit, onLogout, config }) {
                   <select
                     name="jobTitle"
                     value={form.jobTitle || 'sales'}
-                    onChange={change}
+                    onChange={(e) => {
+                      const nextTitle = e.target.value;
+                      setForm((f) => ({
+                        ...f,
+                        jobTitle: nextTitle,
+                        permissions:
+                          nextTitle === 'pharmacist'
+                            ? f.permissions || []
+                            : (f.permissions || []).filter(
+                                (p) => p !== 'prescriptions',
+                              ),
+                      }));
+                    }}
                   >
                     {['pharmacist', 'sales', 'warehouse'].map((r) => (
                       <option key={r} value={r}>
@@ -2627,50 +2068,58 @@ export default function Admin({ user, onExit, onLogout, config }) {
               )}
               {form.role !== 'customer' && (
                 <div className="adm-permission-box">
-                  <h3>Quyền thực hiện chức năng</h3>
-                  <p>
-                    Quyền kiểm duyệt chỉ có hiệu lực khi chức danh là dược sĩ.
-                  </p>
+                  <div className="adm-permission-head">
+                    <div>
+                      <h3>Quyền thực hiện chức năng</h3>
+                      <p>
+                        Quyền duyệt đơn thuốc chỉ áp dụng khi chức danh là dược
+                        sĩ.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="adm-btn small"
+                      onClick={() =>
+                        setForm((f) => ({
+                          ...f,
+                          permissions: applyDefaultPerms(f.role, f.jobTitle),
+                        }))
+                      }
+                    >
+                      Quyền mặc định
+                    </button>
+                  </div>
                   <div className="adm-permission-grid">
-                    {Object.entries({
-                      catalog: 'Quản lý sản phẩm',
-                      inventory: 'Quản lý kho',
-                      orders: 'Xử lý đơn hàng',
-                      prescriptions: 'Duyệt đơn thuốc',
-                      promotions: 'Quản lý khuyến mãi',
-                      reports: 'Xem báo cáo',
-                      support: 'Hỗ trợ khách hàng',
-                      users: 'Quản trị tài khoản',
-                      settings: 'Cấu hình hệ thống',
-                      knowledge: 'Tri thức chatbot',
-                      audit: 'Nhật ký hệ thống',
-                      backup: 'Sao lưu dữ liệu',
-                    }).map(([key, title]) => (
-                      <label className="adm-check" key={key}>
-                        <input
-                          type="checkbox"
-                          disabled={
-                            key === 'prescriptions' &&
-                            form.jobTitle !== 'pharmacist'
-                          }
-                          checked={
-                            Array.isArray(form.permissions) &&
-                            form.permissions.includes(key)
-                          }
-                          onChange={(e) =>
-                            setForm((f) => ({
-                              ...f,
-                              permissions: e.target.checked
-                                ? [...(f.permissions || []), key]
-                                : (f.permissions || []).filter(
-                                    (p) => p !== key,
-                                  ),
-                            }))
-                          }
-                        />
-                        <span>{title}</span>
-                      </label>
-                    ))}
+                    {Object.entries(PERMISSION_LABELS).map(([key, title]) => {
+                      const lockedSelfUsers = isSelf && key === 'users';
+                      const lockedRx =
+                        key === 'prescriptions' &&
+                        (form.role !== 'staff' ||
+                          form.jobTitle !== 'pharmacist');
+                      return (
+                        <label
+                          className={`adm-check ${lockedSelfUsers || lockedRx ? 'is-disabled' : ''}`}
+                          key={key}
+                        >
+                          <input
+                            type="checkbox"
+                            disabled={lockedSelfUsers || lockedRx}
+                            checked={curPerms.includes(key)}
+                            onChange={(e) =>
+                              setForm((f) => ({
+                                ...f,
+                                permissions: e.target.checked
+                                  ? [...new Set([...(f.permissions || []), key])]
+                                  : (f.permissions || []).filter(
+                                      (p) => p !== key,
+                                    ),
+                              }))
+                            }
+                          />
+                          <span>{title}</span>
+                        </label>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -2678,9 +2127,16 @@ export default function Admin({ user, onExit, onLogout, config }) {
                 label="Tài khoản được hoạt động"
                 name="active"
                 value={form.active}
+                disabled={isSelf}
+                hint={
+                  isSelf
+                    ? 'Không thể tự khóa tài khoản quản trị đang đăng nhập.'
+                    : undefined
+                }
                 onChange={change}
               />
-              {!form.active &&
+              {!isSelf &&
+                !form.active &&
                 item.active &&
                 fields([
                   [
@@ -2699,10 +2155,11 @@ export default function Admin({ user, onExit, onLogout, config }) {
                 </p>
               </div>
             </div>
-            {footer('Cập nhật quyền')}
+            {footer('Cập nhật tài khoản')}
           </form>
         </Modal>
       );
+    }
     if (type === 'rule')
       return (
         <Modal title="Chỉnh sửa quy tắc an toàn" onClose={close}>
@@ -2823,7 +2280,17 @@ export default function Admin({ user, onExit, onLogout, config }) {
           />
         </Modal>
       );
-    if (type === 'prescription')
+    if (type === 'prescription') {
+      const canReview =
+        item.status === 'pending' && item.orderStatus === 'pending_prescription';
+      const rxItems = Array.isArray(item.items) ? item.items : [];
+      const selectedIds = Array.isArray(form.productIds) ? form.productIds : [];
+      const approvedIds = Array.isArray(item.approvedProductIds)
+        ? item.approvedProductIds
+        : [];
+      const partialInvalid =
+        form.status === 'partial' &&
+        (selectedIds.length === 0 || selectedIds.length >= rxItems.length);
       return (
         <Modal title={`Kiểm duyệt đơn thuốc #${item.id}`} onClose={close} wide>
           <form
@@ -2831,7 +2298,7 @@ export default function Admin({ user, onExit, onLogout, config }) {
               submit(e, `/admin/prescriptions/${item.id}`, 'PATCH', {
                 status: form.status,
                 note: form.note,
-                productIds: form.productIds,
+                productIds: selectedIds,
               })
             }
           >
@@ -2840,10 +2307,28 @@ export default function Admin({ user, onExit, onLogout, config }) {
                 <div>
                   <strong>
                     {item.userName || item.customerName || 'Khách hàng'}
+                    {item.userPhone ? ` · ${item.userPhone}` : ''}
                   </strong>
-                  <small>{fmtDate(item.createdAt)}</small>
+                  <small>
+                    Tải lên {dateTime(item.createdAt)}
+                    {item.orderTotal ? ` · Tổng đơn ${money(item.orderTotal)}` : ''}
+                  </small>
                 </div>
-                <Badge value={item.status} />
+                <Badge value={item.status}>
+                  {item.status === 'pending' ? 'Chờ duyệt' : undefined}
+                </Badge>
+                {item.orderId && (
+                  <button
+                    type="button"
+                    className="adm-btn small"
+                    onClick={() =>
+                      orderDetail({ id: item.orderId, code: item.orderCode })
+                    }
+                  >
+                    Đơn {item.orderCode || `#${item.orderId}`}
+                    <ArrowUpRight size={14} />
+                  </button>
+                )}
                 <a
                   className="adm-btn small"
                   href={`/api/prescriptions/${item.id}/file`}
@@ -2868,36 +2353,43 @@ export default function Admin({ user, onExit, onLogout, config }) {
                   />
                 )}
               </div>
-              {item.items?.length > 0 && (
+              {rxItems.length > 0 && (
                 <Table
-                  columns={['Thuốc kê đơn cần đối chiếu', 'Số lượng']}
-                  rows={item.items}
+                  columns={[
+                    'Thuốc kê đơn cần đối chiếu',
+                    'Số lượng',
+                    ...(item.status === 'partial' ? ['Kết quả'] : []),
+                  ]}
+                  rows={rxItems}
                 >
-                  {item.items.map((product) => (
+                  {rxItems.map((product) => (
                     <tr key={product.productId}>
                       <td>
-                        {form.status === 'partial' &&
-                        item.status === 'pending' ? (
+                        {form.status === 'partial' && canReview ? (
                           <label className="adm-check">
                             <input
                               type="checkbox"
-                              checked={
-                                form.productIds?.includes(product.productId) ||
-                                false
-                              }
+                              checked={selectedIds.includes(product.productId)}
                               onChange={(e) => {
                                 const checked = e.target.checked;
-                                setForm((current) => ({
-                                  ...current,
-                                  productIds: checked
-                                    ? [
-                                        ...(current.productIds || []),
-                                        product.productId,
-                                      ]
-                                    : current.productIds.filter(
-                                        (id) => id !== product.productId,
-                                      ),
-                                }));
+                                setForm((current) => {
+                                  const prev = Array.isArray(current.productIds)
+                                    ? current.productIds
+                                    : [];
+                                  return {
+                                    ...current,
+                                    productIds: checked
+                                      ? [
+                                          ...new Set([
+                                            ...prev,
+                                            product.productId,
+                                          ]),
+                                        ]
+                                      : prev.filter(
+                                          (id) => id !== product.productId,
+                                        ),
+                                  };
+                                });
                               }}
                             />
                             <span>{product.name}</span>
@@ -2909,32 +2401,95 @@ export default function Admin({ user, onExit, onLogout, config }) {
                       <td>
                         {product.quantity} · {product.unit}
                       </td>
+                      {item.status === 'partial' && (
+                        <td>
+                          <Badge
+                            value={
+                              approvedIds.includes(product.productId)
+                                ? 'approved'
+                                : 'rejected'
+                            }
+                          >
+                            {approvedIds.includes(product.productId)
+                              ? 'Được duyệt'
+                              : 'Không duyệt'}
+                          </Badge>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </Table>
               )}
-              {item.status === 'pending' &&
-              item.orderStatus === 'pending_prescription' ? (
+              {canReview ? (
                 <>
                   <Field label="Kết quả kiểm duyệt" required>
                     <select
                       name="status"
                       value={form.status === 'pending' ? '' : form.status}
-                      onChange={change}
+                      onChange={(e) => {
+                        const nextStatus = e.target.value;
+                        setForm((f) => ({
+                          ...f,
+                          status: nextStatus,
+                          productIds:
+                            nextStatus === 'partial'
+                              ? Array.isArray(f.productIds)
+                                ? f.productIds
+                                : []
+                              : f.productIds,
+                        }));
+                      }}
                       required
                     >
                       <option value="">Chọn kết quả</option>
-                      <option value="approved">Duyệt đơn thuốc</option>
-                      {item.items?.length > 1 && (
+                      <option value="approved">Duyệt toàn bộ đơn thuốc</option>
+                      {rxItems.length > 1 && (
                         <option value="partial">Duyệt một phần</option>
                       )}
                       <option value="rejected">Từ chối đơn thuốc</option>
                     </select>
                   </Field>
+                  { form.status === 'partial' && (
+                    <div
+                      className={`adm-inline-note ${partialInvalid ? 'is-warn' : 'is-ok'}`}
+                    >
+                      Đã chọn {selectedIds.length} / {rxItems.length} thuốc kê
+                      đơn. Khi duyệt một phần, cần chọn ít nhất 1 và ít hơn toàn
+                      bộ danh sách thuốc kê đơn.
+                    </div>
+                  )}
+                  <div className="adm-quick-notes">
+                    <span>Mẫu ghi chú GPP:</span>
+                    {[
+                      [
+                        'Đúng chỉ định',
+                        'Đơn thuốc hợp lệ, đã đối chiếu khớp hoạt chất, hàm lượng và số lượng chỉ định.',
+                      ],
+                      [
+                        'Duyệt một phần',
+                        'Chỉ duyệt thuốc có trong toa bác sĩ; các thuốc kê đơn còn lại chưa có chỉ định trên đơn.',
+                      ],
+                      [
+                        'Ảnh mờ / thiếu thông tin',
+                        'Ảnh đơn thuốc bị mờ hoặc thiếu chữ ký bác sĩ / ngày kê đơn. Vui lòng tải lại ảnh rõ nét.',
+                      ],
+                    ].map(([labelTxt, noteTxt]) => (
+                      <button
+                        key={labelTxt}
+                        type="button"
+                        className="adm-quick-chip"
+                        onClick={() =>
+                          setForm((f) => ({ ...f, note: noteTxt }))
+                        }
+                      >
+                        {labelTxt}
+                      </button>
+                    ))}
+                  </div>
                   {fields([
                     [
                       'note',
-                      'Ghi chú / lý do từ chối',
+                      'Ghi chú / lý do từ chối (tối thiểu 5 ký tự nếu từ chối hoặc duyệt một phần)',
                       'textarea',
                       ['rejected', 'partial'].includes(form.status),
                     ],
@@ -2944,6 +2499,9 @@ export default function Admin({ user, onExit, onLogout, config }) {
                 <div className="adm-info-banner compact">
                   <ClipboardCheck size={18} />
                   <p>
+                    {item.reviewerName
+                      ? `Người duyệt: ${item.reviewerName} (${dateTime(item.reviewedAt)}). `
+                      : ''}
                     {item.note ||
                       item.reviewNote ||
                       (item.status === 'pending'
@@ -2953,9 +2511,24 @@ export default function Admin({ user, onExit, onLogout, config }) {
                 </div>
               )}
             </div>
-            {item.status === 'pending' &&
-            item.orderStatus === 'pending_prescription' ? (
-              footer('Lưu kết quả kiểm duyệt')
+            {canReview ? (
+              <div className="adm-modal-footer">
+                <button type="button" className="adm-btn" onClick={close}>
+                  Đóng
+                </button>
+                <button
+                  className="adm-btn primary"
+                  disabled={saving || partialInvalid || !form.status || form.status === 'pending'}
+                  type="submit"
+                >
+                  {saving ? (
+                    <LoaderCircle className="adm-spin" size={16} />
+                  ) : (
+                    <Check size={16} />
+                  )}{' '}
+                  Lưu kết quả kiểm duyệt
+                </button>
+              </div>
             ) : (
               <div className="adm-modal-footer">
                 <button type="button" className="adm-btn" onClick={close}>
@@ -2966,6 +2539,62 @@ export default function Admin({ user, onExit, onLogout, config }) {
           </form>
         </Modal>
       );
+    }
+    if (type === 'auditDetail') {
+      let formattedDetail = String(item.detail || '');
+      try {
+        if (
+          formattedDetail.trim().startsWith('{') ||
+          formattedDetail.trim().startsWith('[')
+        ) {
+          formattedDetail = JSON.stringify(JSON.parse(formattedDetail), null, 2);
+        }
+      } catch {
+        // Giữ nguyên chuỗi gốc nếu không phải JSON hợp lệ.
+      }
+      return (
+        <Modal title="Chi tiết nhật ký hệ thống" onClose={close}>
+          <div className="adm-modal-body">
+            <div className="adm-audit-meta">
+              <div>
+                <span>Hành động</span>
+                <strong>{AUDIT_LABELS[item.action] || item.action}</strong>
+                <small>
+                  <code>{item.action}</code>
+                </small>
+              </div>
+              <div>
+                <span>Thời gian</span>
+                <strong>{dateTime(item.createdAt)}</strong>
+              </div>
+              <div>
+                <span>Người thực hiện</span>
+                <strong>
+                  {item.userName || item.actorName || 'Hệ thống'}
+                  {item.userId ? ` (#${item.userId})` : ''}
+                </strong>
+              </div>
+              <div>
+                <span>Đối tượng</span>
+                <strong>
+                  {ENTITY_LABELS[item.entity] || item.entity || 'Hệ thống'}
+                  {item.entityId ? ` #${item.entityId}` : ''}
+                </strong>
+              </div>
+            </div>
+            <div className="adm-audit-summary">
+              <span>Tóm tắt:</span> {formatAuditDetail(item.detail)}
+            </div>
+            <pre className="adm-audit-json">{formattedDetail || '—'}</pre>
+          </div>
+          <div className="adm-modal-footer">
+            <button type="button" className="adm-btn" onClick={close}>
+              Đóng
+            </button>
+          </div>
+        </Modal>
+      );
+    }
     if (type === 'backup')
       return (
         <Modal title="Tạo bản sao lưu mã hóa" onClose={close}>
@@ -2985,7 +2614,7 @@ export default function Admin({ user, onExit, onLogout, config }) {
                 );
                 const anchor = document.createElement('a');
                 anchor.href = url;
-                anchor.download = `antam-backup-${new Date().toISOString().slice(0, 10)}.json`;
+                anchor.download = `antam-backup-${vnDate(0)}.json`;
                 anchor.click();
                 setTimeout(() => URL.revokeObjectURL(url), 10000);
                 setModal(null);
@@ -3505,17 +3134,52 @@ export default function Admin({ user, onExit, onLogout, config }) {
         </button>
         <div className="adm-side-label">KHÔNG GIAN LÀM VIỆC</div>
         <nav>
-          {allowedNav.map(([key, Icon, title]) => (
-            <button
-              key={key}
-              className={view === key ? 'active' : ''}
-              onClick={() => go(key)}
-            >
-              <Icon size={19} />
-              <span>{title}</span>
-              {view === key && <span className="adm-nav-dot" />}
-            </button>
-          ))}
+          {allowedNav.map(([key, Icon, title]) => {
+            const badgeCount = navCounts
+              ? key === 'orders'
+                ? (navCounts.waitingConfirmOrders || 0) +
+                  (navCounts.pendingRequests?.total || 0)
+                : key === 'prescriptions'
+                  ? navCounts.pendingPrescriptions || 0
+                  : key === 'inventory'
+                    ? (navCounts.expiredBatches || 0) +
+                      (navCounts.expiringBatches || 0) +
+                      (navCounts.lowStockProducts || 0)
+                    : key === 'chatbot'
+                      ? navCounts.openSupport || 0
+                      : 0
+              : 0;
+            const badgeTitle =
+              badgeCount > 0
+                ? key === 'orders'
+                  ? `${badgeCount} đơn hàng / yêu cầu chờ xử lý`
+                  : key === 'prescriptions'
+                    ? `${badgeCount} đơn thuốc chờ dược sĩ kiểm duyệt`
+                    : key === 'inventory'
+                      ? `${badgeCount} cảnh báo kho cần xử lý (hết hạn, sắp hết hạn, sắp hết hàng)`
+                      : key === 'chatbot'
+                        ? `${badgeCount} yêu cầu tư vấn dược sĩ đang mở`
+                        : undefined
+                : undefined;
+            return (
+              <button
+                key={key}
+                className={view === key ? 'active' : ''}
+                onClick={() => go(key)}
+                title={badgeTitle}
+              >
+                <Icon size={19} />
+                <span>{title}</span>
+                {badgeCount > 0 ? (
+                  <span className="adm-nav-badge" title={badgeTitle}>
+                    {badgeCount > 99 ? '99+' : badgeCount}
+                  </span>
+                ) : (
+                  view === key && <span className="adm-nav-dot" />
+                )}
+              </button>
+            );
+          })}
         </nav>
         <div className="adm-sidebar-bottom">
           <button onClick={onExit}>
@@ -3524,10 +3188,12 @@ export default function Admin({ user, onExit, onLogout, config }) {
             <ArrowUpRight size={15} />
           </button>
           <div className="adm-user">
-            <span>{user?.name?.slice(0, 1) || 'M'}</span>
+            <span>{user?.name?.slice(0, 1) || 'A'}</span>
             <div>
               <strong>{user?.name || 'Nhân viên'}</strong>
-              <small>{label(user?.role)}</small>
+              <small>
+                {user?.jobTitle ? label(user.jobTitle) : label(user?.role)}
+              </small>
             </div>
             <button onClick={onLogout} aria-label="Đăng xuất">
               <LogOut size={17} />
@@ -3557,28 +3223,21 @@ export default function Admin({ user, onExit, onLogout, config }) {
               <i />
               Hệ thống đang hoạt động
             </span>
-            <span className="adm-avatar">{user?.name?.slice(0, 1) || 'M'}</span>
+            <span className="adm-avatar">{user?.name?.slice(0, 1) || 'A'}</span>
           </div>
         </header>
         <main className="adm-content">
           <div className="adm-page-head">
             <div>
               <div className="adm-eyebrow">
-                AN TÂM / {isAdmin ? 'QUẢN TRỊ VIÊN' : 'NHÂN VIÊN'}
+                AN TÂM / {isAdmin ? 'QUẢN TRỊ VIÊN' : label(user?.jobTitle || 'staff').toUpperCase()}
               </div>
               <h1>{TITLES[view]}</h1>
               <p>
                 {view === 'dashboard'
                   ? `Chào ${user?.name || 'bạn'}, theo dõi toàn cảnh vận hành và số liệu nhà thuốc theo thời gian thực.`
-                  : view === 'orders'
-                    ? 'Quản lý đơn hàng xuyên suốt từ tiếp nhận đến giao thành công.'
-                    : view === 'products'
-                      ? 'Thông tin sản phẩm chính xác, rõ ràng và luôn được cập nhật.'
-                      : view === 'inventory'
-                        ? 'Kiểm soát số lượng, lô thuốc và hạn sử dụng tại một nơi.'
-                        : view === 'prescriptions'
-                          ? 'Đảm bảo mỗi đơn thuốc được kiểm tra đúng chuyên môn.'
-                          : 'Quản lý dữ liệu và hoạt động của nhà thuốc.'}
+                  : SUBTITLES[view] ||
+                    'Quản lý dữ liệu và hoạt động của nhà thuốc.'}
               </p>
             </div>
             <button
