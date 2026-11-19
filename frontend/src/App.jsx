@@ -1268,6 +1268,7 @@ function Checkout() {
   );
   useEffect(() => {
     if (!user) return;
+    setAddress((current) => ({ ...current, recipient: current.recipient || user.name || '', phone: current.phone || user.phone || '' }));
     api('/addresses')
       .then((data) => {
         const arr = Array.isArray(data) ? data : data.items || [];
