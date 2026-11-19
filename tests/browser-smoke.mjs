@@ -246,10 +246,18 @@ try {
   );
   await textOnPage(customer, '.chat-bubble.assistant', orderCode);
   await clickText(customer, '.chat-handoff', 'Kết nối dược sĩ');
+  await customer.waitForFunction(() => location.pathname === '/consultation');
+  await customer.waitForSelector('.pharmacist-chat');
+  await setField(
+    customer,
+    '.pharmacist-chat-form textarea',
+    'Nhờ dược sĩ tư vấn thêm về đơn hàng của tôi.',
+  );
+  await clickText(customer, '.pharmacist-chat-form button', 'Gửi');
   await textOnPage(
     customer,
-    '.chat-bubble.assistant',
-    'Yêu cầu đã được chuyển',
+    '.pharmacist-chat-status',
+    'Đang chờ dược sĩ nhận cuộc tư vấn',
   );
   await clip(customer, 'chat-desktop');
   console.log('PASS enquiry about own order and pharmacist handoff');
