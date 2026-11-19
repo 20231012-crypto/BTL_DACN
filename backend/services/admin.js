@@ -588,11 +588,18 @@ export function installAdmin(
       data: await dashboardOverview(d, req.user, req.query),
     }),
   );
-  app.get('/api/admin/products', permission('catalog'), async (req, res) =>
-    res.json({
+  app.get('/api/admin/products', auth, async (req, res) => {
+    assert(
+      req.user.permissions.some((code) =>
+        ['catalog', 'inventory'].includes(code),
+      ),
+      403,
+      'Bạn không có quyền xem danh sách sản phẩm quản trị.',
+    );
+    return res.json({
       data: await productList(d, req.query, true),
-    }),
-  );
+    });
+  });
   const productValues = async (b, old = {}) => {
     const p = { ...camel(old), ...b };
     assert(
@@ -642,7 +649,10 @@ export function installAdmin(
       unit: text(p.unit, 60),
       price: Number(p.price),
       old_price:
-        p.oldPrice === undefined || p.oldPrice === null || p.oldPrice === ''
+        p.oldPrice === undefined ||
+        p.oldPrice === null ||
+        p.oldPrice === '' ||
+        Number(p.oldPrice) <= 0
           ? null
           : Number(p.oldPrice),
       image: image || '/assets/products/vitamin-c.svg',
@@ -718,15 +728,31 @@ export function installAdmin(
     ['manufacturers', 'nha_san_xuat'],
     ['suppliers', 'nha_cung_cap'],
   ];
+  const simpleEntityQueries = {
+    danh_muc:
+      'SELECT c.*, (SELECT COUNT(*) FROM thuoc t WHERE t.category_id=c.id) item_count FROM danh_muc c ORDER BY c.id',
+    nha_san_xuat:
+      'SELECT m.*, (SELECT COUNT(*) FROM thuoc t WHERE t.manufacturer_id=m.id) item_count FROM nha_san_xuat m ORDER BY m.id',
+    nha_cung_cap:
+      'SELECT s.*, (SELECT COUNT(*) FROM phieu_nhap_kho p WHERE p.supplier_id=s.id) item_count FROM nha_cung_cap s ORDER BY s.id',
+  };
   for (const [route, table] of simpleEntities) {
-    app.get(`/api/admin/${route}`, permission('catalog'), async (req, res) =>
-      res.json({
-        data: (await d.all(`SELECT * FROM ${table} ORDER BY id`)).map((x) => ({
+    app.get(`/api/admin/${route}`, auth, async (req, res) => {
+      const allowedPerms =
+        route === 'suppliers' ? ['catalog', 'inventory'] : ['catalog'];
+      assert(
+        req.user.permissions.some((code) => allowedPerms.includes(code)),
+        403,
+        'Bạn không có quyền truy cập danh mục này.',
+      );
+      return res.json({
+        data: (await d.all(simpleEntityQueries[table])).map((x) => ({
           ...camel(x),
           active: !!x.active,
+          itemCount: Number(x.item_count || 0),
         })),
-      }),
-    );
+      });
+    });
     const values = (body, old = {}) => {
       const b = { ...camel(old), ...body };
       assert(text(b.name, 160).length >= 2, 400, 'Tên cần ít nhất 2 ký tự.');
@@ -882,7 +908,8 @@ export function installAdmin(
       max_discount:
         p.maxDiscount === undefined ||
         p.maxDiscount === null ||
-        p.maxDiscount === ''
+        p.maxDiscount === '' ||
+        Number(p.maxDiscount) <= 0
           ? null
           : Number(p.maxDiscount),
       usage_limit: Number(p.usageLimit || 100),
@@ -950,6 +977,7 @@ export function installAdmin(
         },
         req.params.id,
       );
+      await audit(d, req.user.id, 'promotion.deactivate', 'promotion', req.params.id);
       res.json({
         data: {
           deactivated: true,
@@ -1351,26 +1379,27 @@ export function installAdmin(
       });
     },
   );
+  const settingsPayload = async () => ({
+    ...(await getSettings(d)),
+    demoMode: options.demo,
+    geminiConfigured: !!process.env.GEMINI_API_KEY,
+    smtpConfigured: !!process.env.SMTP_HOST,
+    emailConfigured: !!process.env.SMTP_HOST,
+    paymentConfigured: Boolean(options.vnpay),
+    googleConfigured: Boolean(options.google),
+    paymentProvider: options.vnpay
+      ? 'vnpay'
+      : options.demo
+        ? 'demo'
+        : 'cod',
+  });
   app.get(
     '/api/admin/settings',
     admin,
     permission('settings'),
     async (req, res) =>
       res.json({
-        data: {
-          ...(await getSettings(d)),
-          demoMode: options.demo,
-          geminiConfigured: !!process.env.GEMINI_API_KEY,
-          smtpConfigured: !!process.env.SMTP_HOST,
-          emailConfigured: !!process.env.SMTP_HOST,
-          paymentConfigured: Boolean(options.vnpay),
-          googleConfigured: Boolean(options.google),
-          paymentProvider: options.vnpay
-            ? 'vnpay'
-            : options.demo
-              ? 'demo'
-              : 'cod',
-        },
+        data: await settingsPayload(),
       }),
   );
   app.patch(
@@ -1423,10 +1452,7 @@ export function installAdmin(
         await audit(d, req.user.id, 'settings.update', 'settings', '', values);
       });
       res.json({
-        data: {
-          ...(await getSettings(d)),
-          demoMode: options.demo,
-        },
+        data: await settingsPayload(),
       });
     },
   );
@@ -1484,7 +1510,9 @@ export function installAdmin(
     );
     return res.json({
       data: (
-        await d.all('SELECT * FROM tri_thuc_chatbot ORDER BY id DESC')
+        await d.all(
+          'SELECT k.*, r.name reviewer_name FROM tri_thuc_chatbot k LEFT JOIN nguoi_dung r ON r.id=k.reviewed_by ORDER BY k.id DESC',
+        )
       ).map((x) => ({
         ...camel(x),
         active: !!x.active,
@@ -1698,7 +1726,12 @@ export function installAdmin(
     res.json({
       data: (
         await d.all(
-          'SELECT s.*,u.name user_name,c.title session_title FROM yeu_cau_ho_tro s JOIN nguoi_dung u ON u.id=s.user_id JOIN cuoc_hoi_thoai c ON c.id=s.session_id ORDER BY s.id DESC',
+          `SELECT s.*,u.name user_name,u.phone user_phone,u.email user_email,h.name handler_name,c.title session_title
+           FROM yeu_cau_ho_tro s
+           JOIN nguoi_dung u ON u.id=s.user_id
+           LEFT JOIN nguoi_dung h ON h.id=s.handler_id
+           JOIN cuoc_hoi_thoai c ON c.id=s.session_id
+           ORDER BY s.id DESC`,
         )
       ).map(camel),
     }),
@@ -1719,7 +1752,19 @@ export function installAdmin(
             s.session_id,
             Number(req.query.after) || 0,
           )
-        ).map(camel),
+        ).map((row) => {
+          const { products_json, ...rest } = row;
+          let products = [];
+          try {
+            if (products_json) products = JSON.parse(products_json);
+          } catch {
+            products = [];
+          }
+          return {
+            ...camel(rest),
+            products: Array.isArray(products) ? products : [],
+          };
+        }),
       });
     },
   );
