@@ -3,10 +3,11 @@ import { readFile } from 'node:fs/promises';
 const migrations = new URL('../../supabase/migrations/', import.meta.url);
 
 export async function initializePostgresSchema(store) {
-  const [initial, rename, returnGoods] = await Promise.all([
+  const [initial, rename, returnGoods, orderFulfillment] = await Promise.all([
     readFile(new URL('20261118000100_minhan.sql', migrations), 'utf8'),
     readFile(new URL('20261118180033_rename_schema_to_antam.sql', migrations), 'utf8'),
     readFile(new URL('20261119000100_hang_tra_ve.sql', migrations), 'utf8'),
+    readFile(new URL('20261119000200_order_fulfillment_fields.sql', migrations), 'utf8'),
   ]);
 
   await store.transaction(async () => {
@@ -19,6 +20,7 @@ export async function initializePostgresSchema(store) {
     }
     await store.migrate(rename);
     await store.migrate(returnGoods);
+    await store.migrate(orderFulfillment);
   });
 }
 
@@ -30,16 +32,30 @@ export async function applyPendingMigrations(store) {
     const exists = async () =>
       (await store.one("SELECT to_regclass('antam.hang_tra_ve') IS NOT NULL AS present"))
         .present;
-    if (await exists()) return;
-    const returnGoods = await readFile(
-      new URL('20261119000100_hang_tra_ve.sql', migrations),
-      'utf8',
+    if (!(await exists())) {
+      const returnGoods = await readFile(
+        new URL('20261119000100_hang_tra_ve.sql', migrations),
+        'utf8',
+      );
+      await store.transaction(async () => {
+        // Kiểm tra lại trong giao dịch có khóa để hai phiên khởi động cùng lúc không tạo trùng.
+        if (!(await exists())) await store.migrate(returnGoods);
+      });
+    }
+
+    const col = await store.one(
+      "SELECT COUNT(*)::int AS cnt FROM information_schema.columns WHERE table_schema='antam' AND table_name='don_hang' AND column_name='shipping_carrier'",
     );
-    await store.transaction(async () => {
-      // Kiểm tra lại trong giao dịch có khóa để hai phiên khởi động cùng lúc không tạo trùng.
-      if (!(await exists())) await store.migrate(returnGoods);
-    });
+    if (col && col.cnt === 0) {
+      const orderFulfillment = await readFile(
+        new URL('20261119000200_order_fulfillment_fields.sql', migrations),
+        'utf8',
+      );
+      await store.transaction(async () => {
+        await store.migrate(orderFulfillment);
+      });
+    }
   } catch (error) {
-    console.error('Chưa áp dụng được migration hang_tra_ve:', error.code || 'CONFIG');
+    console.error('Chưa áp dụng được migration:', error.code || 'CONFIG');
   }
 }

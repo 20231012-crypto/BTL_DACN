@@ -15,6 +15,11 @@ export function openDatabase(
   );
   db.exec(readFileSync(path.join(root, 'database/schema.sqlite.sql'), 'utf8'));
   const migrations = {
+    don_hang: {
+      shipping_carrier: "TEXT NOT NULL DEFAULT ''",
+      tracking_code: "TEXT NOT NULL DEFAULT ''",
+      internal_note: "TEXT NOT NULL DEFAULT ''",
+    },
     giao_dich_thanh_toan: { provider_reference: 'TEXT', expires_at: 'TEXT' },
     don_thuoc: { approved_product_ids: 'TEXT' },
     yeu_cau_huy_hoan: {
@@ -105,15 +110,15 @@ export const camel = (object) =>
     ]),
   );
 export const now = () => new Date().toISOString();
-export const today = () =>
-  new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
+const vnDateFormat = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Ho_Chi_Minh',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+export const today = () => vnDateFormat.format(new Date());
 export const daysFromNow = (days) =>
-  new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
+  vnDateFormat.format(new Date(Date.now() + days * 86400000));
 export const normalize = (s) =>
   String(s || '')
     .normalize('NFD')
