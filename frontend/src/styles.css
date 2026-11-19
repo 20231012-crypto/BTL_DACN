@@ -5430,3 +5430,9 @@ svg {
     font-size: 10px;
   }
 }
+
+.return-shipment { margin-top: 10px; padding: 12px 14px; border-radius: 10px; background: #f3f8f5; border: 1px solid #d9e4e1; font-size: 13px; }
+.return-shipment p { margin: 0 0 8px; }
+.return-shipment p:last-child { margin: 0; }
+.return-shipment-form { display: flex; flex-wrap: wrap; gap: 8px; }
+.return-shipment-form input { flex: 1 1 160px; min-width: 0; padding: 9px 11px; border: 1px solid #cdd9d5; border-radius: 8px; font: inherit; }

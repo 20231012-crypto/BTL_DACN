@@ -51,6 +51,7 @@ import AddressFields from './AddressFields.jsx';
 import BankTransfer from './BankTransfer.jsx';
 import PrescriptionCatalog from './PrescriptionCatalog.jsx';
 import PharmacistChat from './PharmacistChat.jsx';
+import ReturnShipment from './ReturnShipment.jsx';
 import ProductSearch from './ProductSearch.jsx';
 import Pagination from './Pagination.jsx';
 import HeroBanner from './HeroBanner.jsx';
@@ -2254,6 +2255,14 @@ function OrderDetail({ id }) {
                           )}
                           {r.refundAmount > 0 && (
                             <p>Đã hoàn {money(r.refundAmount)}</p>
+                          )}
+                          {r.type === 'return' && r.returnGoodsStatus && (
+                            <ReturnShipment
+                              orderId={id}
+                              request={r}
+                              notify={notify}
+                              onSaved={load}
+                            />
                           )}
                         </div>
                       ))}
