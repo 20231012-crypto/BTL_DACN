@@ -46,6 +46,7 @@ import {
   Eye,
   EyeOff,
   RotateCcw,
+  Heart,
 } from 'lucide-react';
 import Admin from './Admin.jsx';
 import AddressFields from './AddressFields.jsx';
@@ -193,8 +194,53 @@ export default function App() {
   const [manufacturers, setManufacturers] = useState([]);
   const [config, setConfig] = useState(null);
   const [cart, setCart] = useState([]);
+  const [wishlist, setWishlist] = useState([]);
   const [toast, setToast] = useState(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const wishlistKey = `antam_wishlist_${user?.id || 'guest'}`;
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(wishlistKey) || '[]');
+      setWishlist(Array.isArray(saved) ? saved : []);
+    } catch {
+      setWishlist([]);
+    }
+  }, [wishlistKey]);
+  const isWishlisted = useCallback(
+    (productId) => wishlist.some((item) => item.id === productId),
+    [wishlist],
+  );
+  const toggleWishlist = useCallback(
+    (product) => {
+      if (!product?.id) return;
+      setWishlist((prev) => {
+        const exists = prev.some((item) => item.id === product.id);
+        const next = exists
+          ? prev.filter((item) => item.id !== product.id)
+          : [
+              {
+                id: product.id,
+                name: product.name,
+                price: product.price,
+                oldPrice: product.oldPrice,
+                unit: product.unit,
+                image: product.image,
+                categoryName: product.categoryName,
+                manufacturer: product.manufacturer,
+                stock: product.stock,
+                prescriptionRequired: product.prescriptionRequired,
+                featured: product.featured,
+              },
+              ...prev,
+            ];
+        try {
+          localStorage.setItem(wishlistKey, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    },
+    [wishlistKey],
+  );
   const notify = useCallback(
     (message, type = 'success') => setToast({ message, type, id: Date.now() }),
     [],
@@ -329,6 +375,9 @@ export default function App() {
     manufacturers,
     config,
     cart,
+    wishlist,
+    isWishlisted,
+    toggleWishlist,
     refreshCart,
     navigate,
     notify,
@@ -467,8 +516,12 @@ function Header() {
     useApp();
   const [search, setSearch] = useState('');
   const [menu, setMenu] = useState(false);
+  const [catMenu, setCatMenu] = useState(false);
   const count = cart.reduce((sum, item) => sum + item.quantity, 0);
-  useEffect(() => setMenu(false), [route]);
+  useEffect(() => {
+    setMenu(false);
+    setCatMenu(false);
+  }, [route]);
   return (
     <>
       <div className="topbar">
@@ -540,9 +593,50 @@ function Header() {
           className={`container navigation ${menu ? 'mobile-open' : ''}`}
           aria-label="Điều hướng chính"
         >
-          <Link to="/products" className="nav-categories">
-            <Menu size={18} /> Danh mục sản phẩm <ChevronDown size={14} />
-          </Link>
+          <div
+            className="nav-categories-wrap"
+            onBlur={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget)) setCatMenu(false);
+            }}
+          >
+            <button
+              type="button"
+              className="nav-categories"
+              aria-expanded={catMenu}
+              aria-haspopup="menu"
+              onClick={() => setCatMenu((v) => !v)}
+            >
+              <Menu size={18} /> Danh mục sản phẩm <ChevronDown size={14} />
+            </button>
+            {catMenu && (
+              <div className="nav-categories-dropdown" role="menu">
+                <Link
+                  to="/products"
+                  role="menuitem"
+                  onClick={() => setCatMenu(false)}
+                >
+                  <Package size={16} /> Tất cả sản phẩm
+                </Link>
+                {categories.map((cat) => {
+                  const Icon = categoryIcon(cat.name);
+                  const target =
+                    cat.slug === 'thuoc-ke-don'
+                      ? `/products?category=${cat.id}&prescription=all`
+                      : `/products?category=${cat.id}`;
+                  return (
+                    <Link
+                      key={cat.id}
+                      to={target}
+                      role="menuitem"
+                      onClick={() => setCatMenu(false)}
+                    >
+                      <Icon size={16} /> {cat.name}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           <Link className={route === '/' ? 'active' : ''} to="/">
             Trang chủ
           </Link>
@@ -766,29 +860,41 @@ function Home() {
 }
 
 function ProductCard({ product: p }) {
-  const { addToCart } = useApp();
+  const { addToCart, isWishlisted, toggleWishlist } = useApp();
+  const wished = isWishlisted(p.id);
   return (
     <article className="product-card">
-      <Link to={`/products/${p.id}`} className="product-picture">
-        {p.prescriptionRequired ? (
-          <span className="product-tag rx-tag">Cần đơn thuốc</span>
-        ) : p.oldPrice > p.price ? (
-          <span className="product-tag">
-            −{Math.round((1 - p.price / p.oldPrice) * 100)}%
-          </span>
-        ) : p.featured ? (
-          <span className="product-tag neutral-tag">Được quan tâm</span>
-        ) : null}
-        <img
-          src={p.image || '/assets/products/vitamin-c.svg'}
-          alt={p.name}
-          loading="lazy"
-          onError={(e) => {
-            e.currentTarget.onerror = null;
-            e.currentTarget.src = '/assets/products/vitamin-c.svg';
-          }}
-        />
-      </Link>
+      <div className="product-picture-wrap">
+        <button
+          type="button"
+          className={`product-wish${wished ? ' active' : ''}`}
+          onClick={() => toggleWishlist(p)}
+          aria-label={wished ? 'Bỏ khỏi yêu thích' : 'Lưu vào yêu thích'}
+          title={wished ? 'Bỏ khỏi yêu thích' : 'Lưu vào yêu thích'}
+        >
+          <Heart size={15} fill={wished ? 'currentColor' : 'none'} />
+        </button>
+        <Link to={`/products/${p.id}`} className="product-picture">
+          {p.prescriptionRequired ? (
+            <span className="product-tag rx-tag">Cần đơn thuốc</span>
+          ) : p.oldPrice > p.price ? (
+            <span className="product-tag">
+              −{Math.round((1 - p.price / p.oldPrice) * 100)}%
+            </span>
+          ) : p.featured ? (
+            <span className="product-tag neutral-tag">Được quan tâm</span>
+          ) : null}
+          <img
+            src={p.image || '/assets/products/vitamin-c.svg'}
+            alt={p.name}
+            loading="lazy"
+            onError={(e) => {
+              e.currentTarget.onerror = null;
+              e.currentTarget.src = '/assets/products/vitamin-c.svg';
+            }}
+          />
+        </Link>
+      </div>
       <div className="product-info">
         <span className="product-category">
           {p.categoryName || p.manufacturer || 'Chăm sóc sức khỏe'}
@@ -881,6 +987,79 @@ function Catalog() {
     navigate(`/products${qs ? `?${qs}` : ''}`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+  const activeFilters = [];
+  if (params.get('search'))
+    activeFilters.push({
+      key: 'search',
+      label: `Từ khóa: “${params.get('search')}”`,
+      clear: () => {
+        setSearch('');
+        update('search', '');
+      },
+    });
+  if (params.get('category')) {
+    const cat = categories.find(
+      (c) =>
+        String(c.id) === params.get('category') ||
+        c.slug === params.get('category'),
+    );
+    activeFilters.push({
+      key: 'category',
+      label: `Danh mục: ${cat?.name || params.get('category')}`,
+      clear: () => update('category', ''),
+    });
+  }
+  if (
+    params.get('prescription') &&
+    params.get('prescription') !== 'false'
+  ) {
+    activeFilters.push({
+      key: 'prescription',
+      label:
+        params.get('prescription') === 'true'
+          ? 'Phân loại: Thuốc kê đơn'
+          : 'Phân loại: Tất cả',
+      clear: () => update('prescription', ''),
+    });
+  }
+  if (params.get('manufacturer')) {
+    const maker = manufacturers.find(
+      (m) => String(m.id) === params.get('manufacturer'),
+    );
+    activeFilters.push({
+      key: 'manufacturer',
+      label: `NSX: ${maker?.name || params.get('manufacturer')}`,
+      clear: () => update('manufacturer', ''),
+    });
+  }
+  if (params.get('minPrice') || params.get('maxPrice')) {
+    const min = params.get('minPrice')
+      ? `${formatPriceInput(params.get('minPrice'))}đ`
+      : '0đ';
+    const max = params.get('maxPrice')
+      ? `${formatPriceInput(params.get('maxPrice'))}đ`
+      : 'trở lên';
+    activeFilters.push({
+      key: 'price',
+      label: `Giá: ${min} – ${max}`,
+      clear: () => {
+        setPrice({ minPrice: '', maxPrice: '' });
+        update('minPrice', '', { maxPrice: '' });
+      },
+    });
+  }
+  if (params.get('inStock') === 'true') {
+    activeFilters.push({
+      key: 'inStock',
+      label: 'Chỉ hàng có sẵn',
+      clear: () => update('inStock', ''),
+    });
+  }
+  const clearAllFilters = () => {
+    setSearch('');
+    setPrice({ minPrice: '', maxPrice: '' });
+    navigate('/products');
+  };
   return (
     <main className="container page-shell">
       <Breadcrumb current="Sản phẩm" />
@@ -896,9 +1075,20 @@ function Catalog() {
       </div>
       <div className="catalog-layout">
         <aside className={`catalog-sidebar ${showFilters ? 'show' : ''}`}>
-          <h3>
-            <SlidersHorizontal size={17} /> Bộ lọc sản phẩm
-          </h3>
+          <div className="catalog-sidebar-head">
+            <h3>
+              <SlidersHorizontal size={17} /> Bộ lọc sản phẩm
+            </h3>
+            {activeFilters.length > 0 && (
+              <button
+                type="button"
+                className="clear-filters-btn"
+                onClick={clearAllFilters}
+              >
+                Xóa bộ lọc
+              </button>
+            )}
+          </div>
           <h4>Danh mục</h4>
           <button
             className={!params.get('category') ? 'chosen' : ''}
@@ -1079,6 +1269,31 @@ function Catalog() {
               <option value="name">Tên A–Z</option>
             </select>
           </div>
+          {activeFilters.length > 0 && (
+            <div className="active-filter-chips" aria-label="Bộ lọc đang áp dụng">
+              {activeFilters.map((f) => (
+                <button
+                  key={f.key}
+                  type="button"
+                  className="filter-chip"
+                  onClick={f.clear}
+                  title="Bấm để gỡ bộ lọc này"
+                >
+                  <span>{f.label}</span>
+                  <X size={13} />
+                </button>
+              ))}
+              {activeFilters.length > 1 && (
+                <button
+                  type="button"
+                  className="filter-chip-clear-all"
+                  onClick={clearAllFilters}
+                >
+                  Xóa tất cả
+                </button>
+              )}
+            </div>
+          )}
           <ErrorBox error={error} />
           {!items && !error ? (
             <Spinner />
@@ -1132,13 +1347,28 @@ function Breadcrumb({ current, parent }) {
   );
 }
 function ProductDetail({ id }) {
-  const { addToCart, setChatOpen, user, notify } = useApp();
+  const { addToCart, setChatOpen, isWishlisted, toggleWishlist } = useApp();
   const [p, setProduct] = useState(null);
+  const [related, setRelated] = useState([]);
   const [error, setError] = useState('');
   const [quantity, setQuantity] = useState(1);
   useEffect(() => {
+    setProduct(null);
+    setRelated([]);
     api(`/products/${id}`)
-      .then(setProduct)
+      .then((item) => {
+        setProduct(item);
+        if (item?.categoryId) {
+          api(`/products?category=${item.categoryId}&prescription=all`)
+            .then((list) => {
+              const rows = Array.isArray(list)
+                ? list
+                : list.items || list.products || [];
+              setRelated(rows.filter((x) => x.id !== item.id).slice(0, 4));
+            })
+            .catch(() => {});
+        }
+      })
       .catch((e) => setError(e.message));
   }, [id]);
   if (error)
@@ -1203,6 +1433,18 @@ function ProductDetail({ id }) {
               onClick={() => addToCart(p.id, quantity)}
             >
               <ShoppingBag size={19} /> Thêm vào giỏ hàng
+            </button>
+            <button
+              type="button"
+              className={`btn btn-outline detail-wish-btn${isWishlisted(p.id) ? ' active' : ''}`}
+              onClick={() => toggleWishlist(p)}
+              aria-label={isWishlisted(p.id) ? 'Bỏ khỏi yêu thích' : 'Lưu vào yêu thích'}
+            >
+              <Heart
+                size={18}
+                fill={isWishlisted(p.id) ? 'currentColor' : 'none'}
+              />
+              {isWishlisted(p.id) ? 'Đã lưu' : 'Yêu thích'}
             </button>
           </div>
           <button className="detail-consult" onClick={() => setChatOpen(true)}>
@@ -1281,6 +1523,27 @@ function ProductDetail({ id }) {
           </p>
         )}
       </section>
+      {related.length > 0 && (
+        <section className="related-products-section">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">GỢI Ý CHO BẠN</span>
+              <h2>Sản phẩm cùng danh mục</h2>
+            </div>
+            <Link
+              to={`/products?category=${p.categoryId}`}
+              className="subtle-link"
+            >
+              Xem thêm <ArrowRight size={16} />
+            </Link>
+          </div>
+          <div className="product-grid">
+            {related.map((item) => (
+              <ProductCard product={item} key={item.id} />
+            ))}
+          </div>
+        </section>
+      )}
     </main>
   );
 }
@@ -3069,7 +3332,8 @@ function AuthPage() {
 }
 
 function Account() {
-  const { user, setUser, logout, notify, navigate, config, route } = useApp();
+  const { user, setUser, logout, notify, navigate, config, route, wishlist } =
+    useApp();
   const googleStatus = new URLSearchParams(route.split('?')[1]).get('google');
   const [tab, setTab] = useState('profile');
   const [profile, setProfile] = useState({
@@ -3195,6 +3459,7 @@ function Account() {
             <span className="muted small">{user?.email}</span>
             {[
               ['profile', 'Thông tin cá nhân', UserRound],
+              ['wishlist', `Sản phẩm yêu thích (${wishlist.length})`, Heart],
               ['addresses', 'Địa chỉ nhận hàng', MapPin],
               ['password', 'Đổi mật khẩu', ShieldCheck],
             ].map(([value, title, Icon]) => (
@@ -3290,6 +3555,31 @@ function Account() {
                   >
                     Liên kết tài khoản Google
                   </a>
+                )}
+              </>
+            )}
+            {tab === 'wishlist' && (
+              <>
+                <h2>Sản phẩm yêu thích ({wishlist.length})</h2>
+                <p className="muted">
+                  Các sản phẩm bạn đã lưu để dễ dàng tra cứu và đặt mua lại.
+                </p>
+                {wishlist.length > 0 ? (
+                  <div className="product-grid wishlist-grid">
+                    {wishlist.map((item) => (
+                      <ProductCard product={item} key={item.id} />
+                    ))}
+                  </div>
+                ) : (
+                  <Empty
+                    icon={Heart}
+                    title="Chưa có sản phẩm yêu thích"
+                    text="Bấm vào biểu tượng trái tim trên sản phẩm để lưu vào danh sách của bạn."
+                  >
+                    <Link to="/products" className="btn btn-outline">
+                      Khám phá sản phẩm
+                    </Link>
+                  </Empty>
                 )}
               </>
             )}
