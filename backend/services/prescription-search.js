@@ -77,7 +77,9 @@ export async function readPrescription(buffer, mimeType) {
           },
         },
       },
-      22000,
+      // Ảnh đơn thuốc thật có thể mất hơn 8 giây để đọc; hàm Vercel chạy tối đa 30 giây.
+      26000,
+      20000,
     );
     const raw = response.candidates?.[0]?.content?.parts
       ?.map((part) => part.text || '')

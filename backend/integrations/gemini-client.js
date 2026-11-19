@@ -19,7 +19,13 @@ export function geminiKeys() {
   ].slice(0, 5);
 }
 
-export async function geminiRequest(endpoint, body, timeoutMs = 20000) {
+// timeoutMs là tổng thời gian cho mọi khóa; attemptMs là thời gian tối đa cho mỗi lần gọi một khóa.
+export async function geminiRequest(
+  endpoint,
+  body,
+  timeoutMs = 20000,
+  attemptMs = 8000,
+) {
   const keys = geminiKeys();
   if (!keys.length) throw new Error('Chưa cấu hình Gemini.');
   const deadline = Date.now() + timeoutMs;
@@ -31,7 +37,7 @@ export async function geminiRequest(endpoint, body, timeoutMs = 20000) {
         `https://generativelanguage.googleapis.com/v1beta/${endpoint}`,
         {
           method: 'POST',
-          signal: AbortSignal.timeout(Math.min(8000, remaining)),
+          signal: AbortSignal.timeout(Math.min(attemptMs, remaining)),
           headers: {
             'Content-Type': 'application/json',
             'x-goog-api-key': key,
