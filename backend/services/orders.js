@@ -110,13 +110,13 @@ export async function releaseStock(d, order) {
         product_id: a.product_id,
         batch_id: a.batch_id,
         order_id: order.id,
-        type:
-          order.status === 'delivered' ? 'return_restore' : 'cancel_restore',
+        type: ['delivered', 'returned'].includes(order.status)
+          ? 'return_restore'
+          : 'cancel_restore',
         quantity: a.quantity,
-        reason:
-          order.status === 'delivered'
-            ? 'Nhập lại hàng trả đã kiểm tra'
-            : 'Hoàn kho khi hủy đơn',
+        reason: ['delivered', 'returned'].includes(order.status)
+          ? 'Nhập lại hàng trả đã kiểm tra'
+          : 'Hoàn kho khi hủy đơn',
       });
     } else
       await d.run(
@@ -1420,7 +1420,7 @@ export function installOrders(
     res.json({
       data: (
         await d.all(
-          'SELECT r.*,o.code order_code,o.status order_status,o.payment_status,o.payment_method,o.total,u.name user_name FROM yeu_cau_huy_hoan r JOIN don_hang o ON o.id=r.order_id JOIN nguoi_dung u ON u.id=r.user_id ORDER BY r.id DESC',
+          'SELECT r.*,o.code order_code,o.status order_status,o.payment_status,o.payment_method,o.total,u.name user_name,g.status return_goods_status FROM yeu_cau_huy_hoan r JOIN don_hang o ON o.id=r.order_id JOIN nguoi_dung u ON u.id=r.user_id LEFT JOIN hang_tra_ve g ON g.request_id=r.id ORDER BY r.id DESC',
         )
       ).map(requestView),
     }),
@@ -1527,6 +1527,20 @@ export function installOrders(
           },
           r.id,
         );
+        if (status === 'approved' && r.type === 'return') {
+          // Yêu cầu đã duyệt bắt đầu theo dõi hàng trả về; nếu đã nhập kho ngay thì ghi nhận hoàn tất.
+          const restockedNow = req.body.restock === true;
+          await d.insert('hang_tra_ve', {
+            request_id: r.id,
+            order_id: o.id,
+            status: restockedNow ? 'restocked' : 'awaiting',
+            note: restockedNow ? 'Nhập lại kho ngay khi duyệt yêu cầu.' : '',
+            handler_id: req.user.id,
+            received_at: restockedNow ? now() : null,
+            inspected_at: restockedNow ? now() : null,
+            updated_at: now(),
+          });
+        }
         await audit(d, req.user.id, 'request.review', 'request', r.id, {
           status,
           reply,

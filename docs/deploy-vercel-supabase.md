@@ -9,6 +9,10 @@ Vercel phục vụ giao diện React và API Express trên cùng tên miền. Su
 3. Chạy `npm ci` rồi `npm run db:setup`. Lệnh áp dụng migration trong `supabase/migrations`, khởi tạo schema `antam`, cấu hình và vai trò, đồng thời tạo bucket riêng tư giới hạn JPG, PNG, PDF và 5 MB. Trong Supabase **Database → Tables**, chọn schema `antam` để xem các bảng.
 4. Đặt `INITIAL_ADMIN_EMAIL` và `INITIAL_ADMIN_PASSWORD` trong `.env`, rồi chạy `npm run init:admin`. Nếu cần danh mục, lô và khuyến mãi mẫu, đặt `SEED_SAMPLE_CATALOG=true` trước khi tạo quản trị viên. Tài khoản quản trị dùng mật khẩu riêng bạn chọn. Xóa `INITIAL_ADMIN_PASSWORD` khỏi `.env` sau khi tạo.
 
+### Cập nhật cấu trúc cơ sở dữ liệu sau khi có migration mới
+
+Mỗi tệp mới trong `supabase/migrations` cần được áp dụng vào Supabase trước khi dùng chức năng tương ứng. Cách nhanh nhất là chạy lại `npm run db:setup` (an toàn khi chạy nhiều lần), hoặc mở **SQL Editor** trên Supabase và chạy nội dung tệp. Migration `20261119000100_hang_tra_ve.sql` thêm bảng `hang_tra_ve` để theo dõi hàng trả về; thiếu bảng này thì tab **Hàng trả về** trong trang quản trị sẽ báo lỗi.
+
 ## Thiết lập Vercel
 
 Import repo sau khi commit triển khai đã có trên GitHub. Chọn thư mục gốc repo. `vercel.json` khai báo build Vite, thư mục `dist` và route đến API. Dùng Node.js 24.x. [Phiên bản Node.js trên Vercel](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions)

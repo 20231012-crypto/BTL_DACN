@@ -215,7 +215,7 @@ export async function orderView(d, id) {
       : [],
     requests: (
       await d.all(
-        'SELECT * FROM yeu_cau_huy_hoan WHERE order_id=? ORDER BY id DESC',
+        'SELECT r.*,g.status return_goods_status,g.carrier return_carrier,g.tracking_code return_tracking_code FROM yeu_cau_huy_hoan r LEFT JOIN hang_tra_ve g ON g.request_id=r.id WHERE r.order_id=? ORDER BY r.id DESC',
         o.id,
       )
     ).map(requestView),

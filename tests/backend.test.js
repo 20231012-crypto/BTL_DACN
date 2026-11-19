@@ -1198,3 +1198,79 @@ test('pharmacist consultation is a two-way chat scoped to the customer and an ow
   assert.equal((await customer(`/consultations/${id}/messages`)).data.consultation.status, 'pending', 'a new customer message reopens the consultation');
   assert.equal((await customer('/consultations')).data.length, 1);
 });
+
+test('returned goods are tracked from approval to restock or discard', async (t) => {
+  const { login, d } = await fixture(t);
+  const customer = await login();
+  const other = await login('huong@antam.vn');
+  const staff = await login('duocsi@antam.vn');
+  const stock = async () =>
+    (await d.one('SELECT SUM(quantity) n FROM lo_thuoc')).n;
+  const png = () => {
+    const form = new FormData();
+    form.append('type', 'return');
+    form.append('reason', 'Sản phẩm bị móp hộp khi nhận');
+    form.append(
+      'evidence',
+      new Blob([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X35sAAAAASUVORK5CYII=', 'base64')], { type: 'image/png' }),
+      'anh.png',
+    );
+    return form;
+  };
+  const deliveredReturn = async () => {
+    await add(customer, 1);
+    const created = (await order(customer)).data;
+    for (const status of ['confirmed', 'packing', 'shipping', 'delivered'])
+      assert.equal((await staff(`/admin/orders/${created.id}/status`, 'PATCH', { status, collected: true })).status, 200);
+    const request = await customer(`/orders/${created.id}/requests`, 'POST', png());
+    assert.equal(request.status, 201, JSON.stringify(request.body));
+    return { orderId: created.id, requestId: request.data.id };
+  };
+
+  const first = await deliveredReturn();
+  const afterDelivery = await stock();
+  assert.equal((await staff(`/admin/requests/${first.requestId}`, 'PATCH', { status: 'approved', sealed: true })).status, 200);
+  assert.equal(await stock(), afterDelivery, 'approval alone does not put goods back on the shelf');
+
+  let queue = (await staff('/admin/return-goods')).data;
+  const goods = queue.find((row) => row.requestId === first.requestId);
+  assert.equal(goods.status, 'awaiting');
+  assert.equal(goods.items[0].quantity, 1);
+  assert.equal((await customer('/admin/return-goods')).status, 403);
+  assert.equal((await staff('/admin/requests')).data.find((row) => row.id === first.requestId).returnGoodsStatus, 'awaiting');
+
+  assert.equal((await staff(`/admin/return-goods/${goods.id}`, 'PATCH', { status: 'restocked', sealed: true })).status, 409, 'goods must be received before restock');
+  const shipUrl = `/orders/${first.orderId}/requests/${first.requestId}/return-shipment`;
+  assert.equal((await other(shipUrl, 'POST', { carrier: 'GHN', trackingCode: 'GHN123456' })).status, 404);
+  assert.equal((await customer(shipUrl, 'POST', { carrier: 'GHN', trackingCode: '1' })).status, 400);
+  const shipped = await customer(shipUrl, 'POST', { carrier: 'GHN', trackingCode: 'GHN123456' });
+  assert.equal(shipped.status, 200);
+  assert.equal(shipped.data.status, 'in_transit');
+  const view = (await customer(`/orders/${first.orderId}`)).data.requests[0];
+  assert.equal(view.returnGoodsStatus, 'in_transit');
+  assert.equal(view.returnTrackingCode, 'GHN123456');
+
+  assert.equal((await staff(`/admin/return-goods/${goods.id}`, 'PATCH', { status: 'received' })).data.status, 'received');
+  assert.equal((await customer(shipUrl, 'POST', { carrier: 'GHN', trackingCode: 'GHN999999' })).status, 409, 'customer cannot edit shipment after receipt');
+  assert.equal((await staff(`/admin/return-goods/${goods.id}`, 'PATCH', { status: 'restocked' })).status, 400);
+  const restocked = await staff(`/admin/return-goods/${goods.id}`, 'PATCH', { status: 'restocked', sealed: true, note: 'Còn nguyên niêm phong' });
+  assert.equal(restocked.status, 200, JSON.stringify(restocked.body));
+  assert.equal(restocked.data.status, 'restocked');
+  assert.ok(restocked.data.inspectedAt);
+  assert.equal(await stock(), afterDelivery + 1, 'restock returns the quantity to its batch');
+  assert.equal((await staff(`/admin/return-goods/${goods.id}`, 'PATCH', { status: 'discarded', note: 'Đã nhập kho rồi' })).status, 409, 'finished goods are final');
+
+  const second = await deliveredReturn();
+  assert.equal((await staff(`/admin/requests/${second.requestId}`, 'PATCH', { status: 'approved', storeFault: true })).status, 200);
+  const next = (await staff('/admin/return-goods')).data.find((row) => row.requestId === second.requestId);
+  const beforeDiscard = await stock();
+  assert.equal((await staff(`/admin/return-goods/${next.id}`, 'PATCH', { status: 'received' })).status, 200);
+  assert.equal((await staff(`/admin/return-goods/${next.id}`, 'PATCH', { status: 'discarded' })).status, 400, 'discard needs a reason');
+  const discarded = await staff(`/admin/return-goods/${next.id}`, 'PATCH', { status: 'discarded', note: 'Hộp bị ướt, không đạt chất lượng' });
+  assert.equal(discarded.data.status, 'discarded');
+  assert.equal(await stock(), beforeDiscard, 'discarded goods never return to stock');
+
+  const direct = await deliveredReturn();
+  assert.equal((await staff(`/admin/requests/${direct.requestId}`, 'PATCH', { status: 'approved', sealed: true, restock: true })).status, 200);
+  assert.equal((await staff('/admin/return-goods')).data.find((row) => row.requestId === direct.requestId).status, 'restocked', 'restock at approval keeps working and is recorded');
+});

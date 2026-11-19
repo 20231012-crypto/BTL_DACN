@@ -3,9 +3,10 @@ import { readFile } from 'node:fs/promises';
 const migrations = new URL('../../supabase/migrations/', import.meta.url);
 
 export async function initializePostgresSchema(store) {
-  const [initial, rename] = await Promise.all([
+  const [initial, rename, returnGoods] = await Promise.all([
     readFile(new URL('20261118000100_minhan.sql', migrations), 'utf8'),
     readFile(new URL('20261118180033_rename_schema_to_antam.sql', migrations), 'utf8'),
+    readFile(new URL('20261119000100_hang_tra_ve.sql', migrations), 'utf8'),
   ]);
 
   await store.transaction(async () => {
@@ -17,5 +18,6 @@ export async function initializePostgresSchema(store) {
       await store.migrate(initial.replace(/^(BEGIN|COMMIT);\r?$/gm, ''));
     }
     await store.migrate(rename);
+    await store.migrate(returnGoods);
   });
 }

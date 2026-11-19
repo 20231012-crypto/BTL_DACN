@@ -27,6 +27,7 @@ const tables = new Set([
   'don_thuoc',
   'giao_dich_thanh_toan',
   'yeu_cau_huy_hoan',
+  'hang_tra_ve',
   'danh_gia',
   'nha_cung_cap',
   'phieu_nhap_kho',
