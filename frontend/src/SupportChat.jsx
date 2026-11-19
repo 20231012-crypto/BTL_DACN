@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, dateTime } from './lib.js';
+import { api, dateTime, money } from './lib.js';
 
 const POLL_MS = 5000;
 const CLOSING_NOTE =
@@ -9,6 +9,11 @@ const STATUS_TEXT = {
   in_progress: 'Đang tư vấn',
   resolved: 'Đã kết thúc',
 };
+const QUICK_REPLIES = [
+  'Dược sĩ đã tiếp nhận yêu cầu. Bạn vui lòng mô tả rõ triệu chứng, độ tuổi và thuốc đang dùng nhé.',
+  'Với thuốc kê đơn, bạn cần tải ảnh đơn thuốc hợp lệ để dược sĩ đối chiếu trước khi xuất thuốc.',
+  'Nếu có dấu hiệu khó thở, sốt cao không hạ hoặc dị ứng, bạn cần ngưng thuốc và tới cơ sở y tế gần nhất ngay.',
+];
 
 const mergeMessages = (previous, incoming) => {
   if (!incoming.length) return previous;
@@ -148,11 +153,37 @@ export default function SupportChat({ item, onChanged, notify }) {
                   : 'Trợ lý An Tâm'}
             </strong>
             <p>{message.content}</p>
+            {Array.isArray(message.products) && message.products.length > 0 && (
+              <div className="adm-chat-products">
+                {message.products.map((prod) => (
+                  <span key={prod.id} className="adm-chat-prod-chip">
+                    {prod.name}
+                    {prod.price ? ` · ${money(prod.price)}` : ''}
+                    {prod.prescriptionRequired ? ' (Kê đơn)' : ''}
+                  </span>
+                ))}
+              </div>
+            )}
             <small>{dateTime(message.createdAt)}</small>
           </div>
         ))}
       </div>
       <form className="adm-chat-form" onSubmit={send}>
+        <div className="adm-quick-notes">
+          <span>Mẫu tư vấn nhanh:</span>
+          {QUICK_REPLIES.map((tpl, idx) => (
+            <button
+              key={idx}
+              type="button"
+              className="adm-quick-chip"
+              onClick={() =>
+                setDraft((prev) => (prev ? `${prev} ${tpl}` : tpl))
+              }
+            >
+              Mẫu #{idx + 1}
+            </button>
+          ))}
+        </div>
         <textarea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
