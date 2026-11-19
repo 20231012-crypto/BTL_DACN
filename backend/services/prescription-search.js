@@ -26,7 +26,7 @@ export async function readPrescription(buffer, mimeType) {
     503,
     'Chưa cấu hình đọc ảnh Gemini. Bạn có thể nhập tên thuốc từ đơn bên dưới.',
   );
-  const model = process.env.GEMINI_OCR_MODEL || 'gemini-3.5-flash-lite';
+  const model = process.env.GEMINI_OCR_MODEL || 'gemini-2.5-flash';
   assert(
     /^[a-zA-Z0-9._-]+$/.test(model),
     503,

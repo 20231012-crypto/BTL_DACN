@@ -41,7 +41,6 @@ export async function geminiRequest(
           headers: {
             'Content-Type': 'application/json',
             'x-goog-api-key': key,
-            'Api-Revision': '2026-05-20',
           },
           body: JSON.stringify(body),
         },
