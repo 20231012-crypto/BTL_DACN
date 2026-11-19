@@ -43,6 +43,8 @@ import {
   SlidersHorizontal,
   ClipboardList,
   CircleHelp,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import Admin from './Admin.jsx';
 import AddressFields from './AddressFields.jsx';
@@ -100,12 +102,32 @@ const Empty = ({ icon: Icon = Package, title, text, children }) => (
 const Badge = ({ value }) => (
   <span className={`badge status-${value}`}>{label(value)}</span>
 );
-const Field = ({ label: title, children, ...props }) => (
-  <label className="field">
-    <span>{title}</span>
-    {children || <input {...props} />}
-  </label>
-);
+const Field = ({ label: title, children, ...props }) => {
+  const [showPassword, setShowPassword] = useState(false);
+  const isPassword = !children && props.type === 'password';
+  return (
+    <label className="field">
+      <span>{title}</span>
+      {children ||
+        (isPassword ? (
+          <div className="password-field-wrap">
+            <input {...props} type={showPassword ? 'text' : 'password'} />
+            <button
+              type="button"
+              className="password-toggle"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+              title={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
+        ) : (
+          <input {...props} />
+        ))}
+    </label>
+  );
+};
 const ErrorBox = ({ error }) =>
   error ? (
     <div className="error-box" role="alert">
@@ -2468,8 +2490,16 @@ function AuthPage() {
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     setMode(initialMode);
+    setPassword('');
+    setCode('');
+    setDemoCode('');
     setError('');
     setMessage('');
+    if (initialMode === 'login' || initialMode === 'register') {
+      setEmail(params.get('email') || '');
+      setName('');
+      setPhone('');
+    }
   }, [initialMode]);
   const signedIn = (result) => {
     const person = result.user || result;
@@ -2704,6 +2734,7 @@ function AuthPage() {
               settingPassword) && (
               <>
                 <Field
+                  key={`pw-${mode}`}
                   label={
                     mode === 'reset' || settingPassword
                       ? 'Mật khẩu mới'
