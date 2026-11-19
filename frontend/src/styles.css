@@ -2643,37 +2643,12 @@ svg {
   border-radius: 50%;
 }
 .auth-form-wrap {
-  position: relative;
   border: 1px solid var(--border);
   border-left: 0;
   border-radius: 0 13px 13px 0;
   padding: 40px 45px;
   display: flex;
   align-items: center;
-}
-.auth-close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #5b7263;
-  background: #f5f8f2;
-  border: 1px solid #e3ebe1;
-  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
-  z-index: 2;
-}
-.auth-close:hover {
-  background: #e6efe1;
-  color: var(--green);
-  transform: scale(1.06) rotate(90deg);
-}
-.auth-close:active {
-  transform: scale(0.95) rotate(90deg);
 }
 .auth-form {
   width: 100%;
@@ -5153,9 +5128,5 @@ svg {
     transform: translateY(-50%) scale(1);
     width: 30px;
     height: 30px;
-  }
-  .auth-close {
-    top: 12px;
-    right: 12px;
   }
 }

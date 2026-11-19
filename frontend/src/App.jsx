@@ -2567,34 +2567,6 @@ function AuthPage() {
     forgot: 'Tìm lại mật khẩu',
     reset: 'Tạo mật khẩu mới',
   };
-  const cancelAuth = useCallback(() => {
-    const next = params.get('next');
-    const safePublicNext =
-      next &&
-      next.startsWith('/') &&
-      !next.startsWith('//') &&
-      !next.includes('\\') &&
-      ![
-        '/login',
-        '/register',
-        '/forgot-password',
-        '/verify',
-        '/admin',
-        '/account',
-        '/cart',
-        '/checkout',
-        '/orders',
-        '/prescription',
-      ].some((restricted) => next === restricted || next.startsWith(`${restricted}/`) || next.startsWith(`${restricted}?`));
-    navigate(safePublicNext ? next : '/');
-  }, [navigate, route]);
-  useEffect(() => {
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape') cancelAuth();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [cancelAuth]);
   return (
     <main className="container auth-shell">
       <section className="auth-story">
@@ -2618,15 +2590,6 @@ function AuthPage() {
         </p>
       </section>
       <section className="auth-form-wrap">
-        <button
-          type="button"
-          className="auth-close"
-          onClick={cancelAuth}
-          aria-label="Đóng và quay lại"
-          title="Hủy và quay lại"
-        >
-          <X size={20} />
-        </button>
         <div className="auth-form">
           <span className="eyebrow">NHÀ THUỐC AN TÂM</span>
           <h2>{titles[mode]}</h2>
