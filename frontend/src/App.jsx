@@ -49,6 +49,7 @@ import AddressFields from './AddressFields.jsx';
 import BankTransfer from './BankTransfer.jsx';
 import PrescriptionCatalog from './PrescriptionCatalog.jsx';
 import ProductSearch from './ProductSearch.jsx';
+import HeroBanner from './HeroBanner.jsx';
 import { LogoIcon } from './Logo.jsx';
 import {
   api,
@@ -474,15 +475,7 @@ function Home() {
             </button>
           </div>
         </div>
-        <figure className="hero-photo">
-          <img
-            src="/assets/pharmacy-hero.webp"
-            alt="Bao bì sản phẩm chăm sóc sức khỏe An Tâm minh họa"
-            width="1200"
-            height="900"
-            fetchPriority="high"
-          />
-        </figure>
+        <HeroBanner />
       </section>
       <section className="container benefits" aria-label="Cam kết dịch vụ">
         {[
@@ -2574,6 +2567,34 @@ function AuthPage() {
     forgot: 'Tìm lại mật khẩu',
     reset: 'Tạo mật khẩu mới',
   };
+  const cancelAuth = useCallback(() => {
+    const next = params.get('next');
+    const safePublicNext =
+      next &&
+      next.startsWith('/') &&
+      !next.startsWith('//') &&
+      !next.includes('\\') &&
+      ![
+        '/login',
+        '/register',
+        '/forgot-password',
+        '/verify',
+        '/admin',
+        '/account',
+        '/cart',
+        '/checkout',
+        '/orders',
+        '/prescription',
+      ].some((restricted) => next === restricted || next.startsWith(`${restricted}/`) || next.startsWith(`${restricted}?`));
+    navigate(safePublicNext ? next : '/');
+  }, [navigate, route]);
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') cancelAuth();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [cancelAuth]);
   return (
     <main className="container auth-shell">
       <section className="auth-story">
@@ -2597,6 +2618,15 @@ function AuthPage() {
         </p>
       </section>
       <section className="auth-form-wrap">
+        <button
+          type="button"
+          className="auth-close"
+          onClick={cancelAuth}
+          aria-label="Đóng và quay lại"
+          title="Hủy và quay lại"
+        >
+          <X size={20} />
+        </button>
         <div className="auth-form">
           <span className="eyebrow">NHÀ THUỐC AN TÂM</span>
           <h2>{titles[mode]}</h2>
