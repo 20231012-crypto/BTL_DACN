@@ -14,6 +14,7 @@
     "build": "vite build",
     "start": "node backend/server.js",
     "init:admin": "node backend/init-admin.js",
+    "seed:accounts": "node backend/seed-accounts.js",
     "db:setup": "node backend/setup-postgres.js",
     "test": "node --test --test-concurrency=1 tests/*.test.js"
   },
