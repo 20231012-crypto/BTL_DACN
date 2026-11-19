@@ -17,3 +17,5 @@ Giữ các khóa dịch vụ trong `.env` ở máy chủ. Bot service account tr
 - [Google OpenID Connect](https://developers.google.com/identity/openid-connect/openid-connect)
 - [VNPay Sandbox thanh toán](https://sandbox.vnpayment.vn/apis/docs/thanh-toan-pay/pay.html)
 - [VNPay Sandbox truy vấn và hoàn tiền](https://sandbox.vnpayment.vn/apis/docs/truy-van-hoan-tien/querydr%26refund.html)
+
+Đặt tối đa 5 khóa Gemini trong biến Secret `GEMINI_API_KEYS` trên Vercel, dạng `["key1","key2","key3","key4","key5"]`. Ứng dụng thử khóa tiếp theo khi dịch vụ hoặc khóa hiện tại tạm thời không dùng được. Google tính hạn mức theo project. Sau khi sửa biến, redeploy để áp dụng. Giá trị `[]` giữ tính năng Gemini ở trạng thái chưa cấu hình.

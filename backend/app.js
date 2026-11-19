@@ -25,6 +25,7 @@ import {
 import { googleConfig } from './integrations/google.js';
 import { vnpayConfig } from './integrations/vnpay.js';
 import { installLocations } from './integrations/locations.js';
+import { geminiKeys } from './integrations/gemini-client.js';
 const root = fileURLToPath(new URL('../', import.meta.url));
 export async function createApp(options = {}) {
   const hosted =
@@ -192,7 +193,7 @@ export async function createApp(options = {}) {
         name: 'Nhà thuốc An Tâm',
         database: d.kind,
         demoMode: config.demo,
-        geminiConfigured: !!process.env.GEMINI_API_KEY,
+        geminiConfigured: geminiKeys().length > 0,
       },
     }),
   );
