@@ -3,7 +3,10 @@
   --adm-dark: #123a35;
   --adm-text: #233b37;
   --adm-muted: #7c8b86;
-  --adm-line: #e8eeeb;
+  --adm-line: #b0c2b7;
+  --adm-input-border: #81998b;
+  --adm-border-focus: #146b58;
+  --adm-divider: #c4d2c9;
   --adm-bg: #f5f8f6;
   color: var(--adm-text);
   background: var(--adm-bg);
@@ -355,7 +358,7 @@
   padding: 20px 20px 19px;
   border: 1px solid var(--adm-line);
   border-radius: 9px;
-  box-shadow: 0 2px 2px #193b2402;
+  box-shadow: 0 2px 10px rgb(20 60 42 / 7%);
   min-width: 0;
 }
 .adm-stat-top {
@@ -419,6 +422,7 @@
   margin-bottom: 23px;
   min-width: 0;
   overflow: hidden;
+  box-shadow: 0 2px 10px rgb(20 60 42 / 7%);
 }
 .adm-dashboard-grid .adm-panel {
   margin-bottom: 0;
@@ -586,14 +590,14 @@
   letter-spacing: 0.3px;
   background: #f8faf7;
   padding: 12px 20px;
-  border-top: 1px solid #eef3eb;
-  border-bottom: 1px solid #eef3eb;
+  border-top: 1px solid var(--adm-divider);
+  border-bottom: 1px solid var(--adm-divider);
 }
 .adm-table td {
   padding: 15px 20px;
   font-size: 10px;
   color: #6c8070;
-  border-bottom: 1px solid #eef3eb;
+  border-bottom: 1px solid var(--adm-divider);
   vertical-align: middle;
   max-width: 300px;
 }
@@ -696,7 +700,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  border: 1px solid #e3eae0;
+  border: 1px solid var(--adm-input-border);
   border-radius: 6px;
   padding: 9px 12px;
   min-width: 220px;
@@ -717,7 +721,7 @@
   color: #a0afa0;
 }
 .adm-select {
-  border: 1px solid #e2e9df;
+  border: 1px solid var(--adm-input-border);
   border-radius: 6px;
   padding: 9px 11px;
   font-size: 9px;
@@ -996,7 +1000,7 @@
   gap: 5px;
 }
 .adm-report-range input {
-  border: 1px solid #e2eadd;
+  border: 1px solid var(--adm-input-border);
   border-radius: 5px;
   padding: 8px 10px;
   color: #6d8564;
@@ -1161,7 +1165,7 @@
 .adm-field input,
 .adm-field select,
 .adm-field textarea {
-  border: 1px solid #dfe9d9;
+  border: 1px solid var(--adm-input-border);
   border-radius: 6px;
   padding: 10px 12px;
   color: #5f7d53;
@@ -1174,8 +1178,8 @@
 .adm-field input:focus,
 .adm-field select:focus,
 .adm-field textarea:focus {
-  border-color: #83a776;
-  box-shadow: 0 0 0 3px #ebf4e4;
+  border-color: var(--adm-border-focus);
+  box-shadow: 0 0 0 3px rgb(20 107 88 / 18%);
 }
 .adm-field textarea {
   resize: vertical;
@@ -1262,7 +1266,7 @@
 .adm-rx-preview {
   height: 350px;
   background: #f6f8f2;
-  border: 1px solid #e8efde;
+  border: 1px solid var(--adm-line);
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -2041,7 +2045,7 @@
   font-size: 15px;
 }
 .adm-permission-box {
-  border: 1px solid #e4ebdf;
+  border: 1px solid var(--adm-line);
   border-radius: 7px;
   padding: 15px;
   margin: 18px 0;
@@ -2369,7 +2373,7 @@
 .adm-support-status.resolved { background: #e9edf0; color: #5b6b75; }
 .adm-support-chat .adm-chat-box { max-height: 340px; min-height: 180px; }
 .adm-support-chat .adm-conversation p { font-size: 13px; color: #31412c; }
-.adm-chat-form textarea { width: 100%; padding: 10px 12px; border: 1px solid #d9e4cf; border-radius: 8px; font: inherit; resize: vertical; }
+.adm-chat-form textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--adm-input-border); border-radius: 8px; font: inherit; resize: vertical; }
 .adm-chat-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; }
 
 .adm-badge.is-return_awaiting { background: #fbf4e4; color: #b39b55; }
@@ -2516,7 +2520,7 @@
   color: #6c8071;
 }
 .adm-rp-dates input {
-  border: 1px solid #dce6da;
+  border: 1px solid var(--adm-input-border);
   border-radius: 7px;
   padding: 7px 10px;
   height: 36px;
@@ -3431,7 +3435,7 @@
   gap: 11px;
   padding: 11px 12px;
   border-radius: 9px;
-  border: 1px solid #edf2eb;
+  border: 1px solid var(--adm-line);
   background: #fbfdfb;
   text-align: left;
   transition: border-color 0.15s, background 0.15s;
@@ -3834,11 +3838,12 @@
   margin-bottom: 16px;
 }
 .adm-ord-card {
-  border: 1px solid #e5ede6;
+  border: 1px solid var(--adm-line);
   border-radius: 9px;
   padding: 14px 15px;
   background: #fcfefd;
   min-width: 0;
+  box-shadow: 0 2px 10px rgb(20 60 42 / 7%);
 }
 .adm-ord-card-head {
   display: flex;
@@ -3881,7 +3886,7 @@
   gap: 7px;
 }
 .adm-ord-inline-form input {
-  border: 1px solid #dce6dd;
+  border: 1px solid var(--adm-input-border);
   border-radius: 5px;
   padding: 6px 8px;
   font-size: 11px;
@@ -3901,7 +3906,7 @@
 .adm-ord-fulfill-box,
 .adm-ord-bank-box,
 .adm-ord-record-box {
-  border: 1px solid #e5ede6;
+  border: 1px solid var(--adm-line);
   border-radius: 9px;
   padding: 14px 16px;
   background: #f9fbf9;
@@ -4012,7 +4017,7 @@
 }
 .adm-ord-picker {
   margin: 14px 0;
-  border: 1px solid #e4ede5;
+  border: 1px solid var(--adm-line);
   border-radius: 8px;
   padding: 12px;
   background: #fafcfa;
@@ -4034,7 +4039,7 @@
   gap: 10px;
   padding: 8px 10px;
   background: #fff;
-  border: 1px solid #e6efe7;
+  border: 1px solid var(--adm-line);
   border-radius: 6px;
   min-width: 0;
 }
@@ -4048,7 +4053,7 @@
 }
 .adm-ord-qty-input {
   width: 68px;
-  border: 1px solid #d9e5da;
+  border: 1px solid var(--adm-input-border);
   border-radius: 5px;
   padding: 5px 8px;
   font-size: 12px;

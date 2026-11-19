@@ -13,7 +13,11 @@
   --green-dark: #103b34;
   --lime: #dfedb2;
   --muted: #7d8983;
-  --border: #e6ebe6;
+  --border: #b0c2b7;
+  --input-border: #81998b;
+  --border-hover: #5d806c;
+  --border-focus: #146b58;
+  --panel-shadow: 0 2px 10px rgb(20 60 42 / 7%);
   --soft: #f6f8f4;
   --radius: 14px;
   font-size: 14px;
@@ -381,7 +385,7 @@ svg {
   display: flex;
   align-items: center;
   background: #f6f8f4;
-  border: 1px solid #e7ebe2;
+  border: 1px solid var(--input-border);
   border-radius: 7px;
   gap: 12px;
   padding-left: 15px;
@@ -643,7 +647,7 @@ svg {
   flex-direction: column;
   align-items: center;
   gap: 13px;
-  border: 1px solid #edf0e6;
+  border: 1px solid var(--border);
   border-radius: 10px;
   background: #f8faf4;
   position: relative;
@@ -726,7 +730,7 @@ svg {
 }
 .filter-tabs button {
   padding: 9px 16px;
-  border: 1px solid #e4e9de;
+  border: 1px solid var(--border);
   border-radius: 5px;
   font-size: 10px;
   color: #87937d;
@@ -756,10 +760,11 @@ svg {
     border-color 0.2s;
   background: white;
   min-width: 0;
+  box-shadow: var(--panel-shadow);
 }
 .product-card:hover {
   box-shadow: 0 9px 25px #3453330d;
-  border-color: #b7c8aa;
+  border-color: var(--border-hover);
 }
 .product-picture {
   position: relative;
@@ -852,7 +857,7 @@ svg {
 .product-add {
   margin-top: auto;
   padding: 9px 6px;
-  border: 1px solid #dce5d3;
+  border: 1px solid var(--border);
   background: #f7faf1;
   color: #63834c;
   font-size: 10px;
@@ -1556,7 +1561,7 @@ svg {
   align-items: center;
   gap: 12px;
   background: #f8faf5;
-  border: 1px solid var(--border);
+  border: 1px solid var(--input-border);
   border-radius: 7px;
   padding: 5px 5px 5px 15px;
   color: #8da07a;
@@ -1589,7 +1594,7 @@ svg {
   color: #637c50;
 }
 .catalog-toolbar select {
-  border: 1px solid var(--border);
+  border: 1px solid var(--input-border);
   padding: 8px 12px;
   border-radius: 5px;
   font-size: 10px;
@@ -1695,7 +1700,7 @@ svg {
 .quantity {
   display: inline-flex;
   align-items: center;
-  border: 1px solid #dce5d3;
+  border: 1px solid var(--input-border);
   border-radius: 5px;
   overflow: hidden;
   height: 39px;
@@ -1763,6 +1768,7 @@ svg {
   border-radius: 11px;
   background: #fff;
   padding: 27px;
+  box-shadow: var(--panel-shadow);
 }
 .panel h2 {
   font-size: 18px;
@@ -2047,7 +2053,7 @@ svg {
 .field > input,
 .field > select,
 .field > textarea {
-  border: 1px solid #dfe6d7;
+  border: 1px solid var(--input-border);
   border-radius: 5px;
   padding: 11px 12px;
   background: white;
@@ -2059,9 +2065,10 @@ svg {
   transition: border-color 0.2s;
 }
 .field > input:focus,
+.field > select:focus,
 .field > textarea:focus {
-  border-color: #98b582;
-  outline: 2px solid #dce9cd;
+  border-color: var(--border-focus);
+  outline: 3px solid rgb(20 107 88 / 18%);
   outline-offset: 1px;
 }
 .field > input:disabled {
@@ -2088,8 +2095,9 @@ svg {
   cursor: pointer;
 }
 .address-option.selected {
-  background: #f7faf2;
-  border-color: #b4c99d;
+  background: #edf7f1;
+  border-color: var(--border-focus);
+  box-shadow: inset 0 0 0 1px var(--border-focus);
 }
 .address-option input,
 .payment-option input {
@@ -2114,7 +2122,7 @@ svg {
   color: #9aa58e;
 }
 .upload-zone {
-  border: 1px dashed #c5d4b5;
+  border: 2px dashed var(--border-hover);
   padding: 25px;
   display: flex;
   flex-direction: column;
@@ -2159,8 +2167,9 @@ svg {
   margin-bottom: 13px;
 }
 .payment-option.selected {
-  border-color: #b3c69d;
-  background: #f9fbf5;
+  border-color: var(--border-focus);
+  background: #edf7f1;
+  box-shadow: inset 0 0 0 1px var(--border-focus);
 }
 .payment-option > svg {
   color: #809c65;
@@ -2216,7 +2225,7 @@ svg {
 }
 .coupon-field {
   display: flex;
-  border: 1px solid #e0e7d6;
+  border: 1px solid var(--input-border);
   border-radius: 5px;
   overflow: hidden;
   margin-bottom: 20px;
@@ -2297,7 +2306,7 @@ svg {
   transition: border-color 0.2s;
 }
 .order-card:hover {
-  border-color: #bfd0ac;
+  border-color: var(--border-hover);
 }
 .order-card-header {
   display: flex;
@@ -4835,7 +4844,7 @@ svg {
 
 .search-select { position: relative; }
 .search-select > label { color: var(--text); font-size: 13px; font-weight: 600; }
-.search-options { position: absolute; inset: 100% 0 auto; z-index: 40; max-height: 240px; overflow-y: auto; background: white; border: 1px solid #d9e4e1; border-radius: 10px; box-shadow: 0 8px 24px #123d3420; padding: 5px; }
+.search-options { position: absolute; inset: 100% 0 auto; z-index: 40; max-height: 240px; overflow-y: auto; background: white; border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px #123d3420; padding: 5px; }
 .search-options button { width: 100%; border: 0; background: white; text-align: left; padding: 10px 12px; border-radius: 6px; cursor: pointer; }
 .search-options button:hover, .search-options button[aria-selected="true"] { background: #e7f5ef; }
 .search-options > span { display: block; padding: 12px; color: #667772; }
@@ -4867,7 +4876,7 @@ svg {
   padding: 0 11px;
   border-radius: 5px;
   background: #edf3e5;
-  border: 1px solid #d9e4cf;
+  border: 1px solid var(--border);
   color: #264d42;
   font-size: 11px;
   font-weight: 600;
@@ -4877,7 +4886,7 @@ svg {
 .header-search .search-scope-trigger:hover,
 .header-search .search-scope-trigger.is-open {
   background: #e1ecd4;
-  border-color: #bfd2b1;
+  border-color: var(--border-hover);
 }
 .search-scope-trigger > span {
   overflow: hidden;
@@ -4893,7 +4902,7 @@ svg {
   max-height: 340px;
   overflow-y: auto;
   background: #ffffff;
-  border: 1px solid #d9e4e1;
+  border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: 0 14px 32px #123d3428;
   padding: 6px;
@@ -4926,7 +4935,7 @@ svg {
   font-weight: 600;
 }
 .search-field-icon { flex-shrink: 0; color: #7e8b7c; }
-.product-suggestions { position: absolute; z-index: 70; top: calc(100% + 6px); left: 0; right: 0; background: #fff; border: 1px solid #d9e4e1; border-radius: 12px; box-shadow: 0 12px 28px #123d3426; padding: 6px; max-height: 390px; overflow-y: auto; }
+.product-suggestions { position: absolute; z-index: 70; top: calc(100% + 6px); left: 0; right: 0; background: #fff; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 28px #123d3426; padding: 6px; max-height: 390px; overflow-y: auto; }
 .product-suggestions > button,
 .header-search .product-suggestions > button {
   display: flex;
@@ -5015,7 +5024,7 @@ svg {
 }
 .password-field-wrap > input {
   width: 100%;
-  border: 1px solid #dfe6d7;
+  border: 1px solid var(--input-border);
   border-radius: 5px;
   padding: 11px 42px 11px 12px;
   background: white;
@@ -5023,8 +5032,8 @@ svg {
   font-size: 14px;
 }
 .password-field-wrap > input:focus {
-  border-color: #98b582;
-  outline: 2px solid #dce9cd;
+  border-color: var(--border-focus);
+  outline: 3px solid rgb(20 107 88 / 18%);
   outline-offset: 1px;
 }
 .password-field-wrap > input:disabled {
@@ -5343,14 +5352,14 @@ svg {
 .pharmacist-chat { display: flex; flex-direction: column; gap: 12px; }
 .pharmacist-chat-status { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 10px; background: #e7f5ef; color: #164b43; font-size: 13px; font-weight: 500; }
 .pharmacist-chat-status svg { flex: none; }
-.pharmacist-chat-messages { display: flex; flex-direction: column; gap: 10px; min-height: 160px; max-height: 360px; overflow-y: auto; padding: 14px; border: 1px solid #d9e4e1; border-radius: 12px; background: #f9fbf9; }
-.pharmacist-bubble { max-width: 82%; padding: 10px 13px; border-radius: 12px; background: #fff; border: 1px solid #e1ebe7; }
+.pharmacist-chat-messages { display: flex; flex-direction: column; gap: 10px; min-height: 160px; max-height: 360px; overflow-y: auto; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: #f9fbf9; }
+.pharmacist-bubble { max-width: 82%; padding: 10px 13px; border-radius: 12px; background: #fff; border: 1px solid var(--border); }
 .pharmacist-bubble.mine { align-self: flex-end; background: #164b43; border-color: #164b43; color: #fff; }
 .pharmacist-bubble strong { display: block; margin-bottom: 3px; font-size: 12px; color: #2f7a6c; }
 .pharmacist-bubble p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
 .pharmacist-bubble time { display: block; margin-top: 4px; font-size: 11px; opacity: 0.7; }
 .pharmacist-chat-form { display: flex; gap: 10px; align-items: flex-end; }
-.pharmacist-chat-form textarea { flex: 1; min-width: 0; resize: vertical; padding: 10px 12px; border: 1px solid #cdd9d5; border-radius: 10px; font: inherit; }
+.pharmacist-chat-form textarea { flex: 1; min-width: 0; resize: vertical; padding: 10px 12px; border: 1px solid var(--input-border); border-radius: 10px; font: inherit; }
 .pharmacist-chat-form .btn { display: inline-flex; align-items: center; gap: 6px; }
 @media (max-width: 680px) { .pharmacist-bubble { max-width: 92%; } .pharmacist-chat-form { flex-direction: column; align-items: stretch; } }
 
@@ -5431,21 +5440,21 @@ svg {
   }
 }
 
-.return-shipment { margin-top: 10px; padding: 12px 14px; border-radius: 10px; background: #f3f8f5; border: 1px solid #d9e4e1; font-size: 13px; }
+.return-shipment { margin-top: 10px; padding: 12px 14px; border-radius: 10px; background: #f3f8f5; border: 1px solid var(--border); font-size: 13px; }
 .return-shipment p { margin: 0 0 8px; }
 .return-shipment p:last-child { margin: 0; }
 .return-shipment-form { display: flex; flex-wrap: wrap; gap: 8px; }
-.return-shipment-form input { flex: 1 1 160px; min-width: 0; padding: 9px 11px; border: 1px solid #cdd9d5; border-radius: 8px; font: inherit; }
+.return-shipment-form input { flex: 1 1 160px; min-width: 0; padding: 9px 11px; border: 1px solid var(--input-border); border-radius: 8px; font: inherit; }
 
 .prescription-compare { display: grid; grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); gap: 24px; align-items: start; margin-top: 8px; }
 .prescription-compare:not(:has(.prescription-preview)) { grid-template-columns: minmax(0, 1fr); }
 .prescription-preview { position: sticky; top: 16px; }
 .prescription-preview h2 { margin: 0 0 10px; font-size: 16px; }
-.prescription-preview img { width: 100%; height: auto; border: 1px solid #d9e4e1; border-radius: 10px; background: #fff; }
-.prescription-preview-file { display: grid; gap: 10px; padding: 14px; border: 1px dashed #b8cbc5; border-radius: 10px; overflow-wrap: anywhere; }
+.prescription-preview img { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+.prescription-preview-file { display: grid; gap: 10px; padding: 14px; border: 2px dashed var(--border-hover); border-radius: 10px; overflow-wrap: anywhere; }
 .prescription-row { grid-template-columns: 1.2fr 1fr 1fr; }
 .prescription-row-actions { grid-column: 1 / -1; display: flex; align-items: flex-end; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
 .prescription-qty { display: grid; gap: 4px; font-size: 12px; color: #667772; }
-.prescription-qty input { width: 76px; padding: 8px 10px; border: 1px solid #cdd9d5; border-radius: 8px; font: inherit; }
+.prescription-qty input { width: 76px; padding: 8px 10px; border: 1px solid var(--input-border); border-radius: 8px; font: inherit; }
 .prescription-notice { padding: 12px 16px; border-radius: 10px; background: #e7f5ef; color: #164b43; }
 @media (max-width: 860px) { .prescription-compare { grid-template-columns: 1fr; } .prescription-preview { position: static; } .prescription-row { grid-template-columns: 1fr; } }
