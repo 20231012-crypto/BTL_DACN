@@ -210,6 +210,7 @@ export async function createApp(options = {}) {
         chatbotEnabled: s.chatbotEnabled,
         otpMode: config.demo ? 'demo' : 'email',
         googleConfigured: Boolean(config.google),
+        prescriptionReadingConfigured: geminiKeys().length > 0,
         uploadMode: config.attachmentStorage ? 'signed' : 'multipart',
         paymentProvider: config.vnpay ? 'vnpay' : config.demo ? 'demo' : 'cod',
         paymentMethods: [

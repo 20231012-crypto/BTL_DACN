@@ -103,6 +103,11 @@ export function supabaseStorage() {
       assert(!error && data?.signedUrl, 404, 'Không tìm thấy tệp.');
       return data.signedUrl;
     },
+    async read(id) {
+      const { data, error } = await bucket.download(id);
+      assert(!error && data?.size > 0 && data.size <= maxFileSize, 404, 'Chưa đọc được ảnh đơn thuốc.');
+      return Buffer.from(await data.arrayBuffer());
+    },
     async remove(ids) {
       const { error } = await bucket.remove(ids);
       if (error) fail(503, 'Chưa thể dọn tệp hết hạn.');

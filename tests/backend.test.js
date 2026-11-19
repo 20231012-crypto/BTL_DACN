@@ -1073,3 +1073,21 @@ test('VietQR uses server totals and only staff can reconcile a transfer once', a
   assert.equal((await staff(`/admin/orders/${id}/bank-transfer`, 'POST', payload)).status, 200);
   assert.equal((await d.one("SELECT COUNT(*) n FROM giao_dich_thanh_toan WHERE provider='bank_transfer' AND status='success'")).n, 1);
 });
+
+test('prescription matching requires an owned upload and preserves pharmacist review', async (t) => {
+  const { login } = await fixture(t);
+  const customer = await login();
+  const other = await login('huong@antam.vn');
+  const rx = await upload(customer);
+  const payload = { medicines: [{ name: 'Amoxicillin', ingredient: 'Amoxicillin', strength: '500mg' }] };
+  const found = await customer(`/prescriptions/${rx.id}/matches`, 'POST', payload);
+  assert.equal(found.status, 200);
+  assert.ok(found.data.results[0].matches.some((product) => product.prescriptionRequired));
+  assert.equal((await other(`/prescriptions/${rx.id}/matches`, 'POST', payload)).status, 404);
+  assert.equal((await customer(`/prescriptions/${rx.id}/analyze`, 'POST', { consent: false })).status, 400);
+  assert.equal((await customer(`/prescriptions/${rx.id}/analyze`, 'POST', { consent: true })).status, 503);
+  await add(customer, found.data.results[0].matches.find((product) => product.prescriptionRequired).id);
+  assert.equal((await order(customer)).status, 400);
+  const created = await order(customer, { prescriptionId: rx.id });
+  assert.equal(created.data.status, 'pending_prescription');
+});

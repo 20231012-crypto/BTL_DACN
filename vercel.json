@@ -13,7 +13,7 @@
     { "source": "/orders/:path*", "destination": "/index.html" },
     { "source": "/admin/:path*", "destination": "/index.html" },
     {
-      "source": "/:page(cart|checkout|login|register|forgot-password|verify|account|chat)",
+      "source": "/:page(cart|checkout|login|register|forgot-password|verify|account|chat|prescription)",
       "destination": "/index.html"
     }
   ]

@@ -15,6 +15,7 @@ import {
 } from './attachments.js';
 import { activeVnpayAttempt, installVnpayOrders } from './vnpay-orders.js';
 import { vnpayRefund } from '../integrations/vnpay.js';
+import { medicineRows, readPrescription, prescriptionMatches } from './prescription-search.js';
 import {
   assert,
   fail,
@@ -429,6 +430,24 @@ export function installOrders(
       throw error;
     }
     res.status(201).json({ data: { id, fileName, status: 'pending', size } });
+  });
+  app.post('/api/prescriptions/:id/analyze', auth, async (req, res) => {
+    const prescription = await d.one('SELECT * FROM don_thuoc WHERE id=? AND user_id=?', req.params.id, req.user.id);
+    assert(prescription && validPrescriptionName(prescription.storage_name), 404, 'Không tìm thấy đơn thuốc của bạn.');
+    assert(req.body.consent === true, 400, 'Xác nhận gửi ảnh đơn đến Gemini để nhận diện.');
+    await d.transaction(async () => {
+      const { count } = await d.one("SELECT COUNT(*) AS count FROM nhat_ky_hoat_dong WHERE user_id=? AND action='prescription.analyze' AND created_at>?", req.user.id, new Date(Date.now() - 60000).toISOString());
+      assert(count < 6, 429, 'Vui lòng chờ một phút trước khi đọc thêm đơn thuốc.');
+      await audit(d, req.user.id, 'prescription.analyze', 'prescription', prescription.id);
+    });
+    const buffer = cloud ? await cloud.read(prescription.storage_name) : readFileSync(path.join(storage, prescription.storage_name));
+    const medicines = await readPrescription(buffer, prescription.mime_type);
+    res.json({ data: { medicines, results: await prescriptionMatches(d, medicines) } });
+  });
+  app.post('/api/prescriptions/:id/matches', auth, async (req, res) => {
+    assert(await d.one('SELECT id FROM don_thuoc WHERE id=? AND user_id=?', req.params.id, req.user.id), 404, 'Không tìm thấy đơn thuốc của bạn.');
+    const medicines = medicineRows(req.body.medicines);
+    res.json({ data: { medicines, results: await prescriptionMatches(d, medicines) } });
   });
   app.get('/api/prescriptions/:id/file', auth, async (req, res) => {
     const p = await d.one('SELECT * FROM don_thuoc WHERE id=?', req.params.id);

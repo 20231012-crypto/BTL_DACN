@@ -135,7 +135,7 @@ try {
   );
 
   await login(customer, 'Khách hàng', '/');
-  await open(customer, '/products?search=amoxicillin', '.product-card');
+  await open(customer, '/products?search=amoxicillin&prescription=true', '.product-card');
   await clickText(customer, '.product-add', 'Thêm vào giỏ');
   await textOnPage(customer, '.toast', 'Đã thêm sản phẩm');
   await open(customer, '/checkout', '.payment-option');

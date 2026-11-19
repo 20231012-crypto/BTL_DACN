@@ -47,6 +47,7 @@ import {
 import Admin from './Admin.jsx';
 import AddressFields from './AddressFields.jsx';
 import BankTransfer from './BankTransfer.jsx';
+import PrescriptionCatalog from './PrescriptionCatalog.jsx';
 import { LogoIcon } from './Logo.jsx';
 import {
   api,
@@ -120,6 +121,7 @@ const categoryIcon = (name) =>
         : Leaf;
 
 export default function App() {
+  const [selectedPrescription, setSelectedPrescription] = useState(null);
   const [route, setRoute] = useState(pathNow);
   const [user, setUser] = useState(null);
   const [ready, setReady] = useState(false);
@@ -221,6 +223,8 @@ export default function App() {
     addToCart,
     logout,
     setChatOpen,
+    selectedPrescription,
+    setSelectedPrescription,
   };
   const path = route.split('?')[0];
   let content;
@@ -245,6 +249,9 @@ export default function App() {
     ['/login', '/register', '/forgot-password', '/verify'].includes(path)
   )
     content = <AuthPage />;
+  else if (path === '/prescription') content = <RequireLogin><PrescriptionCatalog config={config}
+    onUpload={(file) => setSelectedPrescription({ ...file, userId: user.id })}
+    renderProduct={(product) => <ProductCard key={product.id} p={product} />} /></RequireLogin>;
   else if (path === '/products') content = <Catalog key={route} />;
   else if (/^\/products\/[^/]+$/.test(path))
     content = (
@@ -417,6 +424,7 @@ function Header() {
             Sản phẩm
           </Link>
           <Link to="/products?prescription=false">Thuốc không kê đơn</Link>
+          <Link to="/prescription">Thuốc theo đơn</Link>
           <button onClick={() => setChatOpen(true)}>Góc tư vấn</button>
           <Link to="/orders">Theo dõi đơn hàng</Link>
           {user && ['admin', 'staff'].includes(user.role) && (
@@ -439,7 +447,7 @@ function Home() {
   const [error, setError] = useState('');
   const [category, setCategory] = useState('all');
   useEffect(() => {
-    api('/products?sort=featured')
+    api('/products?sort=featured&prescription=false')
       .then((data) =>
         setProducts(
           Array.isArray(data) ? data : data.items || data.products || [],
@@ -703,7 +711,7 @@ function Catalog() {
     navigate(`/products?${next}`);
   };
   useEffect(() => {
-    api(`/products?${params}`)
+    api(`/products?${params}${params.has('prescription') ? '' : '&prescription=false'}`)
       .then((result) =>
         setItems(
           Array.isArray(result)
@@ -756,8 +764,8 @@ function Catalog() {
             <input
               type="radio"
               name="rx"
-              checked={!params.has('prescription')}
-              onChange={() => update('prescription', '')}
+              checked={params.get('prescription') === 'all'}
+              onChange={() => update('prescription', 'all')}
             />{' '}
             Tất cả
           </label>
@@ -765,7 +773,7 @@ function Catalog() {
             <input
               type="radio"
               name="rx"
-              checked={params.get('prescription') === 'false'}
+              checked={!params.has('prescription') || params.get('prescription') === 'false'}
               onChange={() => update('prescription', 'false')}
             />{' '}
             Không cần đơn thuốc
@@ -1250,7 +1258,7 @@ function Cart() {
 }
 
 function Checkout() {
-  const { user, cart, refreshCart, navigate, notify, config } = useApp();
+  const { user, cart, refreshCart, navigate, notify, config, selectedPrescription, setSelectedPrescription } = useApp();
   const [addresses, setAddresses] = useState([]);
   const [addressId, setAddressId] = useState('new');
   const [address, setAddress] = useState({
@@ -1264,7 +1272,7 @@ function Checkout() {
   const [method, setMethod] = useState('cod');
   const [promotionCode, setPromotionCode] = useState('');
   const [promotion, setPromotion] = useState(null);
-  const [prescription, setPrescription] = useState(null);
+  const [prescription, setPrescription] = useState(selectedPrescription?.userId === user?.id ? selectedPrescription : null);
   const [uploading, setUploading] = useState(false);
   const [note, setNote] = useState('');
   const [error, setError] = useState('');
@@ -1345,6 +1353,7 @@ function Checkout() {
         },
       });
       await refreshCart();
+      setSelectedPrescription(null);
       navigate(`/orders/${order.id}?created=1`);
     } catch (e) {
       setError(e.message);
@@ -3415,6 +3424,7 @@ function Footer() {
           <h3>Khám phá An Tâm</h3>
           <Link to="/products">Tất cả sản phẩm</Link>
           <Link to="/products?prescription=false">Thuốc không kê đơn</Link>
+          <Link to="/prescription">Thuốc theo đơn</Link>
           <Link to="/chat">Trợ lý thông tin sức khỏe</Link>
         </div>
         <div>

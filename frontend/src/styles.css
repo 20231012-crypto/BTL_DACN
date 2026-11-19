@@ -4835,3 +4835,10 @@ svg {
 .bank-transfer img { display: block; max-width: 100%; height: auto; margin: 12px auto; }
 .bank-transfer dl { display: grid; grid-template-columns: auto 1fr; gap: 7px 12px; font-size: 13px; }
 .bank-transfer dd { margin: 0; overflow-wrap: anywhere; font-weight: 600; }
+
+.prescription-catalog > .panel { margin-bottom: 24px; }
+.prescription-catalog h2 { margin: 24px 0 12px; }
+.prescription-catalog form { margin-top: 24px; }
+.prescription-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; align-items: end; gap: 12px; margin-bottom: 16px; }
+.prescription-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+@media (max-width: 680px) { .prescription-row { grid-template-columns: 1fr; padding-bottom: 12px; border-bottom: 1px solid #d9e4e1; } }
