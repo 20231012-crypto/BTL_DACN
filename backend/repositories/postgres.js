@@ -114,7 +114,7 @@ function connectionOptions(connectionString) {
     connectionString: url.href,
     ssl: local ? false : { rejectUnauthorized: true, ...(ca ? { ca } : {}) },
     max: 4,
-    idleTimeoutMillis: 10000,
+    idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 8000,
     allowExitOnIdle: true,
     types: numericTypes,
