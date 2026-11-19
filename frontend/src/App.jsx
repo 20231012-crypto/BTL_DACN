@@ -252,7 +252,7 @@ export default function App() {
     content = <AuthPage />;
   else if (path === '/prescription') content = <RequireLogin><PrescriptionCatalog config={config}
     onUpload={(file) => setSelectedPrescription({ ...file, userId: user.id })}
-    renderProduct={(product) => <ProductCard key={product.id} p={product} />} /></RequireLogin>;
+    renderProduct={(product) => <ProductCard key={product.id} product={product} />} /></RequireLogin>;
   else if (path === '/products') content = <Catalog key={route} />;
   else if (/^\/products\/[^/]+$/.test(path))
     content = (

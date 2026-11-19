@@ -1103,3 +1103,30 @@ test('search suggestions accept accents, reordered words and small spelling erro
   assert.ok(reordered.data.some((product) => product.name.includes('Nước muối')));
   assert.deepEqual((await guest('/products/suggestions?search=zzzzxyyy')).data, []);
 });
+
+test('Gemini recognition uses an owned file and produces editable catalog matches', async (t) => {
+  const previous = process.env.GEMINI_API_KEYS;
+  process.env.GEMINI_API_KEYS = '["test-ocr-key"]';
+  t.after(() => {
+    if (previous === undefined) delete process.env.GEMINI_API_KEYS;
+    else process.env.GEMINI_API_KEYS = previous;
+  });
+  const originalFetch = globalThis.fetch;
+  let recognized = 0;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    if (!String(url).startsWith('https://generativelanguage.googleapis.com/')) return originalFetch(url, options);
+    recognized++;
+    const payload = JSON.parse(options.body);
+    assert.equal(payload.contents[0].parts[0].inlineData.mimeType, 'application/pdf');
+    return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ medicines: [{ name: 'Amoxicillin', ingredient: 'Amoxicillin', strength: '500mg', patient: 'discard this field' }] }) }] } }] });
+  });
+  const { login } = await fixture(t);
+  const customer = await login();
+  const rx = await upload(customer);
+  const result = await customer(`/prescriptions/${rx.id}/analyze`, 'POST', { consent: true });
+  assert.equal(result.status, 200);
+  assert.equal(recognized, 1);
+  assert.equal(result.data.medicines[0].name, 'Amoxicillin');
+  assert.equal(result.data.medicines[0].patient, undefined);
+  assert.ok(result.data.results[0].matches.length > 0);
+});

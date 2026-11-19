@@ -135,6 +135,15 @@ try {
   );
 
   await login(customer, 'Khách hàng', '/');
+  await open(customer, '/prescription', '.upload-zone');
+  const searchPrescription = path.join(scratch, 'catalog-prescription.pdf');
+  writeFileSync(searchPrescription, '%PDF-1.7\nExample prescription\n%%EOF');
+  await (await customer.$('input[type=file]')).uploadFile(searchPrescription);
+  await customer.waitForSelector('.prescription-row input');
+  await customer.type('.prescription-row input', 'Amoxicillin');
+  await clickText(customer, '.prescription-catalog button', 'Tìm thuốc trong đơn');
+  await customer.waitForSelector('.prescription-catalog .product-card');
+  console.log('PASS uploaded prescription search renders catalog results');
   await open(customer, '/products?search=amoxicillin&prescription=true', '.product-card');
   await clickText(customer, '.product-add', 'Thêm vào giỏ');
   await textOnPage(customer, '.toast', 'Đã thêm sản phẩm');
