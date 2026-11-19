@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api, uploadPrescription } from './lib.js';
+import PharmacistChat from './PharmacistChat.jsx';
 
 export default function PrescriptionCatalog({
   config,
@@ -181,6 +182,17 @@ export default function PrescriptionCatalog({
             {error}
           </p>
         )}
+      </section>
+      <section className="panel pharmacist-consult">
+        <h2>Trao đổi trực tiếp với dược sĩ</h2>
+        <p className="muted">
+          Không muốn dùng AI đọc đơn? Dược sĩ sẽ xem đơn thuốc của bạn và trò
+          chuyện để tư vấn thuốc trong đơn, sản phẩm thay thế và cách dùng.
+          {prescription
+            ? ' Đơn bạn vừa tải lên sẽ được gắn vào cuộc tư vấn này.'
+            : ' Tải đơn thuốc lên ở trên nếu muốn dược sĩ xem đơn cùng bạn.'}
+        </p>
+        <PharmacistChat prescription={prescription} />
       </section>
       {results && results.length === 0 && (
         <p>Chưa đọc được tên thuốc. Bạn có thể nhập tên từ đơn để tìm.</p>

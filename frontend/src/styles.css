@@ -5327,3 +5327,19 @@ svg {
     height: 30px;
   }
 }
+
+.pharmacist-consult h2 { margin: 0 0 6px; }
+.pharmacist-consult > p { margin: 0 0 16px; }
+.pharmacist-chat { display: flex; flex-direction: column; gap: 12px; }
+.pharmacist-chat-status { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 10px; background: #e7f5ef; color: #164b43; font-size: 13px; font-weight: 500; }
+.pharmacist-chat-status svg { flex: none; }
+.pharmacist-chat-messages { display: flex; flex-direction: column; gap: 10px; min-height: 160px; max-height: 360px; overflow-y: auto; padding: 14px; border: 1px solid #d9e4e1; border-radius: 12px; background: #f9fbf9; }
+.pharmacist-bubble { max-width: 82%; padding: 10px 13px; border-radius: 12px; background: #fff; border: 1px solid #e1ebe7; }
+.pharmacist-bubble.mine { align-self: flex-end; background: #164b43; border-color: #164b43; color: #fff; }
+.pharmacist-bubble strong { display: block; margin-bottom: 3px; font-size: 12px; color: #2f7a6c; }
+.pharmacist-bubble p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.pharmacist-bubble time { display: block; margin-top: 4px; font-size: 11px; opacity: 0.7; }
+.pharmacist-chat-form { display: flex; gap: 10px; align-items: flex-end; }
+.pharmacist-chat-form textarea { flex: 1; min-width: 0; resize: vertical; padding: 10px 12px; border: 1px solid #cdd9d5; border-radius: 10px; font: inherit; }
+.pharmacist-chat-form .btn { display: inline-flex; align-items: center; gap: 6px; }
+@media (max-width: 680px) { .pharmacist-bubble { max-width: 92%; } .pharmacist-chat-form { flex-direction: column; align-items: stretch; } }

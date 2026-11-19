@@ -50,6 +50,7 @@ import Admin from './Admin.jsx';
 import AddressFields from './AddressFields.jsx';
 import BankTransfer from './BankTransfer.jsx';
 import PrescriptionCatalog from './PrescriptionCatalog.jsx';
+import PharmacistChat from './PharmacistChat.jsx';
 import ProductSearch from './ProductSearch.jsx';
 import HeroBanner from './HeroBanner.jsx';
 import { LogoIcon } from './Logo.jsx';
@@ -276,6 +277,21 @@ export default function App() {
   else if (path === '/prescription') content = <RequireLogin><PrescriptionCatalog config={config}
     onUpload={(file) => setSelectedPrescription({ ...file, userId: user.id })}
     renderProduct={(product) => <ProductCard key={product.id} product={product} />} /></RequireLogin>;
+  else if (path === '/consultation')
+    content = (
+      <RequireLogin>
+        <main className="container page-shell">
+          <div className="page-heading">
+            <span className="eyebrow">DƯỢC SĨ ĐỒNG HÀNH</span>
+            <h1>Tư vấn cùng dược sĩ</h1>
+            <p>Trò chuyện trực tiếp với dược sĩ An Tâm về thuốc và đơn thuốc của bạn.</p>
+          </div>
+          <section className="panel pharmacist-consult">
+            <PharmacistChat />
+          </section>
+        </main>
+      </RequireLogin>
+    );
   else if (path === '/products') content = <Catalog key={route} />;
   else if (/^\/products\/[^/]+$/.test(path))
     content = (
@@ -447,6 +463,7 @@ function Header() {
           </Link>
           <Link to="/products?prescription=false">Thuốc không kê đơn</Link>
           <Link to="/prescription">Thuốc theo đơn</Link>
+          <Link to="/consultation">Dược sĩ tư vấn</Link>
           <button onClick={() => setChatOpen(true)}>Góc tư vấn</button>
           <Link to="/orders">Theo dõi đơn hàng</Link>
           {user && ['admin', 'staff'].includes(user.role) && (
@@ -3212,40 +3229,10 @@ function ChatPanel({ onClose, full = false }) {
       notify(e.message, 'error');
     }
   };
-  const handoff = async () => {
-    if (!user) {
-      navigate('/login?next=%2Fchat');
-      return;
-    }
-    setBusy(true);
-    try {
-      const id =
-        sessionId ||
-        (
-          await api('/chat/sessions', {
-            method: 'POST',
-            body: { title: 'Yêu cầu tư vấn dược sĩ' },
-          })
-        ).id;
-      setSessionId(id);
-      await api(`/chat/sessions/${id}/handoff`, {
-        method: 'POST',
-        body: { message: 'Khách hàng yêu cầu kết nối với dược sĩ.' },
-      });
-      setMessages((old) => [
-        ...old,
-        {
-          role: 'assistant',
-          content:
-            'Yêu cầu đã được chuyển đến nhân viên. Bạn có thể xem phản hồi trong lịch sử cuộc hội thoại.',
-        },
-      ]);
-      notify('Đã gửi yêu cầu hỗ trợ dược sĩ.');
-    } catch (e) {
-      notify(e.message, 'error');
-    } finally {
-      setBusy(false);
-    }
+  // Chuyển sang màn hình trò chuyện trực tiếp với dược sĩ.
+  const handoff = () => {
+    onClose?.();
+    navigate(user ? '/consultation' : '/login?next=%2Fconsultation');
   };
   return (
     <section className={`chat-panel ${full ? 'chat-full' : ''}`}>
