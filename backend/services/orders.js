@@ -1573,6 +1573,18 @@ export function installOrders(
         409,
         'Đơn không đủ điều kiện hoàn tiền hoặc đã hoàn tiền.',
       );
+      if (r.type === 'return') {
+        // Yêu cầu đổi trả chỉ được hoàn tiền sau khi nhà thuốc đã nhận hàng trả về.
+        const goods = await d.one(
+          'SELECT status FROM hang_tra_ve WHERE request_id=?',
+          r.id,
+        );
+        assert(
+          !goods || ['received', 'restocked', 'discarded'].includes(goods.status),
+          409,
+          'Chỉ hoàn tiền sau khi nhà thuốc đã nhận hàng trả về.',
+        );
+      }
       const amount =
         req.body.amount === undefined ? o.total : Number(req.body.amount);
       assert(

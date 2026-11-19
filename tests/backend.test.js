@@ -1240,6 +1240,7 @@ test('returned goods are tracked from approval to restock or discard', async (t)
   assert.equal((await staff('/admin/requests')).data.find((row) => row.id === first.requestId).returnGoodsStatus, 'awaiting');
 
   assert.equal((await staff(`/admin/return-goods/${goods.id}`, 'PATCH', { status: 'restocked', sealed: true })).status, 409, 'goods must be received before restock');
+  assert.equal((await staff(`/admin/requests/${first.requestId}/refund`, 'POST', {})).status, 409, 'no refund while goods have not arrived');
   const shipUrl = `/orders/${first.orderId}/requests/${first.requestId}/return-shipment`;
   assert.equal((await other(shipUrl, 'POST', { carrier: 'GHN', trackingCode: 'GHN123456' })).status, 404);
   assert.equal((await customer(shipUrl, 'POST', { carrier: 'GHN', trackingCode: '1' })).status, 400);
@@ -1250,7 +1251,10 @@ test('returned goods are tracked from approval to restock or discard', async (t)
   assert.equal(view.returnGoodsStatus, 'in_transit');
   assert.equal(view.returnTrackingCode, 'GHN123456');
 
+  assert.equal((await staff(`/admin/return-goods/${goods.id}`, 'PATCH', { status: 'in_transit', trackingCode: 'GHN123456' })).status, 409, 'in transit cannot be set again by staff after shipping started');
+  assert.equal((await staff(`/admin/requests/${first.requestId}/refund`, 'POST', {})).status, 409, 'no refund while goods are in transit');
   assert.equal((await staff(`/admin/return-goods/${goods.id}`, 'PATCH', { status: 'received' })).data.status, 'received');
+  assert.equal((await staff(`/admin/requests/${first.requestId}/refund`, 'POST', {})).data.paymentStatus, 'refunded', 'refund opens once the goods are received');
   assert.equal((await customer(shipUrl, 'POST', { carrier: 'GHN', trackingCode: 'GHN999999' })).status, 409, 'customer cannot edit shipment after receipt');
   assert.equal((await staff(`/admin/return-goods/${goods.id}`, 'PATCH', { status: 'restocked' })).status, 400);
   const restocked = await staff(`/admin/return-goods/${goods.id}`, 'PATCH', { status: 'restocked', sealed: true, note: 'Còn nguyên niêm phong' });

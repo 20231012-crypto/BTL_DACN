@@ -3120,6 +3120,10 @@ export default function Admin({ user, onExit, onLogout, config }) {
         </Modal>
       );
     }
+    // Yêu cầu đổi trả đã duyệt nhưng hàng chưa về thì chưa được hoàn tiền.
+    const waitingGoods =
+      item.type === 'return' &&
+      ['awaiting', 'in_transit'].includes(item.returnGoodsStatus);
     if (type === 'request')
       return (
         <Modal
@@ -3213,6 +3217,14 @@ export default function Admin({ user, onExit, onLogout, config }) {
                     </>
                   )}
                 </>
+              ) : waitingGoods && item.status === 'approved' ? (
+                <div className="adm-info-banner compact">
+                  <AlertTriangle size={18} />
+                  <p>
+                    Chờ nhận hàng trả về trước khi hoàn tiền. Cập nhật trạng
+                    thái ở tab Hàng trả về khi nhà thuốc đã nhận hàng.
+                  </p>
+                </div>
               ) : item.status === 'approved' &&
                 ['paid', 'refund_pending'].includes(item.paymentStatus) &&
                 ['cancelled', 'returned'].includes(item.orderStatus) &&
@@ -3266,6 +3278,12 @@ export default function Admin({ user, onExit, onLogout, config }) {
             </div>
             {item.status === 'pending' ? (
               footer('Lưu kết quả')
+            ) : waitingGoods && item.status === 'approved' ? (
+              <div className="adm-modal-footer">
+                <button type="button" className="adm-btn" onClick={close}>
+                  Đóng
+                </button>
+              </div>
             ) : item.status === 'approved' &&
               ['paid', 'refund_pending'].includes(item.paymentStatus) &&
               ['cancelled', 'returned'].includes(item.orderStatus) &&
