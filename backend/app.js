@@ -46,6 +46,7 @@ export async function createApp(options = {}) {
   const config = {
     hosted,
     testing: !!options.testing,
+    allowProviderInTests: !!options.allowProviderInTests,
     demo:
       !hosted &&
       (!databaseUrl || options.testing) &&

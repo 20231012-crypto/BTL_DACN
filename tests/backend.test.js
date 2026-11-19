@@ -1628,3 +1628,70 @@ test('chat history preserves suggested products and stays separate from pharmaci
   assert.ok(Array.isArray(assistantMsg.products) && assistantMsg.products.length > 0);
   assert.equal(assistantMsg.products[0].id, chat.data.products[0].id);
 });
+
+test('chatbot looks up standalone AT order codes, redacts PII for Gemini and falls back cleanly', async (t) => {
+  const previousKey = process.env.GEMINI_API_KEY;
+  process.env.GEMINI_API_KEY = 'test-chat-key';
+  t.after(() => {
+    if (previousKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = previousKey;
+  });
+
+  let failProvider = false;
+  let sentBody = '';
+  const originalFetch = globalThis.fetch;
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    if (String(url).includes('generativelanguage.googleapis.com')) {
+      sentBody = String(init?.body || '');
+      if (failProvider) return new Response('unavailable', { status: 503 });
+      return new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    text: 'Vitamin C hỗ trợ tăng cường sức đề kháng. Thông tin chỉ mang tính tham khảo.',
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    return originalFetch(url, init);
+  });
+
+  const { login } = await fixture(t, { allowProviderInTests: true });
+  const customer = await login('khach@antam.vn');
+  const myOrders = await customer('/orders');
+  assert.equal(myOrders.status, 200);
+  const myCode = myOrders.data[0].code;
+  assert.match(myCode, /^AT\d+/);
+
+  const orderLookup = await customer('/chat', 'POST', {
+    message: myCode,
+  });
+  assert.equal(orderLookup.status, 200);
+  assert.ok(orderLookup.data.reply.includes(myCode));
+
+  const aiReply = await customer('/chat', 'POST', {
+    message:
+      'Mình muốn hỏi về Vitamin C, liên hệ khach@antam.vn hoặc 0901234567 nhé',
+  });
+  assert.equal(aiReply.status, 200);
+  assert.equal(aiReply.data.mode, 'gemini');
+  assert.match(aiReply.data.reply, /Vitamin C/);
+  assert.ok(!sentBody.includes('khach@antam.vn'), 'email must be redacted');
+  assert.ok(!sentBody.includes('0901234567'), 'phone must be redacted');
+
+  failProvider = true;
+  const fallback = await customer('/chat', 'POST', {
+    message: 'Cho mình xem sản phẩm Vitamin C',
+  });
+  assert.equal(fallback.status, 200);
+  assert.equal(fallback.data.mode, 'knowledge_fallback');
+  assert.ok(fallback.data.products.length > 0);
+});

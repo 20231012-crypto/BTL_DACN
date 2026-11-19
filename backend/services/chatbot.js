@@ -11,6 +11,12 @@ import { generateAnswer } from '../integrations/gemini.js';
 import { geminiKeys } from '../integrations/gemini-client.js';
 import { CONSULTATION_TITLE } from './consultation.js';
 
+const redactPii = (value) =>
+  String(value || '')
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[email]')
+    .replace(/(?:\+?84|0)[\s.-]*\d(?:[\s.-]*\d){8,10}/g, '[so-dien-thoai]')
+    .replace(/\b(?:AT|MA)\d[A-Z0-9]{5,}\b/gi, '[ma-don]');
+
 const parseMessageRow = (row) => {
   const { products_json, ...rest } = row;
   let products = [];
@@ -190,7 +196,7 @@ export function installChatbot(app, d, { auth }, options) {
       reply =
         'Thêm sản phẩm vào giỏ rồi đính kèm đơn thuốc ở bước đặt hàng. Dược sĩ sẽ đối chiếu đơn với sản phẩm trước khi đơn được thanh toán hoặc xác nhận.';
     } else if (
-      /theo doi|trang thai don|don hang cua toi|\bma\d[a-z0-9]{5,}/.test(
+      /theo doi|trang thai don|don hang cua toi|\b(?:at|ma)\d[a-z0-9]{5,}/.test(
         normalized,
       ) &&
       !req.user
@@ -198,7 +204,7 @@ export function installChatbot(app, d, { auth }, options) {
       reply =
         'Bạn cần đăng nhập để tra cứu đơn hàng và bảo vệ thông tin của mình.';
     } else if (
-      /theo doi|trang thai don|don hang cua toi|\bma\d[a-z0-9]{5,}/.test(
+      /theo doi|trang thai don|don hang cua toi|\b(?:at|ma)\d[a-z0-9]{5,}/.test(
         normalized,
       )
     ) {
@@ -283,44 +289,48 @@ export function installChatbot(app, d, { auth }, options) {
           products
             .map((p) => `${p.name}, ${p.unit}, ${p.price}đ, ${p.description}`)
             .join('\n');
-      if (context) {
-        reply =
-          matching[0]?.content ||
-          (products.length
-            ? 'Tôi tìm thấy một số sản phẩm phù hợp với từ khóa của bạn. Bạn hãy xem chi tiết và hỏi dược sĩ nếu cần lựa chọn sản phẩm cho tình trạng sức khỏe cụ thể.'
-            : '');
-        if (
-          geminiKeys().length > 0 &&
-          !options.testing &&
-          matching[0] &&
-          /giao hang|van chuyen|thanh toan|doi tra|hoan tien/.test(
-            normalize(matching[0].title),
-          )
-        ) {
-          // Send only reviewed store information. The user question and account data stay local.
-          const safeQuestion = `Diễn đạt lại thông tin chính sách của nhà thuốc: ${matching[0].title}`;
-          const policyContext = matching[0].content;
-          try {
-            reply = await generateAnswer({
-              question: safeQuestion,
-              context: policyContext,
-            });
-            mode = 'gemini';
-          } catch {
-            mode = 'knowledge_fallback';
-            await audit(
-              d,
-              req.user?.id,
-              'chatbot.provider_unavailable',
-              'session',
-              session?.id,
-              'Gemini không phản hồi; trả lời từ tri thức nội bộ.',
-            );
-          }
+      const fallbackReply = context
+        ? matching[0]?.content ||
+          'Tôi tìm thấy một số sản phẩm phù hợp với từ khóa của bạn. Bạn hãy xem chi tiết và hỏi dược sĩ nếu cần lựa chọn sản phẩm cho tình trạng sức khỏe cụ thể.'
+        : 'Tôi có thể giúp tra cứu sản phẩm, chính sách giao hàng, thanh toán và theo dõi đơn hàng. Câu hỏi này cần thêm thông tin hoặc tư vấn chuyên môn. Bạn có thể chọn “Kết nối dược sĩ” để được nhân viên hỗ trợ. Thông tin tại đây chỉ mang tính tham khảo.';
+      reply = fallbackReply;
+
+      const canCallGemini =
+        geminiKeys().length > 0 &&
+        (!options.testing || options.allowProviderInTests);
+      if (canCallGemini) {
+        const recentHistory = session
+          ? (
+              await d.all(
+                'SELECT role, content FROM tin_nhan WHERE session_id=? ORDER BY id DESC LIMIT 7',
+                session.id,
+              )
+            )
+              .slice(1)
+              .reverse()
+              .map((row) => ({
+                role: row.role,
+                content: redactPii(row.content),
+              }))
+          : [];
+        try {
+          reply = await generateAnswer({
+            question: redactPii(message),
+            context,
+            history: recentHistory,
+          });
+          mode = 'gemini';
+        } catch (err) {
+          mode = 'knowledge_fallback';
+          await audit(
+            d,
+            req.user?.id,
+            'chatbot.provider_unavailable',
+            'session',
+            session?.id,
+            `Gemini không phản hồi (${err?.message || 'unknown'}); trả lời từ tri thức nội bộ.`,
+          );
         }
-      } else {
-        reply =
-          'Tôi có thể giúp tra cứu sản phẩm, chính sách giao hàng, thanh toán và theo dõi đơn hàng. Câu hỏi này cần thêm thông tin hoặc tư vấn chuyên môn. Bạn có thể chọn “Gặp dược sĩ” để được nhân viên hỗ trợ. Thông tin tại đây chỉ mang tính tham khảo.';
       }
     }
     const storedProducts = products.map(
