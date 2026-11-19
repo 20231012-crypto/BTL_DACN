@@ -1696,6 +1696,35 @@ test('chatbot looks up standalone AT order codes, redacts PII for Gemini and fal
   assert.ok(fallback.data.products.length > 0);
 });
 
+test('customer profile stores and validates birthDate and gender (UC02.1)', async (t) => {
+  const { login } = await fixture(t);
+  const customer = await login('khach@antam.vn');
+
+  const invalidDate = await customer('/profile', 'PATCH', {
+    birthDate: '2099-01-01',
+  });
+  assert.equal(invalidDate.status, 400);
+
+  const invalidGender = await customer('/profile', 'PATCH', {
+    gender: 'unknown',
+  });
+  assert.equal(invalidGender.status, 400);
+
+  const updated = await customer('/profile', 'PATCH', {
+    name: 'Nguyễn Minh Anh',
+    birthDate: '1999-08-15',
+    gender: 'female',
+  });
+  assert.equal(updated.status, 200);
+  assert.equal(updated.data.birthDate, '1999-08-15');
+  assert.equal(updated.data.gender, 'female');
+
+  const me = await customer('/auth/me');
+  assert.equal(me.status, 200);
+  assert.equal(me.data.birthDate, '1999-08-15');
+  assert.equal(me.data.gender, 'female');
+});
+
 test('admin promotions maxDiscount=0, audit, enriched prescriptions/catalog/knowledge/support, settings flags and warehouse inventory lookups', async (t) => {
   const { login, d } = await fixture(t);
   const admin = await login('admin@antam.vn');

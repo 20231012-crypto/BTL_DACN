@@ -45,6 +45,7 @@ import {
   CircleHelp,
   Eye,
   EyeOff,
+  RotateCcw,
 } from 'lucide-react';
 import Admin from './Admin.jsx';
 import AddressFields from './AddressFields.jsx';
@@ -131,6 +132,42 @@ const Field = ({ label: title, children, ...props }) => {
     </label>
   );
 };
+const PasswordStrength = ({ value }) => {
+  if (!value) return null;
+  const checks = [
+    ['Ít nhất 8 ký tự', value.length >= 8],
+    ['Chữ hoa (A–Z)', /[A-Z]/.test(value)],
+    ['Chữ thường (a–z)', /[a-z]/.test(value)],
+    ['Chữ số (0–9)', /\d/.test(value)],
+  ];
+  const passed = checks.filter(([, ok]) => ok).length;
+  const level = passed <= 1 ? 'weak' : passed < 4 ? 'medium' : 'strong';
+  const labelText =
+    level === 'weak'
+      ? 'Yếu'
+      : level === 'medium'
+        ? 'Trung bình'
+        : 'Đạt chuẩn';
+  return (
+    <div className="password-strength" aria-live="polite">
+      <div className="password-strength-bar">
+        <span className={`fill ${level}`} style={{ width: `${(passed / 4) * 100}%` }} />
+      </div>
+      <div className="password-strength-head">
+        <span>Độ mạnh mật khẩu:</span>
+        <strong className={level}>{labelText}</strong>
+      </div>
+      <ul className="password-checks">
+        {checks.map(([text, ok]) => (
+          <li key={text} className={ok ? 'ok' : ''}>
+            {ok ? <Check size={12} /> : <span className="dot" />} {text}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
 const ErrorBox = ({ error }) =>
   error ? (
     <div className="error-box" role="alert">
@@ -226,6 +263,52 @@ export default function App() {
       return false;
     }
   };
+  const reorder = async (orderOrId) => {
+    if (!user) {
+      navigate('/login?next=%2Forders');
+      return;
+    }
+    try {
+      const detail =
+        typeof orderOrId === 'object' && Array.isArray(orderOrId?.items)
+          ? orderOrId
+          : await api(`/orders/${orderOrId}`);
+      const items = detail?.items || [];
+      if (!items.length) {
+        notify('Đơn hàng này chưa có sản phẩm để mua lại.', 'error');
+        return;
+      }
+      let added = 0;
+      let skipped = 0;
+      for (const item of items) {
+        try {
+          await api('/cart', {
+            method: 'POST',
+            body: { productId: item.productId, quantity: item.quantity || 1 },
+          });
+          added += 1;
+        } catch {
+          skipped += 1;
+        }
+      }
+      await refreshCart();
+      if (!added) {
+        notify(
+          'Các sản phẩm trong đơn hiện tạm hết hàng hoặc đã ngừng bán.',
+          'error',
+        );
+        return;
+      }
+      notify(
+        skipped
+          ? `Đã thêm ${added} sản phẩm vào giỏ (${skipped} sản phẩm tạm hết hàng hoặc ngừng bán).`
+          : `Đã thêm ${added} sản phẩm từ đơn ${detail.code || ''} vào giỏ hàng.`,
+      );
+      navigate('/cart');
+    } catch (e) {
+      notify(e.message, 'error');
+    }
+  };
   const logout = async () => {
     try {
       await api('/auth/logout', { method: 'POST' });
@@ -250,6 +333,7 @@ export default function App() {
     navigate,
     notify,
     addToCart,
+    reorder,
     logout,
     setChatOpen,
     selectedPrescription,
@@ -1735,10 +1819,11 @@ function Checkout() {
 }
 
 function Orders() {
-  const { user } = useApp();
+  const { user, reorder } = useApp();
   const [orders, setOrders] = useState(null);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('all');
+  const [reorderingId, setReorderingId] = useState(null);
   useEffect(() => {
     if (user)
       api('/orders')
@@ -1815,6 +1900,24 @@ function Orders() {
                     </span>
                   </div>
                   <strong>{money(o.total)}</strong>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-small order-reorder-btn"
+                    disabled={reorderingId === o.id}
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setReorderingId(o.id);
+                      try {
+                        await reorder(o.id);
+                      } finally {
+                        setReorderingId(null);
+                      }
+                    }}
+                  >
+                    <RotateCcw size={14} />{' '}
+                    {reorderingId === o.id ? 'Đang thêm…' : 'Mua lại'}
+                  </button>
                   <ChevronRight size={19} />
                 </div>
               </Link>
@@ -1837,7 +1940,7 @@ function Orders() {
 }
 
 function OrderDetail({ id }) {
-  const { user, route, notify, config } = useApp();
+  const { user, route, notify, config, reorder } = useApp();
   const [order, setOrder] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -2061,6 +2164,21 @@ function OrderDetail({ id }) {
                 </div>
                 <div className="order-title-actions">
                   <Badge value={order.status} />
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-small"
+                    disabled={busy}
+                    onClick={async () => {
+                      setBusy(true);
+                      try {
+                        await reorder(order);
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    <RotateCcw size={14} /> Mua lại
+                  </button>
                   <button className="btn btn-outline btn-small" onClick={load}>
                     Cập nhật trạng thái
                   </button>
@@ -2584,6 +2702,7 @@ function AuthPage() {
   const settingPassword = mode === 'verify' && params.get('invite') === '1';
   const [email, setEmail] = useState(params.get('email') || '');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
@@ -2594,6 +2713,7 @@ function AuthPage() {
   useEffect(() => {
     setMode(initialMode);
     setPassword('');
+    setConfirmPassword('');
     setCode('');
     setDemoCode('');
     setError('');
@@ -2647,6 +2767,13 @@ function AuthPage() {
     e.preventDefault();
     setError('');
     setMessage('');
+    if (
+      (['register', 'reset'].includes(mode) || settingPassword) &&
+      password !== confirmPassword
+    ) {
+      setError('Mật khẩu nhập lại chưa khớp.');
+      return;
+    }
     setBusy(true);
     try {
       if (mode === 'login') await login(email, password);
@@ -2853,9 +2980,24 @@ function AuthPage() {
                   }
                 />
                 {mode !== 'login' && (
-                  <p className="field-help">
-                    Ít nhất 8 ký tự, có chữ hoa, chữ thường và số.
-                  </p>
+                  <>
+                    <PasswordStrength value={password} />
+                    <Field
+                      key={`pw-confirm-${mode}`}
+                      label="Nhập lại mật khẩu"
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      required
+                      minLength={8}
+                      autoComplete="new-password"
+                    />
+                    {confirmPassword && password !== confirmPassword && (
+                      <p className="field-help field-mismatch">
+                        Mật khẩu nhập lại chưa khớp.
+                      </p>
+                    )}
+                  </>
                 )}
               </>
             )}
@@ -2930,7 +3072,12 @@ function Account() {
   const { user, setUser, logout, notify, navigate, config, route } = useApp();
   const googleStatus = new URLSearchParams(route.split('?')[1]).get('google');
   const [tab, setTab] = useState('profile');
-  const [profile, setProfile] = useState({ name: '', phone: '' });
+  const [profile, setProfile] = useState({
+    name: '',
+    phone: '',
+    birthDate: '',
+    gender: '',
+  });
   const [addresses, setAddresses] = useState([]);
   const [editing, setEditing] = useState(null);
   const [address, setAddress] = useState({
@@ -2945,6 +3092,7 @@ function Account() {
   const [passwords, setPasswords] = useState({
     currentPassword: '',
     newPassword: '',
+    confirmPassword: '',
   });
   const [busy, setBusy] = useState(false);
   const loadAddresses = () =>
@@ -2955,7 +3103,12 @@ function Account() {
       .catch((e) => notify(e.message, 'error'));
   useEffect(() => {
     if (user) {
-      setProfile({ name: user.name || '', phone: user.phone || '' });
+      setProfile({
+        name: user.name || '',
+        phone: user.phone || '',
+        birthDate: user.birthDate || '',
+        gender: user.gender || '',
+      });
       loadAddresses();
     }
   }, [user]);
@@ -3000,10 +3153,24 @@ function Account() {
   };
   const changePassword = async (e) => {
     e.preventDefault();
+    if (passwords.newPassword !== passwords.confirmPassword) {
+      notify('Mật khẩu nhập lại chưa khớp.', 'error');
+      return;
+    }
     setBusy(true);
     try {
-      await api('/profile/password', { method: 'POST', body: passwords });
-      setPasswords({ currentPassword: '', newPassword: '' });
+      await api('/profile/password', {
+        method: 'POST',
+        body: {
+          currentPassword: passwords.currentPassword,
+          newPassword: passwords.newPassword,
+        },
+      });
+      setPasswords({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      });
       setUser(null);
       navigate('/login');
       notify('Đã đổi mật khẩu. Vui lòng đăng nhập lại.');
@@ -3088,6 +3255,30 @@ function Account() {
                     required
                     maxLength={15}
                   />
+                  <div className="profile-row">
+                    <Field
+                      label="Ngày sinh"
+                      type="date"
+                      value={profile.birthDate}
+                      max={new Date().toISOString().slice(0, 10)}
+                      onChange={(e) =>
+                        setProfile({ ...profile, birthDate: e.target.value })
+                      }
+                    />
+                    <Field label="Giới tính">
+                      <select
+                        value={profile.gender}
+                        onChange={(e) =>
+                          setProfile({ ...profile, gender: e.target.value })
+                        }
+                      >
+                        <option value="">Chọn giới tính</option>
+                        <option value="male">Nam</option>
+                        <option value="female">Nữ</option>
+                        <option value="other">Khác</option>
+                      </select>
+                    </Field>
+                  </div>
                   <button className="btn btn-primary" disabled={busy}>
                     Lưu thay đổi <Check size={17} />
                   </button>
@@ -3198,9 +3389,27 @@ function Account() {
                     minLength={8}
                     autoComplete="new-password"
                   />
-                  <p className="field-help">
-                    Ít nhất 8 ký tự, gồm chữ hoa, chữ thường và số.
-                  </p>
+                  <PasswordStrength value={passwords.newPassword} />
+                  <Field
+                    label="Nhập lại mật khẩu mới"
+                    type="password"
+                    value={passwords.confirmPassword}
+                    onChange={(e) =>
+                      setPasswords({
+                        ...passwords,
+                        confirmPassword: e.target.value,
+                      })
+                    }
+                    required
+                    minLength={8}
+                    autoComplete="new-password"
+                  />
+                  {passwords.confirmPassword &&
+                    passwords.newPassword !== passwords.confirmPassword && (
+                      <p className="field-help field-mismatch">
+                        Mật khẩu nhập lại chưa khớp.
+                      </p>
+                    )}
                   <button className="btn btn-primary" disabled={busy}>
                     Đổi mật khẩu
                   </button>

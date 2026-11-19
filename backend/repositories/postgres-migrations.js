@@ -3,14 +3,21 @@ import { readFile } from 'node:fs/promises';
 const migrations = new URL('../../supabase/migrations/', import.meta.url);
 
 export async function initializePostgresSchema(store) {
-  const [initial, rename, returnGoods, orderFulfillment, chatMessageProducts] =
-    await Promise.all([
-      readFile(new URL('20261118000100_minhan.sql', migrations), 'utf8'),
-      readFile(new URL('20261118180033_rename_schema_to_antam.sql', migrations), 'utf8'),
-      readFile(new URL('20261119000100_hang_tra_ve.sql', migrations), 'utf8'),
-      readFile(new URL('20261119000200_order_fulfillment_fields.sql', migrations), 'utf8'),
-      readFile(new URL('20261119000300_chat_message_products.sql', migrations), 'utf8'),
-    ]);
+  const [
+    initial,
+    rename,
+    returnGoods,
+    orderFulfillment,
+    chatMessageProducts,
+    userProfileFields,
+  ] = await Promise.all([
+    readFile(new URL('20261118000100_minhan.sql', migrations), 'utf8'),
+    readFile(new URL('20261118180033_rename_schema_to_antam.sql', migrations), 'utf8'),
+    readFile(new URL('20261119000100_hang_tra_ve.sql', migrations), 'utf8'),
+    readFile(new URL('20261119000200_order_fulfillment_fields.sql', migrations), 'utf8'),
+    readFile(new URL('20261119000300_chat_message_products.sql', migrations), 'utf8'),
+    readFile(new URL('20261119000400_user_profile_fields.sql', migrations), 'utf8'),
+  ]);
 
   await store.transaction(async () => {
     const { present } = await store.one(
@@ -24,6 +31,7 @@ export async function initializePostgresSchema(store) {
     await store.migrate(returnGoods);
     await store.migrate(orderFulfillment);
     await store.migrate(chatMessageProducts);
+    await store.migrate(userProfileFields);
   });
 }
 
@@ -69,6 +77,19 @@ export async function applyPendingMigrations(store) {
       );
       await store.transaction(async () => {
         await store.migrate(chatMessageProducts);
+      });
+    }
+
+    const profileCol = await store.one(
+      "SELECT COUNT(*)::int AS cnt FROM information_schema.columns WHERE table_schema='antam' AND table_name='nguoi_dung' AND column_name='birth_date'",
+    );
+    if (profileCol && profileCol.cnt === 0) {
+      const userProfileFields = await readFile(
+        new URL('20261119000400_user_profile_fields.sql', migrations),
+        'utf8',
+      );
+      await store.transaction(async () => {
+        await store.migrate(userProfileFields);
       });
     }
   } catch (error) {

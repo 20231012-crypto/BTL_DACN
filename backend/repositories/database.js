@@ -34,6 +34,10 @@ export function openDatabase(
     tin_nhan: {
       products_json: 'TEXT',
     },
+    nguoi_dung: {
+      birth_date: 'TEXT',
+      gender: 'TEXT',
+    },
   };
   for (const [table, additions] of Object.entries(migrations)) {
     const columns = db.prepare(`PRAGMA table_info(${table})`).all();

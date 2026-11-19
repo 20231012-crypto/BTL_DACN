@@ -5458,3 +5458,83 @@ svg {
 .prescription-qty input { width: 76px; padding: 8px 10px; border: 1px solid var(--input-border); border-radius: 8px; font: inherit; }
 .prescription-notice { padding: 12px 16px; border-radius: 10px; background: #e7f5ef; color: #164b43; }
 @media (max-width: 860px) { .prescription-compare { grid-template-columns: 1fr; } .prescription-preview { position: static; } .prescription-row { grid-template-columns: 1fr; } }
+
+.password-strength {
+  margin: -4px 0 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f6f9f4;
+  border: 1px solid #e2ebe0;
+}
+.password-strength-bar {
+  height: 5px;
+  border-radius: 999px;
+  background: #e1e8de;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.password-strength-bar .fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.25s ease, background 0.25s ease;
+}
+.password-strength-bar .fill.weak { background: #c25742; }
+.password-strength-bar .fill.medium { background: #d48b28; }
+.password-strength-bar .fill.strong { background: #2e7d56; }
+.password-strength-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #5b6e61;
+  margin-bottom: 6px;
+}
+.password-strength-head strong.weak { color: #b54834; }
+.password-strength-head strong.medium { color: #b87314; }
+.password-strength-head strong.strong { color: #236c47; }
+.password-checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 10px;
+  font-size: 11px;
+  color: #76877b;
+}
+.password-checks li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.password-checks li.ok {
+  color: #236c47;
+  font-weight: 500;
+}
+.password-checks .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #b6c2b8;
+  margin-inline: 3px;
+}
+.field-mismatch {
+  color: #b54834;
+  font-weight: 500;
+}
+.profile-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.order-reorder-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .profile-row,
+  .password-checks {
+    grid-template-columns: 1fr;
+  }
+}

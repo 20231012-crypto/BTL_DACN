@@ -379,6 +379,40 @@ export function installAuth(app, d, options) {
       );
       values.phone = req.body.phone;
     }
+    if (req.body.birthDate !== undefined) {
+      const raw = String(req.body.birthDate || '').trim();
+      if (!raw) values.birth_date = null;
+      else {
+        assert(
+          /^\d{4}-\d{2}-\d{2}$/.test(raw),
+          400,
+          'Ngày sinh không hợp lệ (định dạng YYYY-MM-DD).',
+        );
+        const parsed = new Date(`${raw}T00:00:00Z`);
+        const todayStr = now().slice(0, 10);
+        assert(
+          !Number.isNaN(parsed.getTime()) &&
+            parsed.toISOString().slice(0, 10) === raw &&
+            raw >= '1900-01-01' &&
+            raw <= todayStr,
+          400,
+          'Ngày sinh phải từ năm 1900 và không vượt quá ngày hiện tại.',
+        );
+        values.birth_date = raw;
+      }
+    }
+    if (req.body.gender !== undefined) {
+      const raw = String(req.body.gender || '').trim();
+      if (!raw) values.gender = null;
+      else {
+        assert(
+          ['male', 'female', 'other'].includes(raw),
+          400,
+          'Giới tính không hợp lệ.',
+        );
+        values.gender = raw;
+      }
+    }
     await d.update('nguoi_dung', values, req.user.id);
     await audit(d, req.user.id, 'profile.update', 'user', req.user.id);
     res.json({

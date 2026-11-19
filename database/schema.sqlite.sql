@@ -1,6 +1,6 @@
 -- 34 bảng nghiệp vụ theo báo cáo; tên cột được ánh xạ sang English cho ứng dụng.
 PRAGMA foreign_keys = ON;
-CREATE TABLE IF NOT EXISTS nguoi_dung (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, email TEXT UNIQUE, phone TEXT UNIQUE, password_hash TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, verified INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT, CHECK(email IS NOT NULL OR phone IS NOT NULL));
+CREATE TABLE IF NOT EXISTS nguoi_dung (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, email TEXT UNIQUE, phone TEXT UNIQUE, birth_date TEXT, gender TEXT, password_hash TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, verified INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT, CHECK(email IS NOT NULL OR phone IS NOT NULL));
 CREATE TABLE IF NOT EXISTS khach_hang (id INTEGER PRIMARY KEY REFERENCES nguoi_dung(id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS nhan_vien (id INTEGER PRIMARY KEY REFERENCES nguoi_dung(id) ON DELETE CASCADE, job_title TEXT NOT NULL DEFAULT 'sales' CHECK(job_title IN ('pharmacist','sales','warehouse')));
 CREATE TABLE IF NOT EXISTS quan_tri_vien (id INTEGER PRIMARY KEY REFERENCES nguoi_dung(id) ON DELETE CASCADE);

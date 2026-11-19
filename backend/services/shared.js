@@ -71,6 +71,8 @@ export async function publicUser(d, id) {
     name: u.name,
     email: u.email,
     phone: u.phone,
+    birthDate: u.birth_date || null,
+    gender: u.gender || null,
     active: !!u.active,
     verified: !!u.verified,
     role: roles.includes('admin')
