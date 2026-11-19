@@ -462,7 +462,6 @@ function Header() {
           >
             Sản phẩm
           </Link>
-          <Link to="/products?prescription=false">Thuốc không kê đơn</Link>
           <Link to="/prescription">Thuốc theo đơn</Link>
           <Link to="/consultation">Dược sĩ tư vấn</Link>
           <button onClick={() => setChatOpen(true)}>Góc tư vấn</button>
