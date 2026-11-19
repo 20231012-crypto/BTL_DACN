@@ -1695,3 +1695,118 @@ test('chatbot looks up standalone AT order codes, redacts PII for Gemini and fal
   assert.equal(fallback.data.mode, 'knowledge_fallback');
   assert.ok(fallback.data.products.length > 0);
 });
+
+test('admin promotions maxDiscount=0, audit, enriched prescriptions/catalog/knowledge/support, settings flags and warehouse inventory lookups', async (t) => {
+  const { login, d } = await fixture(t);
+  const admin = await login('admin@antam.vn');
+  const pharmacist = await login('duocsi@antam.vn');
+  const customer = await login();
+
+  // 1. Promotion with maxDiscount: 0 means unlimited (must NOT cap discount to 0đ)
+  const createdPromo = await admin('/admin/promotions', 'POST', {
+    code: 'KHONGGIOIHAN15',
+    name: 'Giảm 15% không giới hạn',
+    type: 'percent',
+    value: 15,
+    minOrder: 0,
+    maxDiscount: 0,
+    usageLimit: 20,
+    startDate: '2026-01-01',
+    endDate: '2099-12-31',
+    active: true,
+  });
+  assert.equal(createdPromo.status, 201);
+  assert.equal(createdPromo.data.maxDiscount, null);
+
+  await add(customer, 2, 2); // 2 * 215,000 = 430,000đ -> 15% = 64,500đ
+  const promoOrder = await order(customer, { promotionCode: 'KHONGGIOIHAN15' });
+  assert.equal(promoOrder.status, 201);
+  assert.equal(promoOrder.data.discount, 64500);
+
+  // Deactivating promotion writes promotion.deactivate audit entry
+  const delPromo = await admin(`/admin/promotions/${createdPromo.data.id}`, 'DELETE');
+  assert.equal(delPromo.status, 200);
+  const promoAudit = await d.one(
+    "SELECT * FROM nhat_ky_hoat_dong WHERE action='promotion.deactivate' AND entity_id=?",
+    String(createdPromo.data.id),
+  );
+  assert.ok(promoAudit);
+
+  // 2. Enriched GET /api/admin/prescriptions metadata
+  const rx = await upload(customer);
+  await add(customer, 10, 1);
+  const rxOrder = await order(customer, { prescriptionId: rx.id });
+  assert.equal(rxOrder.status, 201);
+  const approveRx = await pharmacist(`/admin/prescriptions/${rx.id}`, 'PATCH', {
+    status: 'approved',
+  });
+  assert.equal(approveRx.status, 200);
+  const rxList = (await pharmacist('/admin/prescriptions')).data;
+  const rxItem = rxList.find((r) => r.id === rx.id);
+  assert.ok(rxItem);
+  assert.equal(rxItem.reviewerName, 'Dược sĩ Trần Thanh Hà');
+  assert.ok(Array.isArray(rxItem.approvedProductIds));
+  assert.ok(rxItem.orderTotal > 0);
+  assert.equal(rxItem.userPhone, '0901234567');
+
+  // 3. Catalog itemCount + warehouse-only inventory lookup access
+  const [cats, mfgs, sups] = await Promise.all([
+    admin('/admin/categories'),
+    admin('/admin/manufacturers'),
+    admin('/admin/suppliers'),
+  ]);
+  assert.equal(cats.status, 200);
+  assert.equal(typeof cats.data[0].itemCount, 'number');
+  assert.ok(cats.data.some((c) => c.itemCount > 0));
+  assert.equal(typeof mfgs.data[0].itemCount, 'number');
+  assert.equal(typeof sups.data[0].itemCount, 'number');
+
+  const khoUser = (await admin('/admin/users')).data.find(
+    (u) => u.email === 'kho@antam.vn',
+  );
+  await admin(`/admin/users/${khoUser.id}`, 'PATCH', {
+    permissions: ['inventory', 'reports'],
+  });
+  const khoOnly = await login('kho@antam.vn');
+  assert.equal((await khoOnly('/admin/products')).status, 200);
+  assert.equal((await khoOnly('/admin/suppliers')).status, 200);
+  assert.equal((await khoOnly('/admin/categories')).status, 403);
+
+  // 4. Knowledge reviewerName, support handlerName/userPhone, settings consistent flags
+  const kb = await admin('/admin/knowledge', 'POST', {
+    title: 'Lưu ý bảo quản thuốc',
+    keywords: 'bảo quản, nhiệt độ',
+    content: 'Bảo quản thuốc nơi khô ráo thoáng mát, tránh ánh nắng trực tiếp.',
+    source: 'Dược thư Quốc gia Việt Nam',
+    active: true,
+  });
+  assert.equal(kb.status, 201);
+  assert.equal((await pharmacist(`/admin/knowledge/${kb.data.id}/review`, 'POST', {})).status, 200);
+  const kbList = (await pharmacist('/admin/knowledge')).data;
+  assert.equal(
+    kbList.find((k) => k.id === kb.data.id)?.reviewerName,
+    'Dược sĩ Trần Thanh Hà',
+  );
+
+  const chatHandoff = await customer('/chat', 'POST', { message: 'Tôi bị khó thở nặng' });
+  assert.equal(chatHandoff.status, 200);
+  const supQueue = (await pharmacist('/admin/support')).data;
+  assert.ok(supQueue.length > 0);
+  assert.equal(supQueue[0].userPhone, '0901234567');
+  await pharmacist(`/admin/support/${supQueue[0].id}`, 'PATCH', {
+    status: 'resolved',
+    reply: 'Vui lòng gọi cấp cứu 115 ngay lập tức.',
+  });
+  const supAfter = (await pharmacist('/admin/support')).data.find(
+    (s) => s.id === supQueue[0].id,
+  );
+  assert.equal(supAfter.handlerName, 'Dược sĩ Trần Thanh Hà');
+
+  const patchSettings = await admin('/admin/settings', 'PATCH', {
+    returnWindowDays: 10,
+  });
+  assert.equal(patchSettings.status, 200);
+  assert.equal(patchSettings.data.returnWindowDays, 10);
+  assert.equal(typeof patchSettings.data.googleConfigured, 'boolean');
+  assert.equal(typeof patchSettings.data.paymentConfigured, 'boolean');
+});
