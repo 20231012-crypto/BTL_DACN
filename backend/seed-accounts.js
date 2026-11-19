@@ -119,6 +119,18 @@ try {
         await store.update(account.profileTable, account.profile, id);
       return existing ? 'đặt lại' : 'tạo mới';
     });
+    // Đọc lại từ cơ sở dữ liệu để chắc chắn tài khoản đăng nhập được, không chỉ "ghi thành công".
+    const saved = await store.one(
+      'SELECT password_hash,active,verified FROM nguoi_dung WHERE email=?',
+      account.email,
+    );
+    const verified = Boolean(
+      saved?.active &&
+        saved?.verified &&
+        bcrypt.compareSync(password, saved.password_hash),
+    );
+    if (!verified)
+      throw new Error(`Đã ghi ${account.email} nhưng đọc lại không khớp mật khẩu.`);
     results.push({ ...account, password, state, generated: !provided });
   }
   console.log(`\nCơ sở dữ liệu: ${target}\n`);
@@ -128,7 +140,21 @@ try {
     );
   console.log('\nHãy đổi mật khẩu sau lần đăng nhập đầu tiên.');
 } catch (error) {
-  console.error(error.message);
+  const code = error.code || error.cause?.code || '';
+  console.error(`\nKHÔNG tạo được tài khoản trên ${target}.`);
+  console.error(`Lỗi: ${error.message}${code ? ` (${code})` : ''}`);
+  if (/CERT|SELF_SIGNED|UNABLE_TO_VERIFY/.test(code) || /certificate/i.test(error.message))
+    console.error(
+      'Gợi ý: Supabase dùng chứng chỉ CA riêng. Tải "SSL certificate" ở Project Settings > Database, rồi chạy kèm DATABASE_CA_CERT="$(cat đường-dẫn/tệp.crt)".',
+    );
+  else if (code === '28P01' || /password authentication/i.test(error.message))
+    console.error(
+      'Gợi ý: sai mật khẩu cơ sở dữ liệu. Thay [YOUR-DATABASE-PASSWORD] trong chuỗi kết nối bằng mật khẩu thật (ký tự đặc biệt cần mã hóa dạng %XX).',
+    );
+  else if (['ENOTFOUND', 'ECONNREFUSED', 'ETIMEDOUT'].includes(code))
+    console.error('Gợi ý: không kết nối được tới máy chủ cơ sở dữ liệu, kiểm tra lại host, cổng và mạng.');
+  else if (/relation .* does not exist|schema/i.test(error.message))
+    console.error('Gợi ý: cơ sở dữ liệu này chưa có bảng của dự án; có thể đang trỏ nhầm dự án Supabase.');
   process.exitCode = 1;
 } finally {
   await store.close();
