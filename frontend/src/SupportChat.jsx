@@ -29,6 +29,14 @@ export default function SupportChat({ item, onChanged, notify }) {
   const box = useRef(null);
   const prescriptionId = /Đơn thuốc #(\d+)/.exec(item.sessionTitle || '')?.[1];
 
+  useEffect(() => {
+    const initial = mergeMessages([], item.messages || []);
+    setMessages(initial);
+    setStatus(item.status);
+    setDraft('');
+    lastId.current = initial.at(-1)?.id || 0;
+  }, [item.id]);
+
   const remember = useCallback((incoming) => {
     for (const message of incoming)
       lastId.current = Math.max(lastId.current, message.id);
@@ -39,9 +47,19 @@ export default function SupportChat({ item, onChanged, notify }) {
     const incoming = await api(
       `/admin/support/${item.id}/messages?after=${lastId.current}`,
     );
-    remember(Array.isArray(incoming) ? incoming : []);
-    return incoming;
-  }, [item.id, remember]);
+    const list = Array.isArray(incoming) ? incoming : [];
+    remember(list);
+    if (list.some((message) => message.role === 'user')) {
+      setStatus((prev) => {
+        if (prev === 'resolved') {
+          onChanged?.();
+          return 'pending';
+        }
+        return prev;
+      });
+    }
+    return list;
+  }, [item.id, remember, onChanged]);
 
   useEffect(() => {
     const timer = setInterval(() => {

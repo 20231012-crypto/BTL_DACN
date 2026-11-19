@@ -3241,19 +3241,92 @@ function Account() {
 
 function ChatPanel({ onClose, full = false }) {
   const { user, notify, config, navigate } = useApp();
+  const storageKey = user ? `antam_chat_session_${user.id}` : 'antam_chat_guest';
   const [sessionId, setSessionId] = useState(null);
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState(() => {
+    if (user) return [];
+    try {
+      const saved = JSON.parse(sessionStorage.getItem('antam_chat_guest') || '[]');
+      return Array.isArray(saved) ? saved : [];
+    } catch {
+      return [];
+    }
+  });
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState('knowledge');
   const [sessions, setSessions] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
+  const initializedRef = React.useRef(false);
+
+  const openSession = useCallback(
+    async (id) => {
+      try {
+        const data = await api(`/chat/sessions/${id}/messages`);
+        const loaded = (Array.isArray(data) ? data : data.messages || []).map(
+          (m) => ({
+            ...m,
+            content: m.content || m.message || m.text,
+          }),
+        );
+        setSessionId(id);
+        setMessages(loaded);
+        const lastAssistant = [...loaded]
+          .reverse()
+          .find((m) => m.role === 'assistant' && m.mode);
+        setMode(lastAssistant?.mode || 'knowledge');
+        setShowHistory(false);
+        try {
+          sessionStorage.setItem(storageKey, String(id));
+        } catch {}
+      } catch (e) {
+        notify(e.message, 'error');
+      }
+    },
+    [notify, storageKey],
+  );
+
   useEffect(() => {
-    if (user)
-      api('/chat/sessions')
-        .then((data) => setSessions(Array.isArray(data) ? data : []))
-        .catch(() => {});
-  }, [user, sessionId]);
+    initializedRef.current = false;
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user) {
+      setSessions([]);
+      setSessionId(null);
+      return;
+    }
+    let cancelled = false;
+    api('/chat/sessions')
+      .then((data) => {
+        if (cancelled) return;
+        const list = Array.isArray(data) ? data : [];
+        setSessions(list);
+        if (!initializedRef.current) {
+          initializedRef.current = true;
+          let savedId = null;
+          try {
+            savedId = sessionStorage.getItem(storageKey);
+          } catch {}
+          if (savedId === 'new') return;
+          const target =
+            (savedId && list.find((s) => String(s.id) === savedId)) || list[0];
+          if (target) openSession(target.id);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [user, sessionId, storageKey, openSession]);
+
+  useEffect(() => {
+    if (user) return;
+    try {
+      sessionStorage.setItem('antam_chat_guest', JSON.stringify(messages.slice(-30)));
+    } catch {}
+  }, [user, messages]);
+
   useEffect(() => {
     const box = document.querySelector(
       full ? '.chat-full .chat-messages' : '.chat-popover .chat-messages',
@@ -3270,13 +3343,20 @@ function ChatPanel({ onClose, full = false }) {
         method: 'POST',
         body: { ...(sessionId ? { sessionId } : {}), message: text },
       });
-      setSessionId(result.sessionId);
+      if (result.sessionId) {
+        setSessionId(result.sessionId);
+        try {
+          sessionStorage.setItem(storageKey, String(result.sessionId));
+        } catch {}
+      }
       setMode(result.mode || 'knowledge');
       setMessages((old) => [
         ...old,
         {
+          id: result.id,
           role: 'assistant',
           content: result.reply,
+          mode: result.mode,
           products: result.products,
           handoff: result.handoff,
         },
@@ -3288,21 +3368,6 @@ function ChatPanel({ onClose, full = false }) {
       ]);
     } finally {
       setBusy(false);
-    }
-  };
-  const openSession = async (id) => {
-    try {
-      const data = await api(`/chat/sessions/${id}/messages`);
-      setSessionId(id);
-      setMessages(
-        (Array.isArray(data) ? data : data.messages || []).map((m) => ({
-          ...m,
-          content: m.content || m.message || m.text,
-        })),
-      );
-      setShowHistory(false);
-    } catch (e) {
-      notify(e.message, 'error');
     }
   };
   // Chuyển sang màn hình trò chuyện trực tiếp với dược sĩ.
@@ -3357,7 +3422,11 @@ function ChatPanel({ onClose, full = false }) {
             onClick={() => {
               setMessages([]);
               setSessionId(null);
+              setMode('knowledge');
               setShowHistory(false);
+              try {
+                sessionStorage.setItem(storageKey, 'new');
+              } catch {}
             }}
           >
             <Plus size={15} /> Cuộc trò chuyện mới

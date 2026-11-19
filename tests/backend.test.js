@@ -1599,3 +1599,32 @@ test('admin orders expose internal fulfillment details only to staff, support ed
   assert.match(csvRes.body, /AT202600109/);
   assert.match(csvRes.body, /'=SUM\(1,1\)/);
 });
+
+test('chat history preserves suggested products and stays separate from pharmacist consultations', async (t) => {
+  const { login } = await fixture(t);
+  const customer = await login('khach@antam.vn');
+
+  const consult = await customer('/consultations', 'POST', {
+    message: 'Em cần dược sĩ tư vấn thêm về thuốc cảm',
+  });
+  assert.equal(consult.status, 201);
+
+  const chat = await customer('/chat', 'POST', {
+    message: 'Nhà thuốc có Vitamin C không?',
+  });
+  assert.equal(chat.status, 200);
+  assert.ok(chat.data.sessionId);
+  assert.ok(chat.data.products.length > 0);
+
+  const sessions = await customer('/chat/sessions');
+  assert.equal(sessions.status, 200);
+  assert.ok(sessions.data.some((s) => s.id === chat.data.sessionId));
+  assert.ok(!sessions.data.some((s) => s.id === consult.data.consultation.id));
+
+  const history = await customer(`/chat/sessions/${chat.data.sessionId}/messages`);
+  assert.equal(history.status, 200);
+  const assistantMsg = history.data.find((m) => m.role === 'assistant');
+  assert.ok(assistantMsg);
+  assert.ok(Array.isArray(assistantMsg.products) && assistantMsg.products.length > 0);
+  assert.equal(assistantMsg.products[0].id, chat.data.products[0].id);
+});

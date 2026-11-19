@@ -9,12 +9,29 @@ import {
 } from './shared.js';
 import { generateAnswer } from '../integrations/gemini.js';
 import { geminiKeys } from '../integrations/gemini-client.js';
+import { CONSULTATION_TITLE } from './consultation.js';
+
+const parseMessageRow = (row) => {
+  const { products_json, ...rest } = row;
+  let products = [];
+  if (products_json) {
+    try {
+      const parsed = JSON.parse(products_json);
+      if (Array.isArray(parsed)) products = parsed;
+    } catch {
+      products = [];
+    }
+  }
+  return { ...camel(rest), products };
+};
+
 export function installChatbot(app, d, { auth }, options) {
   const sessionFor = async (id, userId) => {
     const s = await d.one(
-      'SELECT * FROM cuoc_hoi_thoai WHERE id=? AND user_id=?',
+      'SELECT * FROM cuoc_hoi_thoai WHERE id=? AND user_id=? AND title NOT LIKE ?',
       Number(id),
       userId,
+      `${CONSULTATION_TITLE}%`,
     );
     assert(s, 404, 'Không tìm thấy cuộc trò chuyện.');
     return s;
@@ -46,16 +63,21 @@ export function installChatbot(app, d, { auth }, options) {
     res.json({
       data: (
         await d.all(
-          'SELECT * FROM cuoc_hoi_thoai WHERE user_id=? ORDER BY id DESC',
+          'SELECT * FROM cuoc_hoi_thoai WHERE user_id=? AND title NOT LIKE ? ORDER BY updated_at DESC, id DESC',
           req.user.id,
+          `${CONSULTATION_TITLE}%`,
         )
       ).map(camel),
     }),
   );
   app.post('/api/chat/sessions', auth, async (req, res) => {
+    const rawTitle = text(req.body.title, 100) || 'Cuộc trò chuyện mới';
+    const title = rawTitle.startsWith(CONSULTATION_TITLE)
+      ? 'Cuộc trò chuyện mới'
+      : rawTitle;
     const id = await d.insert('cuoc_hoi_thoai', {
       user_id: req.user.id,
-      title: text(req.body.title, 100) || 'Cuộc trò chuyện mới',
+      title,
     });
     res.status(201).json({
       data: camel(await d.one('SELECT * FROM cuoc_hoi_thoai WHERE id=?', id)),
@@ -69,7 +91,7 @@ export function installChatbot(app, d, { auth }, options) {
           'SELECT * FROM tin_nhan WHERE session_id=? ORDER BY id',
           req.params.id,
         )
-      ).map(camel),
+      ).map(parseMessageRow),
     });
   });
   app.post('/api/chat/sessions/:id/handoff', auth, async (req, res) => {
@@ -301,12 +323,25 @@ export function installChatbot(app, d, { auth }, options) {
           'Tôi có thể giúp tra cứu sản phẩm, chính sách giao hàng, thanh toán và theo dõi đơn hàng. Câu hỏi này cần thêm thông tin hoặc tư vấn chuyên môn. Bạn có thể chọn “Gặp dược sĩ” để được nhân viên hỗ trợ. Thông tin tại đây chỉ mang tính tham khảo.';
       }
     }
+    const storedProducts = products.map(
+      ({ id: pid, name, price, unit, image, prescriptionRequired }) => ({
+        id: pid,
+        name,
+        price,
+        unit,
+        image,
+        prescriptionRequired,
+      }),
+    );
     const id = session
       ? await d.insert('tin_nhan', {
           session_id: session.id,
           role: 'assistant',
           content: reply,
           mode,
+          products_json: storedProducts.length
+            ? JSON.stringify(storedProducts)
+            : null,
         })
       : null;
     res.json({

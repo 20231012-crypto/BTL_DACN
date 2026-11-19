@@ -31,6 +31,9 @@ export function openDatabase(
       reviewed_at: 'TEXT',
       reviewed_by: 'INTEGER REFERENCES nguoi_dung(id)',
     },
+    tin_nhan: {
+      products_json: 'TEXT',
+    },
   };
   for (const [table, additions] of Object.entries(migrations)) {
     const columns = db.prepare(`PRAGMA table_info(${table})`).all();
