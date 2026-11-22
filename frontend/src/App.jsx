@@ -2535,13 +2535,15 @@ function OrderDetail({ id }) {
                 </div>
               )}
               <div className="order-title">
-                <div>
-                  <span className="eyebrow">CHI TIẾT ĐƠN HÀNG</span>
+                <div className="order-title-info">
+                  <div className="order-title-top">
+                    <span className="eyebrow">CHI TIẾT ĐƠN HÀNG</span>
+                    <Badge value={order.status} />
+                  </div>
                   <h1>{order.code}</h1>
                   <p className="muted">Đặt lúc {dateTime(order.createdAt)}</p>
                 </div>
                 <div className="order-title-actions">
-                  <Badge value={order.status} />
                   <button
                     type="button"
                     className="btn btn-primary btn-small"
