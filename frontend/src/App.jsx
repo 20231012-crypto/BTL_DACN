@@ -532,6 +532,19 @@ function Header() {
     setMenu(false);
     setCatMenu(false);
   }, [route]);
+  useEffect(() => {
+    if (!menu) return undefined;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setMenu(false);
+    };
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menu]);
   return (
     <>
       <div className="topbar">
@@ -593,16 +606,43 @@ function Header() {
             <button
               className="icon-btn mobile-menu"
               onClick={() => setMenu(!menu)}
-              aria-label="Mở danh mục"
+              aria-label={menu ? 'Đóng danh mục' : 'Mở danh mục'}
+              aria-expanded={menu}
             >
-              <Menu />
+              {menu ? <X size={22} /> : <Menu />}
             </button>
           </div>
         </div>
+        <div
+          className={`nav-backdrop ${menu ? 'show' : ''}`}
+          onClick={() => setMenu(false)}
+          aria-hidden="true"
+        />
         <nav
           className={`container navigation ${menu ? 'mobile-open' : ''}`}
           aria-label="Điều hướng chính"
         >
+          <div className="mobile-nav-head">
+            <Link to="/" className="brand" onClick={() => setMenu(false)}>
+              <span className="brand-mark">
+                <LogoIcon size={34} />
+              </span>
+              <span>
+                <small>NHÀ THUỐC</small>
+                <strong>
+                  an tâm<span>.</span>
+                </strong>
+              </span>
+            </Link>
+            <button
+              type="button"
+              className="icon-btn mobile-nav-close"
+              onClick={() => setMenu(false)}
+              aria-label="Đóng menu"
+            >
+              <X size={20} />
+            </button>
+          </div>
           <div
             className="nav-categories-wrap"
             onBlur={(e) => {
@@ -676,7 +716,10 @@ function Header() {
           </Link>
           <button
             className={chatOpen || path.startsWith('/chat') ? 'active' : ''}
-            onClick={() => setChatOpen(true)}
+            onClick={() => {
+              setMenu(false);
+              setChatOpen(true);
+            }}
           >
             Góc tư vấn
           </button>
