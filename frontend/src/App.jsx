@@ -384,6 +384,7 @@ export default function App() {
     addToCart,
     reorder,
     logout,
+    chatOpen,
     setChatOpen,
     selectedPrescription,
     setSelectedPrescription,
@@ -512,8 +513,17 @@ function Toast({ toast, onClose }) {
 }
 
 function Header() {
-  const { user, cart, route, navigate, categories, logout, setChatOpen } =
-    useApp();
+  const {
+    user,
+    cart,
+    route,
+    navigate,
+    categories,
+    logout,
+    chatOpen,
+    setChatOpen,
+  } = useApp();
+  const path = route.split('?')[0];
   const [search, setSearch] = useState('');
   const [menu, setMenu] = useState(false);
   const [catMenu, setCatMenu] = useState(false);
@@ -637,21 +647,50 @@ function Header() {
               </div>
             )}
           </div>
-          <Link className={route === '/' ? 'active' : ''} to="/">
+          <Link className={path === '/' && !chatOpen ? 'active' : ''} to="/">
             Trang chủ
           </Link>
           <Link
-            className={route.startsWith('/products') ? 'active' : ''}
+            className={
+              path.startsWith('/products') && !chatOpen ? 'active' : ''
+            }
             to="/products"
           >
             Sản phẩm
           </Link>
-          <Link to="/prescription">Thuốc theo đơn</Link>
-          <Link to="/consultation">Dược sĩ tư vấn</Link>
-          <button onClick={() => setChatOpen(true)}>Góc tư vấn</button>
-          <Link to="/orders">Theo dõi đơn hàng</Link>
+          <Link
+            className={
+              path.startsWith('/prescription') && !chatOpen ? 'active' : ''
+            }
+            to="/prescription"
+          >
+            Thuốc theo đơn
+          </Link>
+          <Link
+            className={
+              path.startsWith('/consultation') && !chatOpen ? 'active' : ''
+            }
+            to="/consultation"
+          >
+            Dược sĩ tư vấn
+          </Link>
+          <button
+            className={chatOpen || path.startsWith('/chat') ? 'active' : ''}
+            onClick={() => setChatOpen(true)}
+          >
+            Góc tư vấn
+          </button>
+          <Link
+            className={path.startsWith('/orders') && !chatOpen ? 'active' : ''}
+            to="/orders"
+          >
+            Theo dõi đơn hàng
+          </Link>
           {user && ['admin', 'staff'].includes(user.role) && (
-            <Link to="/admin" className="staff-nav">
+            <Link
+              to="/admin"
+              className={`staff-nav${path.startsWith('/admin') ? ' active' : ''}`}
+            >
               Quản lý nhà thuốc <ArrowUpRight size={14} />
             </Link>
           )}
