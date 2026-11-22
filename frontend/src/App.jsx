@@ -1537,15 +1537,17 @@ function ProductDetail({ id }) {
               </div>
             </div>
           )}
-          <div className="quantity-label">Số lượng</div>
-          <div className="detail-actions">
+          <div className="detail-quantity-row">
+            <span className="quantity-label">Số lượng</span>
             <Quantity value={quantity} max={p.stock} onChange={setQuantity} />
+          </div>
+          <div className="detail-actions">
             <button
               className="btn btn-primary"
               disabled={p.stock <= 0}
               onClick={() => addToCart(p.id, quantity)}
             >
-              <ShoppingBag size={19} /> Thêm vào giỏ hàng
+              <ShoppingBag size={18} /> Thêm vào giỏ hàng
             </button>
             <button
               type="button"

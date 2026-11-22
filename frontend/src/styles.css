@@ -27,6 +27,7 @@
 }
 body {
   margin: 0;
+  overflow-x: clip;
 }
 button,
 input,
@@ -390,6 +391,7 @@ svg {
   gap: 12px;
   padding-left: 15px;
   max-width: 575px;
+  min-width: 0;
   flex: 1;
   color: #7e8b7c;
   height: 45px;
@@ -398,6 +400,7 @@ svg {
   border: 0;
   background: none;
   outline: 0;
+  width: 0;
   min-width: 0;
   flex: 1;
   font-size: 11px;
@@ -1692,18 +1695,31 @@ svg {
   color: #819170;
   line-height: 1.9;
 }
+.detail-quantity-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 22px 0 14px;
+}
 .quantity-label {
-  font-size: 11px;
-  margin: 22px 0 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #466052;
+  margin: 0;
 }
 .detail-actions {
   display: flex;
-  gap: 17px;
-  align-items: center;
+  gap: 12px;
+  align-items: stretch;
 }
 .detail-actions > .btn {
   flex: 1;
-  max-width: 300px;
+  max-width: 250px;
+  min-height: 46px;
+  white-space: nowrap;
+}
+.detail-actions > .detail-wish-btn {
+  flex: 0 1 170px;
 }
 .quantity {
   display: inline-flex;
@@ -3426,16 +3442,34 @@ svg {
   }
   .header-search {
     order: 3;
-    max-width: none;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     flex: 0 0 100%;
     height: 41px;
   }
+  .header-search.has-scope {
+    padding-left: 4px;
+    gap: 6px;
+  }
   .header-search input {
-    font-size: 10px;
+    font-size: 11px;
   }
   .header-search button {
-    font-size: 9px;
+    font-size: 10px;
     height: 29px;
+  }
+  .header-search .search-scope-trigger {
+    max-width: 88px;
+    padding: 0 7px;
+    font-size: 10px;
+    gap: 4px;
+  }
+  .header-search .search-submit-btn {
+    padding: 0 10px;
+    margin-right: 4px;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
   .mobile-menu {
     display: flex;
@@ -4153,12 +4187,28 @@ svg {
   .detail-copy > p {
     font-size: 11px;
   }
+  .detail-quantity-row {
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #f6f9f4;
+    border: 1px solid #e4ece0;
+    margin: 18px 0 12px;
+  }
   .detail-actions {
-    gap: 12px;
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 10px;
   }
   .detail-actions > .btn {
+    width: 100%;
     max-width: none;
-    min-height: 43px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0 10px;
+    font-size: 12px;
+    gap: 7px;
+    white-space: nowrap;
   }
   .detail-consult {
     max-width: none;
@@ -4897,13 +4947,17 @@ svg {
     min-height: 0;
   }
   .hero-copy {
-    padding: 30px 23px 26px;
+    padding: 28px 20px 24px;
+    min-width: 0;
   }
   .hero .eyebrow {
     font-size: 9px;
   }
   .hero h1 {
-    font-size: clamp(37px, 8.7vw, 46px);
+    font-size: clamp(28px, 8vw, 42px);
+  }
+  .hero h1 em {
+    white-space: normal;
   }
   .hero-copy > p {
     font-size: 12px;
