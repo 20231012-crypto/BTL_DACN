@@ -969,7 +969,6 @@ const PRODUCTS_PER_PAGE = 9;
 function Catalog() {
   const { route, categories, manufacturers, navigate, notify } = useApp();
   const params = new URLSearchParams(route.split('?')[1]);
-  const [search, setSearch] = useState(params.get('search') || '');
   const [items, setItems] = useState(null);
   const [error, setError] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -1031,10 +1030,7 @@ function Catalog() {
     activeFilters.push({
       key: 'search',
       label: `Từ khóa: “${params.get('search')}”`,
-      clear: () => {
-        setSearch('');
-        update('search', '');
-      },
+      clear: () => update('search', ''),
     });
   if (params.get('category')) {
     const cat = categories.find(
@@ -1095,7 +1091,6 @@ function Catalog() {
     });
   }
   const clearAllFilters = () => {
-    setSearch('');
     setPrice({ minPrice: '', maxPrice: '' });
     navigate('/products');
   };
@@ -1266,10 +1261,71 @@ function Catalog() {
           </div>
         </aside>
         <div className="catalog-content">
-          <ProductSearch className="catalog-search" value={search} onChange={setSearch}
-            prescription={params.get('prescription') || 'false'} onSubmit={(query) => update('search', query)}
-            onChoose={(product) => navigate(`/products/${product.id}`)} />
-
+          {(() => {
+            const selectedCat = params.get('category')
+              ? categories.find(
+                  (c) =>
+                    String(c.id) === params.get('category') ||
+                    c.slug === params.get('category'),
+                )
+              : null;
+            const extraFilters = activeFilters.filter(
+              (f) => f.key !== 'category',
+            );
+            return (
+              <div
+                className="catalog-active-bar"
+                aria-label="Danh mục và bộ lọc đang chọn"
+              >
+                <div className="catalog-active-main">
+                  <span className="catalog-active-label">
+                    Danh mục:{' '}
+                    <strong>
+                      {selectedCat
+                        ? selectedCat.name
+                        : params.get('category') || 'Tất cả sản phẩm'}
+                    </strong>
+                  </span>
+                  {selectedCat && (
+                    <button
+                      type="button"
+                      className="catalog-active-reset"
+                      onClick={() => update('category', '')}
+                      aria-label="Bỏ chọn danh mục"
+                      title="Bỏ chọn danh mục"
+                    >
+                      <X size={15} />
+                    </button>
+                  )}
+                </div>
+                {extraFilters.length > 0 && (
+                  <div className="active-filter-chips">
+                    {extraFilters.map((f) => (
+                      <button
+                        key={f.key}
+                        type="button"
+                        className="filter-chip"
+                        onClick={f.clear}
+                        title="Bấm để gỡ bộ lọc này"
+                      >
+                        <span>{f.label}</span>
+                        <X size={13} />
+                      </button>
+                    ))}
+                    {activeFilters.length > 1 && (
+                      <button
+                        type="button"
+                        className="filter-chip-clear-all"
+                        onClick={clearAllFilters}
+                      >
+                        Xóa tất cả
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           <div className="catalog-toolbar">
             <span>
               {items ? (
@@ -1308,31 +1364,6 @@ function Catalog() {
               <option value="name">Tên A–Z</option>
             </select>
           </div>
-          {activeFilters.length > 0 && (
-            <div className="active-filter-chips" aria-label="Bộ lọc đang áp dụng">
-              {activeFilters.map((f) => (
-                <button
-                  key={f.key}
-                  type="button"
-                  className="filter-chip"
-                  onClick={f.clear}
-                  title="Bấm để gỡ bộ lọc này"
-                >
-                  <span>{f.label}</span>
-                  <X size={13} />
-                </button>
-              ))}
-              {activeFilters.length > 1 && (
-                <button
-                  type="button"
-                  className="filter-chip-clear-all"
-                  onClick={clearAllFilters}
-                >
-                  Xóa tất cả
-                </button>
-              )}
-            </div>
-          )}
           <ErrorBox error={error} />
           {!items && !error ? (
             <Spinner />
