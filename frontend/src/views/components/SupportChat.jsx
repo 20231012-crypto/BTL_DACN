@@ -66,48 +66,55 @@ export default function SupportChat({ item, onChanged, notify }) {
           </div>
         ))}
       </div>
-      <form className="adm-chat-form" onSubmit={c.send}>
-        <div className="adm-quick-notes">
-          <span>Mẫu tư vấn nhanh:</span>
-          {SUPPORT_QUICK_REPLIES.map((tpl, idx) => (
+      {c.status === 'resolved' ? (
+        <div className="adm-inline-note adm-support-closed-note">
+          <strong>Cuộc tư vấn này đã kết thúc và đóng.</strong> Khách hàng sẽ
+          cần mở cuộc trò chuyện mới nếu có câu hỏi tiếp theo.
+        </div>
+      ) : (
+        <form className="adm-chat-form" onSubmit={c.send}>
+          <div className="adm-quick-notes">
+            <span>Mẫu tư vấn nhanh:</span>
+            {SUPPORT_QUICK_REPLIES.map((tpl, idx) => (
+              <button
+                key={idx}
+                type="button"
+                className="adm-quick-chip"
+                onClick={() => c.appendTemplate(tpl)}
+              >
+                Mẫu #{idx + 1}
+              </button>
+            ))}
+          </div>
+          <textarea
+            value={c.draft}
+            onChange={(event) => c.setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) c.send(event);
+            }}
+            placeholder="Nhập nội dung tư vấn gửi khách hàng…"
+            aria-label="Nội dung tư vấn"
+            maxLength={5000}
+            rows={3}
+          />
+          <div className="adm-chat-actions">
             <button
-              key={idx}
               type="button"
-              className="adm-quick-chip"
-              onClick={() => c.appendTemplate(tpl)}
+              className="adm-btn"
+              onClick={c.finish}
+              disabled={c.busy}
             >
-              Mẫu #{idx + 1}
+              Kết thúc tư vấn
             </button>
-          ))}
-        </div>
-        <textarea
-          value={c.draft}
-          onChange={(event) => c.setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) c.send(event);
-          }}
-          placeholder="Nhập nội dung tư vấn gửi khách hàng…"
-          aria-label="Nội dung tư vấn"
-          maxLength={5000}
-          rows={3}
-        />
-        <div className="adm-chat-actions">
-          <button
-            type="button"
-            className="adm-btn"
-            onClick={c.finish}
-            disabled={c.busy || c.status === 'resolved'}
-          >
-            Kết thúc tư vấn
-          </button>
-          <button
-            className="adm-btn primary"
-            disabled={c.busy || !c.draft.trim()}
-          >
-            Gửi tin nhắn
-          </button>
-        </div>
-      </form>
+            <button
+              className="adm-btn primary"
+              disabled={c.busy || !c.draft.trim()}
+            >
+              Gửi tin nhắn
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }

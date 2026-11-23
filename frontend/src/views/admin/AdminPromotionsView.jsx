@@ -166,6 +166,8 @@ export default function AdminPromotionsView({
                   usageLimit: 100,
                   startDate: vnDate(0),
                   endDate: vnDate(30),
+                  applyScope: 'order',
+                  targetIds: [],
                   active: true,
                 })
               }
@@ -179,6 +181,7 @@ export default function AdminPromotionsView({
         <Table
           columns={[
             'Mã & Tên chương trình',
+            'Phạm vi áp dụng',
             'Mức giảm',
             'Đơn tối thiểu',
             'Thời gian áp dụng',
@@ -225,6 +228,25 @@ export default function AdminPromotionsView({
                     </button>
                   </div>
                   <small>{p.name}</small>
+                </td>
+                <td className="adm-cell-wrap">
+                  <span className="adm-scope-badge">
+                    {p.applyScope === 'combo'
+                      ? p.targetIds?.length
+                        ? `Combo (${p.targetIds.length})`
+                        : 'Tất cả Combo'
+                      : p.applyScope === 'product'
+                        ? `Sản phẩm (${p.targetIds?.length || 0})`
+                        : 'Tổng đơn hàng'}
+                  </span>
+                  {p.targetNames?.length > 0 && (
+                    <small>
+                      {p.targetNames.slice(0, 2).join(', ')}
+                      {p.targetNames.length > 2
+                        ? ` +${p.targetNames.length - 2}`
+                        : ''}
+                    </small>
+                  )}
                 </td>
                 <td className="adm-green">
                   <strong>

@@ -38,6 +38,17 @@ export function openDatabase(
       birth_date: 'TEXT',
       gender: 'TEXT',
     },
+    chi_tiet_gio_hang: {
+      selected: 'INTEGER NOT NULL DEFAULT 1',
+    },
+    khuyen_mai: {
+      apply_scope: "TEXT NOT NULL DEFAULT 'order'",
+      target_ids_json: "TEXT NOT NULL DEFAULT '[]'",
+    },
+    chi_tiet_don_hang: {
+      combo_id: 'INTEGER REFERENCES combo_san_pham(id)',
+      combo_name: "TEXT NOT NULL DEFAULT ''",
+    },
   };
   for (const [table, additions] of Object.entries(migrations)) {
     const columns = db.prepare(`PRAGMA table_info(${table})`).all();

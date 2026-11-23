@@ -5950,3 +5950,527 @@ svg {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* === Cart Checkbox Selection & Combo Rows === */
+.cart-table-head-check {
+  display: grid;
+  grid-template-columns: 1fr 140px 150px;
+  align-items: center;
+  gap: 16px;
+}
+.cart-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--ink, #17332a);
+}
+.cart-select-all input,
+.cart-item-check input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--brand, #167a5b);
+  cursor: pointer;
+}
+.cart-product-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.cart-item-check {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.cart-row-check.is-unselected {
+  opacity: 0.62;
+  background: rgba(15, 23, 42, 0.02);
+}
+.cart-combo-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.cart-combo-items {
+  font-size: 0.82rem;
+  color: var(--muted, #5c6f68);
+  line-height: 1.4;
+}
+.cart-price-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.cart-price-pair del {
+  color: var(--muted, #7f918a);
+  font-size: 0.85em;
+}
+.combo-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e7f6ef;
+  color: #0f684c;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.combo-inline-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #e7f6ef;
+  color: #0f684c;
+  font-style: normal;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+/* === Storefront Combo Section === */
+.combo-section {
+  padding-top: 24px;
+  padding-bottom: 24px;
+}
+.combo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 20px;
+}
+.combo-card {
+  background: #fff;
+  border: 1px solid rgba(17, 65, 50, 0.1);
+  border-radius: 18px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.combo-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px rgba(17, 65, 50, 0.08);
+}
+.combo-card-media {
+  position: relative;
+  background: linear-gradient(135deg, #f3faf6, #eaf4ef);
+  height: 168px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.combo-card-media img {
+  max-height: 132px;
+  max-width: 100%;
+  object-fit: contain;
+}
+.combo-card-media .combo-pill {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+}
+.combo-save-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #d9483b;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.combo-card-body {
+  padding: 16px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+.combo-card-body h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.35;
+}
+.combo-card-desc {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--muted, #5c6f68);
+  line-height: 1.45;
+}
+.combo-card-items {
+  list-style: none;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f7faf8;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.83rem;
+}
+.combo-card-items li b {
+  color: #0f684c;
+}
+.combo-card-foot {
+  margin-top: auto;
+  padding-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.combo-card-prices {
+  display: flex;
+  flex-direction: column;
+}
+.combo-card-prices strong {
+  font-size: 1.12rem;
+  color: #0f684c;
+}
+.combo-card-prices del {
+  font-size: 0.82rem;
+  color: #82948e;
+}
+
+/* === Checkout Voucher Picker === */
+.voucher-summary-box {
+  border: 1px dashed rgba(22, 122, 91, 0.35);
+  background: #f6fbf8;
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0;
+}
+.voucher-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #144d3a;
+}
+.voucher-summary-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.voucher-clear-btn {
+  border: none;
+  background: transparent;
+  color: #b43c32;
+  font-size: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+}
+.voucher-applied-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #fff;
+  border: 1px solid rgba(22, 122, 91, 0.2);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+.voucher-applied-pill strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+.voucher-applied-pill small {
+  display: block;
+  color: var(--muted, #5c6f68);
+  font-size: 0.78rem;
+}
+.voucher-hint-text {
+  margin: 0;
+}
+.voucher-actions-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.voucher-pick-btn,
+.voucher-best-btn {
+  flex: 1;
+  min-width: 128px;
+  justify-content: center;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+}
+.btn-soft {
+  background: #e2f5ec;
+  color: #0f684c;
+  border: 1px solid rgba(15, 104, 76, 0.2);
+}
+.btn-soft:hover {
+  background: #d3eee1;
+}
+.voucher-modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.voucher-best-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #e7f7ef, #f3faf6);
+  border: 1px solid rgba(22, 122, 91, 0.25);
+}
+.voucher-best-banner strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #0f684c;
+  font-size: 0.9rem;
+}
+.voucher-best-banner span {
+  display: block;
+  font-size: 0.84rem;
+  color: #2f4b41;
+  margin-top: 2px;
+}
+.voucher-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.voucher-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(17, 65, 50, 0.14);
+  background: #fff;
+}
+.voucher-card.is-selected {
+  border-color: #167a5b;
+  background: #f3fbf7;
+}
+.voucher-card.is-disabled {
+  opacity: 0.62;
+  background: #f8faf9;
+}
+.voucher-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.voucher-card-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.voucher-code-chip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700;
+  font-size: 0.8rem;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #eef4f1;
+  color: #144d3a;
+}
+.voucher-best-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 700;
+}
+.voucher-scope-tag {
+  font-size: 0.74rem;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.voucher-meta {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted, #5c6f68);
+}
+.voucher-saving {
+  font-size: 0.84rem;
+  color: #0f684c;
+}
+.voucher-ineligible-reason {
+  font-size: 0.8rem;
+  color: #b43c32;
+}
+
+/* === Multi-Thread Pharmacist Chat === */
+.pharmacist-chat-shell {
+  display: grid;
+  grid-template-columns: 290px minmax(0, 1fr);
+  gap: 20px;
+  align-items: stretch;
+}
+.pharmacist-threads {
+  border: 1px solid rgba(17, 65, 50, 0.1);
+  border-radius: 16px;
+  background: #f9fcfa;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: 580px;
+}
+.pharmacist-threads-head {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(17, 65, 50, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pharmacist-threads-list {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  flex: 1;
+}
+.pharmacist-threads-empty {
+  padding: 14px 8px;
+  text-align: center;
+}
+.pharmacist-thread-item {
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(17, 65, 50, 0.1);
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.pharmacist-thread-item.is-selected {
+  border-color: #167a5b;
+  background: #eef9f3;
+}
+.pharmacist-thread-item.is-closed {
+  opacity: 0.82;
+}
+.pharmacist-thread-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+}
+.pharmacist-thread-top strong {
+  font-size: 0.86rem;
+  line-height: 1.3;
+  color: #163329;
+}
+.pharmacist-thread-preview {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #556b63;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pharmacist-thread-item small {
+  font-size: 0.72rem;
+  color: #7d918a;
+}
+.consult-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.consult-badge.is-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+.consult-badge.is-active {
+  background: #dcfce7;
+  color: #166534;
+}
+.consult-badge.is-closed {
+  background: #e5e7eb;
+  color: #4b5563;
+}
+.pharmacist-chat-form-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pharmacist-topic-input {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(17, 65, 50, 0.16);
+  font-size: 0.88rem;
+}
+.pharmacist-closed-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+}
+.pharmacist-closed-banner strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #374151;
+}
+.pharmacist-closed-banner p {
+  margin: 4px 0 0;
+  font-size: 0.84rem;
+  color: #4b5563;
+}
+@media (max-width: 860px) {
+  .pharmacist-chat-shell {
+    grid-template-columns: 1fr;
+  }
+  .pharmacist-threads {
+    max-height: 240px;
+  }
+  .voucher-best-banner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

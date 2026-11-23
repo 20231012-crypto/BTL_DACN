@@ -1167,9 +1167,10 @@ test('pharmacist consultation is a two-way chat scoped to the customer and an ow
   assert.match(created.data.consultation.title, new RegExp(`Đơn thuốc #${rx.id}$`));
   assert.equal(created.data.consultation.status, 'pending');
 
-  const again = await customer('/consultations', 'POST', { message: 'Đơn gửi lúc sáng', prescriptionId: rx.id });
-  assert.equal(again.status, 200);
-  assert.equal(again.data.consultation.id, id, 'an open consultation is reused');
+  const secondMsg = await customer(`/consultations/${id}/messages`, 'POST', {
+    message: 'Đơn gửi lúc sáng',
+  });
+  assert.equal(secondMsg.status, 201);
 
   assert.equal((await other(`/consultations/${id}/messages`)).status, 404);
   assert.equal((await other(`/consultations/${id}/messages`, 'POST', { message: 'xen vào' })).status, 404);
@@ -1193,10 +1194,27 @@ test('pharmacist consultation is a two-way chat scoped to the customer and an ow
 
   const resolved = await pharmacist(`/admin/support/${item.id}`, 'PATCH', { status: 'resolved', reply: 'Kết thúc tư vấn.' });
   assert.equal(resolved.status, 200);
-  assert.equal((await customer(`/consultations/${id}/messages`)).data.consultation.status, 'resolved');
-  assert.equal((await customer(`/consultations/${id}/messages`, 'POST', { message: 'Cho mình hỏi thêm' })).status, 201);
-  assert.equal((await customer(`/consultations/${id}/messages`)).data.consultation.status, 'pending', 'a new customer message reopens the consultation');
-  assert.equal((await customer('/consultations')).data.length, 1);
+  const afterClose = await customer(`/consultations/${id}/messages`);
+  assert.equal(afterClose.data.consultation.status, 'resolved');
+  assert.equal(afterClose.data.consultation.closed, true);
+  assert.equal(
+    (await customer(`/consultations/${id}/messages`, 'POST', { message: 'Cho mình hỏi thêm' })).status,
+    409,
+    'a closed consultation cannot accept further customer messages',
+  );
+  assert.equal(
+    (await pharmacist(`/admin/support/${item.id}/messages`, 'POST', { message: 'Nhắn thêm sau khi đóng' })).status,
+    409,
+    'a closed consultation cannot accept further pharmacist messages',
+  );
+
+  const secondThread = await customer('/consultations', 'POST', {
+    title: 'Hỏi thêm về vitamin',
+    message: 'Mình muốn mở cuộc trò chuyện mới để hỏi thêm',
+  });
+  assert.equal(secondThread.status, 201);
+  assert.notEqual(secondThread.data.consultation.id, id);
+  assert.equal((await customer('/consultations')).data.length, 2);
 });
 
 test('returned goods are tracked from approval to restock or discard', async (t) => {
@@ -1295,8 +1313,9 @@ test('pending PostgreSQL migrations are applied once and never block startup', a
   };
   assert.equal((await run(true)).length, 0, 'existing table: no DDL');
   const applied = await run(false);
-  assert.equal(applied.length, 1);
+  assert.equal(applied.length, 2);
   assert.match(applied[0], /CREATE TABLE IF NOT EXISTS antam\.hang_tra_ve/);
+  assert.match(applied[1], /CREATE TABLE IF NOT EXISTS antam\.combo_san_pham/);
   const log = console.error;
   console.error = () => {};
   try {
@@ -1980,4 +1999,218 @@ test('VietQR webhook auto-confirms payment with strict token/amount/idempotency 
     String(created.data.id),
   );
   assert.ok(auditRow);
+});
+
+test('cart checkbox selection checks out only selected items and preserves unselected items', async (t) => {
+  const { login } = await fixture(t);
+  const customer = await login('khach@antam.vn');
+
+  await customer('/cart', 'POST', { productId: 1, quantity: 2 });
+  await customer('/cart', 'POST', { productId: 2, quantity: 1 });
+  const cartBefore = (await customer('/cart')).data;
+  assert.equal(cartBefore.length, 2);
+  assert.equal(cartBefore.every((x) => x.selected === true), true);
+
+  const item1 = cartBefore.find((x) => x.productId === 1);
+  const item2 = cartBefore.find((x) => x.productId === 2);
+  const toggled = await customer(`/cart/${item2.id}`, 'PATCH', {
+    selected: false,
+  });
+  assert.equal(toggled.status, 200);
+  assert.equal(
+    toggled.data.find((x) => x.id === item2.id).selected,
+    false,
+  );
+
+  const placed = await customer('/orders', 'POST', {
+    addressId: 1,
+    paymentMethod: 'cod',
+  });
+  assert.equal(placed.status, 201, JSON.stringify(placed.body));
+  assert.equal(placed.data.items.length, 1);
+  assert.equal(placed.data.items[0].productId, 1);
+  assert.equal(placed.data.items[0].quantity, 2);
+
+  const cartAfter = (await customer('/cart')).data;
+  assert.equal(cartAfter.length, 1, 'unselected item must stay in cart');
+  assert.equal(cartAfter[0].productId, 2);
+  assert.equal(cartAfter[0].selected, false);
+});
+
+test('product combos CRUD, scoped promotions (order/product/combo), best voucher evaluation and FEFO checkout', async (t) => {
+  const { login } = await fixture(t);
+  const admin = await login('admin@antam.vn');
+  const customer = await login('khach@antam.vn');
+
+  const p1Before = (await customer('/products/1')).data;
+  const p2Before = (await customer('/products/2')).data;
+
+  const createdCombo = await admin('/admin/combos', 'POST', {
+    name: 'Combo Test Khỏe Mạnh',
+    description: 'Tổ hợp 2 sản phẩm test',
+    price: 95000,
+    active: true,
+    items: [
+      { productId: 1, quantity: 1 },
+      { productId: 2, quantity: 1 },
+    ],
+  });
+  assert.equal(createdCombo.status, 201, JSON.stringify(createdCombo.body));
+  const comboId = createdCombo.data.id;
+  assert.equal(
+    createdCombo.data.originalPrice,
+    p1Before.price + p2Before.price,
+  );
+  assert.ok(createdCombo.data.stock > 0);
+
+  const publicCombos = await customer('/combos');
+  assert.equal(publicCombos.status, 200);
+  assert.ok(publicCombos.data.some((c) => c.id === comboId));
+
+  const prodPromo = await admin('/admin/promotions', 'POST', {
+    code: 'ONLYP1',
+    name: 'Giảm 20.000đ cho SP #1',
+    type: 'fixed',
+    value: 20000,
+    minOrder: 20000,
+    usageLimit: 50,
+    startDate: '2026-01-01',
+    endDate: '2028-12-31',
+    applyScope: 'product',
+    targetIds: [1],
+    active: true,
+  });
+  assert.equal(prodPromo.status, 201, JSON.stringify(prodPromo.body));
+  assert.equal(prodPromo.data.applyScope, 'product');
+  assert.deepEqual(prodPromo.data.targetIds, [1]);
+
+  const comboPromo = await admin('/admin/promotions', 'POST', {
+    code: 'ONLYCOMBO40',
+    name: 'Giảm 40.000đ cho Combo Test',
+    type: 'fixed',
+    value: 40000,
+    minOrder: 50000,
+    usageLimit: 50,
+    startDate: '2026-01-01',
+    endDate: '2028-12-31',
+    applyScope: 'combo',
+    targetIds: [comboId],
+    active: true,
+  });
+  assert.equal(comboPromo.status, 201, JSON.stringify(comboPromo.body));
+  assert.equal(comboPromo.data.applyScope, 'combo');
+
+  // Add combo to cart + standalone product 1
+  const addCombo = await customer('/cart/combos', 'POST', {
+    comboId,
+    quantity: 2,
+  });
+  assert.equal(addCombo.status, 201, JSON.stringify(addCombo.body));
+  const comboRow = addCombo.data.find(
+    (x) => x.itemType === 'combo' && x.comboId === comboId,
+  );
+  assert.ok(comboRow);
+  await customer('/cart', 'POST', { productId: 1, quantity: 1 });
+
+  const evalRes = await customer('/promotions/evaluate', 'POST', {});
+  assert.equal(evalRes.status, 200, JSON.stringify(evalRes.body));
+  assert.equal(evalRes.data.bestPromotion.code, 'ONLYCOMBO40');
+  assert.equal(evalRes.data.bestPromotion.discount, 40000);
+  assert.equal(evalRes.data.bestPromotion.isBest, true);
+  assert.ok(
+    evalRes.data.promotions.some(
+      (p) => p.code === 'ONLYP1' && p.eligible && p.discount === 20000,
+    ),
+  );
+
+  // Unselect standalone product 1 -> ONLYP1 becomes ineligible
+  const cartNow = (await customer('/cart')).data;
+  const p1CartRow = cartNow.find(
+    (x) => x.itemType === 'product' && x.productId === 1,
+  );
+  await customer(`/cart/${p1CartRow.id}`, 'PATCH', { selected: false });
+  const evalComboOnly = await customer('/promotions/evaluate', 'POST', {});
+  assert.equal(
+    evalComboOnly.data.promotions.find((p) => p.code === 'ONLYP1').eligible,
+    false,
+  );
+  assert.equal(evalComboOnly.data.bestPromotion.code, 'ONLYCOMBO40');
+
+  // Place order with combo only + ONLYCOMBO40
+  const comboOrder = await customer('/orders', 'POST', {
+    addressId: 1,
+    paymentMethod: 'cod',
+    promotionCode: 'ONLYCOMBO40',
+  });
+  assert.equal(comboOrder.status, 201, JSON.stringify(comboOrder.body));
+  assert.equal(comboOrder.data.subtotal, 190000);
+  assert.equal(comboOrder.data.discount, 40000);
+  assert.equal(
+    comboOrder.data.items.every((i) => i.comboId === comboId),
+    true,
+  );
+
+  // Verify FEFO stock reserved for both underlying products (2 units each)
+  const p1After = (await customer('/products/1')).data;
+  const p2After = (await customer('/products/2')).data;
+  assert.equal(p1After.stock, p1Before.stock - 2);
+  assert.equal(p2After.stock, p2Before.stock - 2);
+
+  // Unselected product 1 still remains in cart
+  const cartFinal = (await customer('/cart')).data;
+  assert.equal(cartFinal.length, 1);
+  assert.equal(cartFinal[0].productId, 1);
+});
+
+test('chatbot routes policy questions through Gemini when configured via env or admin settings', async (t) => {
+  const originalFetch = globalThis.fetch;
+  let geminiCalls = 0;
+  let lastPayload = '';
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    if (String(url).includes('generativelanguage.googleapis.com')) {
+      geminiCalls += 1;
+      lastPayload = String(init?.body || '');
+      return new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    text: 'Phí giao hàng tại An Tâm là 25.000đ và miễn phí từ 299.000đ.',
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    return originalFetch(url, init);
+  });
+
+  const { login } = await fixture(t, { allowProviderInTests: true });
+  const admin = await login('admin@antam.vn');
+  const customer = await login('khach@antam.vn');
+
+  const saved = await admin('/admin/settings', 'PATCH', {
+    geminiApiKey: 'AIzaTestSettingsKey123456',
+    geminiModel: 'gemini-2.5-flash',
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.data.geminiConfigured, true);
+  assert.equal(saved.data.geminiApiKey, undefined, 'raw key must never be returned');
+  assert.match(saved.data.geminiKeyMasked, /^AIza/);
+
+  const pubConfig = await customer('/config');
+  assert.equal(pubConfig.data.geminiConfigured, true);
+
+  const shipReply = await customer('/chat', 'POST', {
+    message: 'Phí giao hàng bao nhiêu vậy?',
+  });
+  assert.equal(shipReply.status, 200);
+  assert.equal(shipReply.data.mode, 'gemini');
+  assert.ok(geminiCalls >= 1);
+  assert.match(lastPayload, /Combo sản phẩm tiết kiệm/);
 });

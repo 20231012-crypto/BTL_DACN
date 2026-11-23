@@ -108,7 +108,17 @@ export default function OrderDetailView({ id }) {
                         key={item.id || item.productId}
                       >
                         <div>
-                          <strong>{item.name}</strong>
+                          <strong>
+                            {item.name}
+                            {item.comboName && (
+                              <>
+                                {' '}
+                                <em className="combo-inline-tag">
+                                  Combo: {item.comboName}
+                                </em>
+                              </>
+                            )}
+                          </strong>
                           <span>
                             {item.quantity} × {money(item.price)} · {item.unit}
                           </span>

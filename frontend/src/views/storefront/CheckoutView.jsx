@@ -1,18 +1,25 @@
 /**
- * Checkout View powered by useCheckoutController.
+ * Checkout View powered by useCheckoutController:
+ * renders selected cart items (products & combos), voucher picker modal (manual or best auto-select), and order placement.
  */
 import React from 'react';
 import {
   Check,
   CheckCircle2,
   CreditCard,
+  Layers,
   LoaderCircle,
   ShieldCheck,
   ShoppingBag,
+  Sparkles,
+  Tag,
+  TicketPercent,
   Truck,
   Upload,
+  X,
 } from 'lucide-react';
-import { money } from '../../models/formatters.js';
+import { PROMOTION_SCOPE_LABELS } from '../../models/constants.js';
+import { fmtDate, money } from '../../models/formatters.js';
 import { useCheckoutController } from '../../controllers/useCheckoutController.js';
 import AddressFields from '../components/AddressFields.jsx';
 import Link from '../components/Link.jsx';
@@ -21,11 +28,26 @@ import {
   Empty,
   ErrorBox,
   Field,
+  Modal,
   RequireLogin,
 } from '../components/UiPrimitives.jsx';
 
 export default function CheckoutView() {
   const c = useCheckoutController();
+
+  const scopeBadgeText = (p) => {
+    if (p.applyScope === 'combo') {
+      return p.targetNames?.length
+        ? `Combo: ${p.targetNames.join(', ')}`
+        : 'Áp dụng cho Combo sản phẩm';
+    }
+    if (p.applyScope === 'product') {
+      return p.targetNames?.length
+        ? `Sản phẩm: ${p.targetNames.slice(0, 2).join(', ')}${p.targetNames.length > 2 ? ` +${p.targetNames.length - 2}` : ''}`
+        : 'Áp dụng cho sản phẩm nhất định';
+    }
+    return PROMOTION_SCOPE_LABELS.order;
+  };
 
   return (
     <RequireLogin>
@@ -38,7 +60,7 @@ export default function CheckoutView() {
           <span className="eyebrow">THÊM MỘT BƯỚC ĐỂ AN TÂM</span>
           <h1>Hoàn tất đơn hàng</h1>
         </div>
-        {c.cart.length ? (
+        {c.checkoutItems.length ? (
           <form onSubmit={c.placeOrder} className="checkout-layout">
             <div className="checkout-panels">
               <section className="panel">
@@ -186,51 +208,100 @@ export default function CheckoutView() {
               </section>
             </div>
             <aside className="panel order-summary">
-              <h2>Đơn hàng của bạn</h2>
+              <h2>
+                Đơn hàng của bạn ({c.checkoutItems.length}/{c.cart.length} mục)
+              </h2>
               <div className="checkout-items">
-                {c.cart.map((item) => (
-                  <div key={item.id}>
-                    <img src={item.product.image} alt="" />
-                    <span>
-                      {item.product.name}
-                      <small>
-                        {item.quantity} × {money(item.product.price)}
-                      </small>
-                    </span>
-                    <strong>{money(item.quantity * item.product.price)}</strong>
-                  </div>
-                ))}
+                {c.checkoutItems.map((item) => {
+                  const isCombo = item.itemType === 'combo';
+                  const unitPrice = isCombo
+                    ? Number(item.combo?.price || 0)
+                    : Number(item.product?.price || 0);
+                  const image = isCombo
+                    ? item.combo?.image
+                    : item.product?.image;
+                  const name = isCombo ? item.combo?.name : item.product?.name;
+                  return (
+                    <div key={item.id}>
+                      <img
+                        src={image || '/assets/products/vitamin-c.svg'}
+                        alt=""
+                      />
+                      <span>
+                        {isCombo && (
+                          <em className="combo-inline-tag">
+                            <Layers size={11} /> Combo
+                          </em>
+                        )}{' '}
+                        {name}
+                        <small>
+                          {item.quantity} × {money(unitPrice)}
+                        </small>
+                      </span>
+                      <strong>{money(item.quantity * unitPrice)}</strong>
+                    </div>
+                  );
+                })}
               </div>
-              <div className="coupon-field">
-                <input
-                  aria-label="Mã ưu đãi"
-                  placeholder="Nhập mã ưu đãi"
-                  value={c.promotionCode}
-                  onChange={(e) =>
-                    c.setPromotionCode(e.target.value.toUpperCase())
-                  }
-                />
-                <button
-                  type="button"
-                  onClick={c.applyCode}
-                  disabled={!c.promotionCode}
-                >
-                  Áp dụng
-                </button>
-              </div>
-              {c.promos.length > 0 && (
-                <div className="available-coupons">
-                  {c.promos.slice(0, 2).map((p) => (
+
+              <div className="voucher-summary-box">
+                <div className="voucher-summary-head">
+                  <span>
+                    <TicketPercent size={16} /> Voucher khuyến mãi
+                  </span>
+                  {c.promotion && (
                     <button
                       type="button"
-                      key={p.id || p.code}
-                      onClick={() => c.setPromotionCode(p.code)}
+                      className="voucher-clear-btn"
+                      onClick={c.clearPromotion}
                     >
-                      {p.code}
+                      <X size={13} /> Bỏ chọn
                     </button>
-                  ))}
+                  )}
                 </div>
-              )}
+                {c.promotion ? (
+                  <div className="voucher-applied-pill">
+                    <div>
+                      <strong>
+                        {c.promotion.code}
+                        {c.bestPromotion?.code === c.promotion.code && (
+                          <em className="voucher-best-tag">
+                            <Sparkles size={11} /> Tốt nhất
+                          </em>
+                        )}
+                      </strong>
+                      <small>{c.promotion.name}</small>
+                    </div>
+                    <b className="in-stock">−{money(c.promotion.discount)}</b>
+                  </div>
+                ) : (
+                  <p className="muted small voucher-hint-text">
+                    {c.bestPromotion
+                      ? `Gợi ý tốt nhất: ${c.bestPromotion.code} (giảm ${money(c.bestPromotion.discount)})`
+                      : 'Chọn mã ưu đãi phù hợp hoặc để hệ thống tự chọn mã tốt nhất.'}
+                  </p>
+                )}
+                <div className="voucher-actions-row">
+                  <button
+                    type="button"
+                    className="btn btn-outline voucher-pick-btn"
+                    onClick={() => c.setVoucherModalOpen(true)}
+                  >
+                    <Tag size={15} /> Áp dụng voucher
+                  </button>
+                  {c.bestPromotion &&
+                    c.promotion?.code !== c.bestPromotion.code && (
+                      <button
+                        type="button"
+                        className="btn btn-soft voucher-best-btn"
+                        onClick={c.applyBestPromotion}
+                      >
+                        <Sparkles size={15} /> Chọn tốt nhất
+                      </button>
+                    )}
+                </div>
+              </div>
+
               <div>
                 <span>Tạm tính</span>
                 <strong>{money(c.subtotal)}</strong>
@@ -257,9 +328,12 @@ export default function CheckoutView() {
                 </span>
                 <strong>
                   {money(
-                    c.subtotal -
-                      (c.promotion?.discount || 0) +
-                      (c.shippingFee || 0),
+                    Math.max(
+                      0,
+                      c.subtotal -
+                        (c.promotion?.discount || 0) +
+                        (c.shippingFee || 0),
+                    ),
                   )}
                 </strong>
               </div>
@@ -282,6 +356,16 @@ export default function CheckoutView() {
               </span>
             </aside>
           </form>
+        ) : c.cart.length ? (
+          <Empty
+            icon={ShoppingBag}
+            title="Chưa có sản phẩm nào được chọn để thanh toán"
+            text="Hãy quay lại giỏ hàng và đánh dấu chọn các sản phẩm bạn muốn đặt hàng."
+          >
+            <Link to="/cart" className="btn btn-primary">
+              Quay lại giỏ hàng
+            </Link>
+          </Empty>
         ) : (
           <Empty
             icon={ShoppingBag}
@@ -292,6 +376,126 @@ export default function CheckoutView() {
               Chọn sản phẩm
             </Link>
           </Empty>
+        )}
+
+        {c.voucherModalOpen && (
+          <Modal
+            title="Chọn voucher ưu đãi"
+            onClose={() => c.setVoucherModalOpen(false)}
+          >
+            <div className="voucher-modal-content">
+              <div className="coupon-field">
+                <input
+                  aria-label="Mã ưu đãi"
+                  placeholder="Nhập mã voucher thủ công…"
+                  value={c.promotionCode}
+                  onChange={(e) =>
+                    c.setPromotionCode(e.target.value.toUpperCase())
+                  }
+                />
+                <button
+                  type="button"
+                  onClick={() => c.applyCode()}
+                  disabled={!c.promotionCode.trim()}
+                >
+                  Áp dụng
+                </button>
+              </div>
+              {c.bestPromotion && (
+                <div className="voucher-best-banner">
+                  <div>
+                    <strong>
+                      <Sparkles size={15} /> Hệ thống gợi ý voucher tốt nhất
+                    </strong>
+                    <span>
+                      Mã <b>{c.bestPromotion.code}</b> giúp bạn giảm tối đa{' '}
+                      <b>{money(c.bestPromotion.discount)}</b> cho đơn này.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-primary small"
+                    onClick={c.applyBestPromotion}
+                  >
+                    Dùng mã tốt nhất
+                  </button>
+                </div>
+              )}
+              <ErrorBox error={c.error} />
+              <div className="voucher-list">
+                {c.loadingPromos ? (
+                  <p className="muted small">Đang kiểm tra các mã ưu đãi…</p>
+                ) : c.promos.length === 0 ? (
+                  <p className="muted small">
+                    Hiện chưa có chương trình khuyến mãi nào đang hoạt động.
+                  </p>
+                ) : (
+                  c.promos.map((p) => {
+                    const selected = c.promotion?.code === p.code;
+                    return (
+                      <div
+                        key={p.id || p.code}
+                        className={`voucher-card ${selected ? 'is-selected' : ''} ${!p.eligible ? 'is-disabled' : ''}`}
+                      >
+                        <div className="voucher-card-main">
+                          <div className="voucher-card-top">
+                            <span className="voucher-code-chip">{p.code}</span>
+                            {p.isBest && p.eligible && (
+                              <span className="voucher-best-tag">
+                                <Sparkles size={11} /> Tốt nhất
+                              </span>
+                            )}
+                            <span className="voucher-scope-tag">
+                              {scopeBadgeText(p)}
+                            </span>
+                          </div>
+                          <strong>{p.name}</strong>
+                          <p className="voucher-meta">
+                            {p.type === 'percent'
+                              ? `Giảm ${p.value}%${p.maxDiscount ? ` (tối đa ${money(p.maxDiscount)})` : ''}`
+                              : `Giảm trực tiếp ${money(p.value)}`}
+                            {p.minOrder > 0
+                              ? ` · Tối thiểu ${money(p.minOrder)}`
+                              : ''}
+                            {p.endDate ? ` · HSD: ${fmtDate(p.endDate)}` : ''}
+                          </p>
+                          {p.eligible ? (
+                            <span className="voucher-saving">
+                              Giảm cho đơn này: <b>−{money(p.discount)}</b>
+                            </span>
+                          ) : (
+                            <span className="voucher-ineligible-reason">
+                              {p.reason}
+                            </span>
+                          )}
+                        </div>
+                        <div className="voucher-card-action">
+                          {selected ? (
+                            <button
+                              type="button"
+                              className="btn btn-outline small"
+                              onClick={c.clearPromotion}
+                            >
+                              Đang dùng
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn btn-primary small"
+                              disabled={!p.eligible}
+                              onClick={() => c.selectPromotion(p)}
+                            >
+                              Chọn
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </Modal>
         )}
       </main>
     </RequireLogin>

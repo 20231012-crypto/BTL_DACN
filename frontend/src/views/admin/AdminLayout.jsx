@@ -11,6 +11,7 @@ import {
   Check,
   ChevronRight,
   ClipboardCheck,
+  Layers,
   LayoutDashboard,
   LoaderCircle,
   LogOut,
@@ -33,6 +34,7 @@ import { LogoIcon } from '../components/Logo.jsx';
 import AdminAuditView from './AdminAuditView.jsx';
 import AdminCatalogEntitiesView from './AdminCatalogEntitiesView.jsx';
 import AdminChatbotView from './AdminChatbotView.jsx';
+import AdminCombosView from './AdminCombosView.jsx';
 import AdminDashboardView from './AdminDashboardView.jsx';
 import AdminInventoryView from './AdminInventoryView.jsx';
 import AdminModals from './AdminModals.jsx';
@@ -51,6 +53,7 @@ const ADMIN_NAV = [
   ['orders', ShoppingBag, 'Đơn hàng'],
   ['prescriptions', ClipboardCheck, 'Duyệt đơn thuốc'],
   ['products', Package, 'Sản phẩm'],
+  ['combos', Layers, 'Combo sản phẩm'],
   ['inventory', Boxes, 'Kho & lô thuốc'],
   ['catalog', Tags, 'Danh mục & đối tác'],
   ['promotions', TicketPercent, 'Khuyến mãi'],
@@ -197,6 +200,20 @@ export default function AdminLayout({ user, onExit, onLogout, config }) {
         canManageInventory={c.hasPermission('inventory')}
         onOpenProduct={(item) => c.open('product', item)}
         onOpenReceipt={c.openReceiptModal}
+        onOpenDelete={(item) => c.open('delete', item)}
+        onToggleActive={c.toggleActive}
+      />
+    ),
+    combos: () => (
+      <AdminCombosView
+        rows={c.data}
+        query={c.query}
+        setQuery={c.setQuery}
+        filter={c.filter}
+        setFilter={c.setFilter}
+        page={c.page}
+        setPage={c.setPage}
+        onOpenCombo={(item) => c.open('combo', item)}
         onOpenDelete={(item) => c.open('delete', item)}
         onToggleActive={c.toggleActive}
       />

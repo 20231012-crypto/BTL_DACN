@@ -4,15 +4,32 @@ import { assert, audit, positiveInt, text } from './shared.js';
 // Cuộc tư vấn với dược sĩ dùng lại bảng cuoc_hoi_thoai, tin_nhan và yeu_cau_ho_tro.
 // Tiêu đề bắt đầu bằng TITLE để phân biệt với hội thoại của trợ lý ảo.
 export const CONSULTATION_TITLE = 'Tư vấn dược sĩ';
-const titleFor = (prescriptionId) =>
-  prescriptionId
-    ? `${CONSULTATION_TITLE} · Đơn thuốc #${prescriptionId}`
-    : CONSULTATION_TITLE;
+const titleFor = (prescriptionId, topic = '', fallbackMessage = '') => {
+  if (prescriptionId) return `${CONSULTATION_TITLE} · Đơn thuốc #${prescriptionId}`;
+  const cleanTopic = text(topic, 70);
+  if (cleanTopic) return `${CONSULTATION_TITLE} · ${cleanTopic}`;
+  const snippet = text(fallbackMessage, 48);
+  if (snippet)
+    return `${CONSULTATION_TITLE} · ${snippet}${fallbackMessage.trim().length > 48 ? '…' : ''}`;
+  return CONSULTATION_TITLE;
+};
 
-const consultationSql = `SELECT s.id,s.title,s.created_at,s.updated_at,h.id support_id,h.status,h.handler_id,u.name handler_name
+const consultationSql = `SELECT s.id,s.title,s.status session_status,s.created_at,s.updated_at,h.id support_id,h.status,h.handler_id,u.name handler_name,
+  (SELECT COUNT(*) FROM tin_nhan m WHERE m.session_id=s.id) message_count,
+  (SELECT m.content FROM tin_nhan m WHERE m.session_id=s.id ORDER BY m.id DESC LIMIT 1) last_message,
+  (SELECT m.created_at FROM tin_nhan m WHERE m.session_id=s.id ORDER BY m.id DESC LIMIT 1) last_message_at
   FROM cuoc_hoi_thoai s
   JOIN yeu_cau_ho_tro h ON h.session_id=s.id
   LEFT JOIN nguoi_dung u ON u.id=h.handler_id`;
+
+const formatConsultation = (row) => {
+  const data = camel(row);
+  return {
+    ...data,
+    messageCount: Number(data.messageCount || 0),
+    closed: data.status === 'resolved' || data.sessionStatus === 'closed',
+  };
+};
 
 export function installConsultation(app, d, { auth, permission }) {
   const owned = async (id, userId) => {
@@ -26,17 +43,21 @@ export function installConsultation(app, d, { auth, permission }) {
     return row;
   };
   const appendUserMessage = async (consultation, content) => {
+    assert(
+      consultation.status !== 'resolved' && consultation.session_status !== 'closed',
+      409,
+      'Cuộc trò chuyện này đã được dược sĩ kết thúc và đóng. Vui lòng tạo cuộc trò chuyện mới để tiếp tục trao đổi.',
+    );
     const id = await d.insert('tin_nhan', {
       session_id: consultation.id,
       role: 'user',
       content,
       mode: 'user',
     });
-    // Khách nhắn tiếp sau khi dược sĩ đã kết thúc thì mở lại cuộc tư vấn.
     await d.update(
       'yeu_cau_ho_tro',
       {
-        status: consultation.status === 'resolved' ? 'pending' : consultation.status,
+        status: consultation.status,
         updated_at: now(),
       },
       consultation.support_id,
@@ -51,11 +72,11 @@ export function installConsultation(app, d, { auth, permission }) {
 
   app.get('/api/consultations', auth, async (req, res) => {
     const rows = await d.all(
-      `${consultationSql} WHERE s.user_id=? AND s.title LIKE ? ORDER BY s.id DESC`,
+      `${consultationSql} WHERE s.user_id=? AND s.title LIKE ? ORDER BY s.updated_at DESC, s.id DESC`,
       req.user.id,
       `${CONSULTATION_TITLE}%`,
     );
-    res.json({ data: rows.map(camel) });
+    res.json({ data: rows.map(formatConsultation) });
   });
 
   app.post('/api/consultations', auth, async (req, res) => {
@@ -79,38 +100,37 @@ export function installConsultation(app, d, { auth, permission }) {
         404,
         'Không tìm thấy đơn thuốc của bạn.',
       );
-    const title = titleFor(prescriptionId);
+    const title = titleFor(prescriptionId, req.body?.title, message);
     const created = await d.transaction(async () => {
-      let consultation = await d.one(
-        `${consultationSql} WHERE s.user_id=? AND s.title=? AND h.status!='resolved' ORDER BY s.id DESC LIMIT 1`,
-        req.user.id,
+      const sessionId = await d.insert('cuoc_hoi_thoai', {
+        user_id: req.user.id,
         title,
+        status: 'handoff',
+        created_at: now(),
+        updated_at: now(),
+      });
+      const supportId = await d.insert('yeu_cau_ho_tro', {
+        session_id: sessionId,
+        user_id: req.user.id,
+        message,
+        created_at: now(),
+        updated_at: now(),
+      });
+      await audit(d, req.user.id, 'consultation.create', 'support', supportId);
+      const consultation = await d.one(
+        `${consultationSql} WHERE s.id=? ORDER BY h.id DESC LIMIT 1`,
+        sessionId,
       );
-      let isNew = false;
-      if (!consultation) {
-        isNew = true;
-        const sessionId = await d.insert('cuoc_hoi_thoai', {
-          user_id: req.user.id,
-          title,
-          status: 'handoff',
-        });
-        const supportId = await d.insert('yeu_cau_ho_tro', {
-          session_id: sessionId,
-          user_id: req.user.id,
-          message,
-        });
-        await audit(d, req.user.id, 'consultation.create', 'support', supportId);
-        consultation = await d.one(
-          `${consultationSql} WHERE s.id=? ORDER BY h.id DESC LIMIT 1`,
-          sessionId,
-        );
-      }
       const first = await appendUserMessage(consultation, message);
-      return { consultation, first, isNew };
+      const updated = await d.one(
+        `${consultationSql} WHERE s.id=? ORDER BY h.id DESC LIMIT 1`,
+        sessionId,
+      );
+      return { consultation: updated, first };
     });
-    res.status(created.isNew ? 201 : 200).json({
+    res.status(201).json({
       data: {
-        consultation: camel(created.consultation),
+        consultation: formatConsultation(created.consultation),
         message: created.first,
       },
     });
@@ -126,7 +146,7 @@ export function installConsultation(app, d, { auth, permission }) {
     );
     res.json({
       data: {
-        consultation: camel(consultation),
+        consultation: formatConsultation(consultation),
         messages: messages.map(camel),
       },
     });
@@ -150,6 +170,11 @@ export function installConsultation(app, d, { auth, permission }) {
         req.params.id,
       );
       assert(support, 404, 'Không tìm thấy yêu cầu.');
+      assert(
+        support.status !== 'resolved',
+        409,
+        'Cuộc trò chuyện này đã kết thúc và đóng. Không thể gửi thêm tin nhắn.',
+      );
       const message = text(req.body?.message, 5000);
       assert(message.length >= 1, 400, 'Hãy nhập nội dung tin nhắn.');
       const id = await d.insert('tin_nhan', {

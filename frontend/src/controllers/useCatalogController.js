@@ -5,15 +5,24 @@ import { useEffect, useState } from 'react';
 import { PRODUCTS_PER_PAGE } from '../models/constants.js';
 import {
   buildActiveCatalogFilters,
+  fetchCombos,
   fetchProducts,
 } from '../models/catalogModel.js';
 import { digitsOnly, formatPriceInput } from '../models/formatters.js';
 import { useApp } from './AppContext.jsx';
 
 export function useCatalogController() {
-  const { route, categories, manufacturers, navigate, notify } = useApp();
+  const {
+    route,
+    categories,
+    manufacturers,
+    navigate,
+    notify,
+    addComboToCart,
+  } = useApp();
   const params = new URLSearchParams(route.split('?')[1]);
   const [items, setItems] = useState(null);
+  const [combos, setCombos] = useState([]);
   const [error, setError] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [price, setPrice] = useState({
@@ -39,6 +48,9 @@ export function useCatalogController() {
     fetchProducts(apiParams)
       .then(setItems)
       .catch((e) => setError(e.message));
+    fetchCombos()
+      .then(setCombos)
+      .catch(() => setCombos([]));
   }, []);
 
   const rawPage = Number.parseInt(params.get('page') || '1', 10);
@@ -111,6 +123,8 @@ export function useCatalogController() {
     manufacturers,
     navigate,
     items,
+    combos,
+    addComboToCart,
     pagedItems,
     totalPages,
     currentPage,

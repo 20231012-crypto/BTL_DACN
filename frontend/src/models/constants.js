@@ -126,6 +126,7 @@ export const VIEW_PERMISSION = {
   orders: 'orders',
   prescriptions: 'prescriptions',
   products: 'catalog',
+  combos: 'catalog',
   inventory: 'inventory',
   catalog: 'catalog',
   promotions: 'promotions',
@@ -134,6 +135,12 @@ export const VIEW_PERMISSION = {
   reports: 'reports',
   settings: 'settings',
   audit: 'audit',
+};
+
+export const PROMOTION_SCOPE_LABELS = {
+  order: 'Tổng giá trị đơn hàng',
+  product: 'Sản phẩm nhất định',
+  combo: 'Combo sản phẩm',
 };
 
 export const ORDER_STATES = [
@@ -346,6 +353,7 @@ export const EDITABLE_SETTINGS_KEYS = [
   'otpTtlMinutes',
   'paymentTimeoutMinutes',
   'chatbotEnabled',
+  'geminiModel',
 ];
 
 export const ADMIN_SUBTITLES = {
@@ -355,6 +363,8 @@ export const ADMIN_SUBTITLES = {
     'Đảm bảo mỗi đơn thuốc kê đơn được kiểm tra đúng chuyên môn dược sĩ.',
   products:
     'Quản lý thông tin, giá bán, tồn kho và hiển thị danh mục sản phẩm.',
+  combos:
+    'Cấu hình các gói combo chập tổ hợp sản phẩm tiết kiệm và kiểm soát tồn khả dụng.',
   inventory: 'Kiểm soát tồn kho theo lô, hạn dùng FEFO và lịch sử xuất nhập.',
   catalog: 'Quản lý danh mục thuốc, nhà cung cấp và nhà sản xuất đối tác.',
   promotions: 'Thiết lập mã giảm giá, hạn mức sử dụng và thời gian hiệu lực.',

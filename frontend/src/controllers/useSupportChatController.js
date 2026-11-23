@@ -39,24 +39,16 @@ export function useSupportChatController({ item, onChanged, notify }) {
   const pull = useCallback(async () => {
     const incoming = await fetchAdminSupportMessages(item.id, lastId.current);
     remember(incoming);
-    if (incoming.some((message) => message.role === 'user')) {
-      setStatus((prev) => {
-        if (prev === 'resolved') {
-          onChanged?.();
-          return 'pending';
-        }
-        return prev;
-      });
-    }
     return incoming;
-  }, [item.id, remember, onChanged]);
+  }, [item.id, remember]);
 
   useEffect(() => {
+    if (status === 'resolved') return undefined;
     const timer = setInterval(() => {
       if (!document.hidden) pull().catch(() => {});
     }, POLL_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [pull]);
+  }, [pull, status]);
 
   useEffect(() => {
     box.current?.scrollTo({ top: box.current.scrollHeight, behavior: 'smooth' });
@@ -65,7 +57,7 @@ export function useSupportChatController({ item, onChanged, notify }) {
   const send = async (event) => {
     event?.preventDefault();
     const content = draft.trim();
-    if (!content || busy) return;
+    if (!content || busy || status === 'resolved') return;
     setBusy(true);
     try {
       const saved = await sendSupportReply(item.id, content);

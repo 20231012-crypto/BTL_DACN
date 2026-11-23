@@ -26,44 +26,173 @@ import {
   getSettings,
   getProduct,
   productList,
+  getCombo,
   cartRows,
   orderView,
   requestView,
+  parseIdList,
 } from './shared.js';
 export const defaultStorage = fileURLToPath(
   new URL('../storage/prescriptions/', import.meta.url),
 );
+export function evaluatePromotionRow(
+  p,
+  { subtotal, selectedRows = null },
+  previouslyReserved = false,
+) {
+  if (!p || !p.active) {
+    return {
+      ok: false,
+      discount: 0,
+      eligibleSubtotal: 0,
+      reason: 'Mã khuyến mãi không tồn tại hoặc đã tạm dừng.',
+    };
+  }
+  if (!(p.start_date <= today() && p.end_date >= today())) {
+    return {
+      ok: false,
+      discount: 0,
+      eligibleSubtotal: 0,
+      reason: 'Mã khuyến mãi chưa đến hạn hoặc đã hết hạn.',
+    };
+  }
+  if (!(p.used_count - (previouslyReserved ? 1 : 0) < p.usage_limit)) {
+    return {
+      ok: false,
+      discount: 0,
+      eligibleSubtotal: 0,
+      reason: 'Mã khuyến mãi đã hết lượt sử dụng.',
+    };
+  }
+  const applyScope = p.apply_scope || 'order';
+  const targetIds = parseIdList(p.target_ids_json);
+  let eligibleSubtotal = Number(subtotal || 0);
+  if (applyScope === 'product') {
+    if (!Array.isArray(selectedRows)) {
+      return {
+        ok: false,
+        discount: 0,
+        eligibleSubtotal: 0,
+        reason: 'Mã này chỉ áp dụng cho sản phẩm nhất định trong giỏ hàng.',
+      };
+    }
+    eligibleSubtotal = selectedRows
+      .filter((r) => r.itemType !== 'combo' && targetIds.includes(r.productId))
+      .reduce((n, r) => n + Number(r.product?.price || 0) * r.quantity, 0);
+    if (eligibleSubtotal <= 0) {
+      return {
+        ok: false,
+        discount: 0,
+        eligibleSubtotal: 0,
+        reason: 'Đơn hàng chưa có sản phẩm thuộc diện áp dụng mã này.',
+      };
+    }
+  } else if (applyScope === 'combo') {
+    if (!Array.isArray(selectedRows)) {
+      return {
+        ok: false,
+        discount: 0,
+        eligibleSubtotal: 0,
+        reason: 'Mã này chỉ áp dụng cho combo sản phẩm trong giỏ hàng.',
+      };
+    }
+    eligibleSubtotal = selectedRows
+      .filter(
+        (r) =>
+          r.itemType === 'combo' &&
+          (!targetIds.length || targetIds.includes(r.comboId)),
+      )
+      .reduce((n, r) => n + Number(r.combo?.price || 0) * r.quantity, 0);
+    if (eligibleSubtotal <= 0) {
+      return {
+        ok: false,
+        discount: 0,
+        eligibleSubtotal: 0,
+        reason: 'Đơn hàng chưa có combo sản phẩm thuộc diện áp dụng mã này.',
+      };
+    }
+  }
+  if (eligibleSubtotal < p.min_order) {
+    return {
+      ok: false,
+      discount: 0,
+      eligibleSubtotal,
+      reason:
+        applyScope === 'order'
+          ? `Đơn hàng cần đạt ${p.min_order.toLocaleString('vi-VN')}đ để áp dụng mã này.`
+          : `Giá trị ${applyScope === 'combo' ? 'combo' : 'sản phẩm'} áp dụng cần đạt ${p.min_order.toLocaleString('vi-VN')}đ để dùng mã này.`,
+    };
+  }
+  let discount =
+    p.type === 'percent'
+      ? Math.floor((eligibleSubtotal * p.value) / 100)
+      : p.value;
+  if (p.max_discount !== null && p.max_discount > 0)
+    discount = Math.min(discount, p.max_discount);
+  return {
+    ok: true,
+    discount: Math.min(discount, eligibleSubtotal),
+    eligibleSubtotal,
+    reason: '',
+  };
+}
+async function formatPromotion(d, p, nameMaps = null) {
+  const applyScope = p.apply_scope || 'order';
+  const targetIds = parseIdList(p.target_ids_json);
+  let targetNames = [];
+  if (targetIds.length && applyScope === 'product') {
+    if (nameMaps?.products) {
+      targetNames = targetIds
+        .map((id) => nameMaps.products.get(id))
+        .filter(Boolean);
+    } else {
+      const rows = await d.all('SELECT id, name FROM thuoc');
+      const map = new Map(rows.map((r) => [r.id, r.name]));
+      targetNames = targetIds.map((id) => map.get(id)).filter(Boolean);
+    }
+  } else if (targetIds.length && applyScope === 'combo') {
+    if (nameMaps?.combos) {
+      targetNames = targetIds
+        .map((id) => nameMaps.combos.get(id))
+        .filter(Boolean);
+    } else {
+      const rows = await d.all('SELECT id, name FROM combo_san_pham');
+      const map = new Map(rows.map((r) => [r.id, r.name]));
+      targetNames = targetIds.map((id) => map.get(id)).filter(Boolean);
+    }
+  }
+  const { target_ids_json, ...rest } = p;
+  return {
+    ...camel(rest),
+    active: !!p.active,
+    applyScope,
+    targetIds,
+    targetNames,
+  };
+}
 export async function validatePromotion(
   d,
   code,
   subtotal,
   previouslyReserved = false,
+  selectedRows = null,
 ) {
   const p = await d.one(
     'SELECT * FROM khuyen_mai WHERE upper(code)=?',
     text(code, 40).toUpperCase(),
   );
-  assert(p && p.active, 400, 'Mã khuyến mãi không tồn tại hoặc đã tạm dừng.');
-  assert(
-    p.start_date <= today() && p.end_date >= today(),
-    400,
-    'Mã khuyến mãi chưa đến hạn hoặc đã hết hạn.',
+  const check = evaluatePromotionRow(
+    p,
+    { subtotal, selectedRows },
+    previouslyReserved,
   );
-  assert(
-    p.used_count - (previouslyReserved ? 1 : 0) < p.usage_limit,
-    400,
-    'Mã khuyến mãi đã hết lượt sử dụng.',
-  );
-  assert(
-    subtotal >= p.min_order,
-    400,
-    `Đơn hàng cần đạt ${p.min_order.toLocaleString('vi-VN')}đ để áp dụng mã này.`,
-  );
-  let discount =
-    p.type === 'percent' ? Math.floor((subtotal * p.value) / 100) : p.value;
-  if (p.max_discount !== null && p.max_discount > 0)
-    discount = Math.min(discount, p.max_discount);
-  return { ...camel(p), discount: Math.min(discount, subtotal) };
+  assert(check.ok, 400, check.reason);
+  const formatted = await formatPromotion(d, p);
+  return {
+    ...formatted,
+    discount: check.discount,
+    eligibleSubtotal: check.eligibleSubtotal,
+  };
 }
 export async function reserveStock(d, orderId, items) {
   for (const item of items) {
@@ -587,6 +716,48 @@ export function installOrders(
         fileFilter: (req, file, cb) =>
           cb(null, imageMimes.includes(file.mimetype)),
       }).single('evidence');
+  const resolveSelectedCart = async (
+    userId,
+    { cartItemIds, comboCartItemIds } = {},
+  ) => {
+    const allRows = await cartRows(d, userId);
+    const hasExplicitSelection =
+      Array.isArray(cartItemIds) || Array.isArray(comboCartItemIds);
+    if (hasExplicitSelection) {
+      const pSet = new Set((cartItemIds || []).map(Number));
+      const cSet = new Set((comboCartItemIds || []).map(Number));
+      return {
+        allRows,
+        rows: allRows.filter((r) =>
+          r.itemType === 'combo' ? cSet.has(r.comboCartId) : pSet.has(r.id),
+        ),
+      };
+    }
+    return {
+      allRows,
+      rows: allRows.filter((r) => r.selected !== false),
+    };
+  };
+  const computeCartRowsSubtotal = (rows) =>
+    rows.reduce(
+      (n, r) =>
+        n +
+        (r.itemType === 'combo'
+          ? Number(r.combo?.price || 0)
+          : Number(r.product?.price || 0)) *
+          r.quantity,
+      0,
+    );
+  const loadPromotionNameMaps = async () => {
+    const [prods, combos] = await Promise.all([
+      d.all('SELECT id, name FROM thuoc'),
+      d.all('SELECT id, name FROM combo_san_pham'),
+    ]);
+    return {
+      products: new Map(prods.map((p) => [p.id, p.name])),
+      combos: new Map(combos.map((c) => [c.id, c.name])),
+    };
+  };
   app.get('/api/cart', auth, async (req, res) =>
     res.json({
       data: await cartRows(d, req.user.id),
@@ -622,6 +793,7 @@ export function installOrders(
           'chi_tiet_gio_hang',
           {
             quantity: newQty,
+            selected: 1,
           },
           old.id,
         );
@@ -630,8 +802,161 @@ export function installOrders(
           cart_id: cart.id,
           product_id: product.id,
           quantity,
+          selected: 1,
         });
       res.status(201).json({
+        data: await cartRows(d, req.user.id),
+      });
+    }),
+  );
+  app.patch(
+    '/api/cart/selection',
+    auth,
+    transactionJson(d, async (req, res) => {
+      assert(
+        typeof req.body?.selected === 'boolean',
+        400,
+        'Trạng thái chọn không hợp lệ.',
+      );
+      const selected = req.body.selected ? 1 : 0;
+      const cart = await d.one(
+        'SELECT id FROM gio_hang WHERE user_id=?',
+        req.user.id,
+      );
+      if (cart) {
+        const hasIds =
+          Array.isArray(req.body.itemIds) ||
+          Array.isArray(req.body.comboCartItemIds);
+        if (!hasIds) {
+          await d.run(
+            'UPDATE chi_tiet_gio_hang SET selected=? WHERE cart_id=?',
+            selected,
+            cart.id,
+          );
+          await d.run(
+            'UPDATE chi_tiet_gio_hang_combo SET selected=? WHERE cart_id=?',
+            selected,
+            cart.id,
+          );
+        } else {
+          for (const id of req.body.itemIds || []) {
+            await d.run(
+              'UPDATE chi_tiet_gio_hang SET selected=? WHERE cart_id=? AND id=?',
+              selected,
+              cart.id,
+              Number(id),
+            );
+          }
+          for (const id of req.body.comboCartItemIds || []) {
+            await d.run(
+              'UPDATE chi_tiet_gio_hang_combo SET selected=? WHERE cart_id=? AND id=?',
+              selected,
+              cart.id,
+              Number(id),
+            );
+          }
+        }
+      }
+      res.json({
+        data: await cartRows(d, req.user.id),
+      });
+    }),
+  );
+  app.post(
+    '/api/cart/combos',
+    auth,
+    transactionJson(d, async (req, res) => {
+      const combo = await getCombo(d, req.body.comboId, false);
+      assert(combo, 404, 'Combo sản phẩm không còn kinh doanh.');
+      const quantity = positiveInt(req.body.quantity ?? 1, 999);
+      assert(quantity, 400, 'Số lượng combo phải từ 1 đến 999.');
+      let cart = await d.one(
+        'SELECT id FROM gio_hang WHERE user_id=?',
+        req.user.id,
+      );
+      if (!cart)
+        cart = {
+          id: await d.insert('gio_hang', {
+            user_id: req.user.id,
+          }),
+        };
+      const old = await d.one(
+        'SELECT * FROM chi_tiet_gio_hang_combo WHERE cart_id=? AND combo_id=?',
+        cart.id,
+        combo.id,
+      );
+      const newQty = (old?.quantity || 0) + quantity;
+      assert(
+        newQty <= combo.stock,
+        409,
+        'Số lượng combo vượt tồn kho khả dụng của các sản phẩm thành phần.',
+      );
+      if (old)
+        await d.update(
+          'chi_tiet_gio_hang_combo',
+          { quantity: newQty, selected: 1 },
+          old.id,
+        );
+      else
+        await d.insert('chi_tiet_gio_hang_combo', {
+          cart_id: cart.id,
+          combo_id: combo.id,
+          quantity,
+          selected: 1,
+        });
+      res.status(201).json({
+        data: await cartRows(d, req.user.id),
+      });
+    }),
+  );
+  app.patch(
+    '/api/cart/combos/:id',
+    auth,
+    transactionJson(d, async (req, res) => {
+      const row = await d.one(
+        'SELECT c.* FROM chi_tiet_gio_hang_combo c JOIN gio_hang g ON g.id=c.cart_id WHERE c.id=? AND g.user_id=?',
+        req.params.id,
+        req.user.id,
+      );
+      assert(row, 404, 'Không tìm thấy combo trong giỏ.');
+      const updates = {};
+      if (req.body.quantity !== undefined) {
+        const qty = positiveInt(req.body.quantity, 999);
+        const combo = await getCombo(d, row.combo_id, false);
+        assert(qty, 400, 'Số lượng không hợp lệ.');
+        assert(
+          combo && qty <= combo.stock,
+          409,
+          'Số lượng combo vượt tồn kho khả dụng.',
+        );
+        updates.quantity = qty;
+      }
+      if (typeof req.body.selected === 'boolean') {
+        updates.selected = req.body.selected ? 1 : 0;
+      }
+      assert(
+        Object.keys(updates).length > 0,
+        400,
+        'Không có thông tin cập nhật.',
+      );
+      await d.update('chi_tiet_gio_hang_combo', updates, row.id);
+      res.json({
+        data: await cartRows(d, req.user.id),
+      });
+    }),
+  );
+  app.delete(
+    '/api/cart/combos/:id',
+    auth,
+    transactionJson(d, async (req, res) => {
+      const row = await d.one(
+        'SELECT c.id FROM chi_tiet_gio_hang_combo c JOIN gio_hang g ON g.id=c.cart_id WHERE c.id=? AND g.user_id=?',
+        req.params.id,
+        req.user.id,
+      );
+      assert(row, 404, 'Không tìm thấy combo trong giỏ.');
+      await d.run('DELETE FROM chi_tiet_gio_hang_combo WHERE id=?', row.id);
+      res.json({
         data: await cartRows(d, req.user.id),
       });
     }),
@@ -646,17 +971,23 @@ export function installOrders(
         req.user.id,
       );
       assert(row, 404, 'Không tìm thấy mục trong giỏ.');
-      const qty = positiveInt(req.body.quantity, 999),
-        p = await getProduct(d, row.product_id);
-      assert(qty, 400, 'Số lượng không hợp lệ.');
-      assert(p && qty <= p.stock, 409, 'Số lượng vượt tồn kho có thể bán.');
-      await d.update(
-        'chi_tiet_gio_hang',
-        {
-          quantity: qty,
-        },
-        row.id,
+      const updates = {};
+      if (req.body.quantity !== undefined) {
+        const qty = positiveInt(req.body.quantity, 999),
+          p = await getProduct(d, row.product_id);
+        assert(qty, 400, 'Số lượng không hợp lệ.');
+        assert(p && qty <= p.stock, 409, 'Số lượng vượt tồn kho có thể bán.');
+        updates.quantity = qty;
+      }
+      if (typeof req.body.selected === 'boolean') {
+        updates.selected = req.body.selected ? 1 : 0;
+      }
+      assert(
+        Object.keys(updates).length > 0,
+        400,
+        'Không có thông tin cập nhật.',
       );
+      await d.update('chi_tiet_gio_hang', updates, row.id);
       res.json({
         data: await cartRows(d, req.user.id),
       });
@@ -678,26 +1009,85 @@ export function installOrders(
       });
     }),
   );
-  app.get('/api/promotions', async (req, res) =>
+  app.get('/api/promotions', async (req, res) => {
+    const rows = await d.all(
+      'SELECT * FROM khuyen_mai WHERE active=1 AND start_date<=? AND end_date>=? AND used_count<usage_limit ORDER BY id DESC',
+      today(),
+      today(),
+    );
+    const nameMaps = await loadPromotionNameMaps();
+    const data = await Promise.all(
+      rows.map((row) => formatPromotion(d, row, nameMaps)),
+    );
+    res.json({ data });
+  });
+  app.post('/api/promotions/evaluate', auth, async (req, res) => {
+    const { rows } = await resolveSelectedCart(req.user.id, req.body || {});
+    const subtotal = computeCartRowsSubtotal(rows);
+    const activePromos = await d.all(
+      'SELECT * FROM khuyen_mai WHERE active=1 AND start_date<=? AND end_date>=? AND used_count<usage_limit ORDER BY id DESC',
+      today(),
+      today(),
+    );
+    const nameMaps = await loadPromotionNameMaps();
+    const evaluated = await Promise.all(
+      activePromos.map(async (p) => {
+        const formatted = await formatPromotion(d, p, nameMaps);
+        const check = evaluatePromotionRow(p, { subtotal, selectedRows: rows });
+        return {
+          ...formatted,
+          eligible: check.ok,
+          discount: check.ok ? check.discount : 0,
+          eligibleSubtotal: check.eligibleSubtotal,
+          reason: check.reason,
+          isBest: false,
+        };
+      }),
+    );
+    evaluated.sort(
+      (a, b) =>
+        Number(b.eligible) - Number(a.eligible) ||
+        b.discount - a.discount ||
+        String(a.endDate || '').localeCompare(String(b.endDate || '')) ||
+        a.id - b.id,
+    );
+    const best = evaluated.find((x) => x.eligible && x.discount > 0) || null;
+    if (best) best.isBest = true;
     res.json({
-      data: (
-        await d.all(
-          'SELECT * FROM khuyen_mai WHERE active=1 AND start_date<=? AND end_date>=? AND used_count<usage_limit',
-          today(),
-          today(),
-        )
-      ).map(camel),
-    }),
-  );
+      data: {
+        subtotal,
+        bestPromotion: best,
+        promotions: evaluated,
+      },
+    });
+  });
   app.post('/api/promotions/validate', auth, async (req, res) => {
+    const hasCartSelection =
+      Array.isArray(req.body?.cartItemIds) ||
+      Array.isArray(req.body?.comboCartItemIds) ||
+      req.body?.useCart === true;
+    if (hasCartSelection) {
+      const { rows } = await resolveSelectedCart(req.user.id, req.body || {});
+      const subtotal = computeCartRowsSubtotal(rows);
+      return res.json({
+        data: await validatePromotion(d, req.body.code, subtotal, false, rows),
+      });
+    }
     const subtotal = Number(req.body.subtotal);
     assert(
       Number.isSafeInteger(subtotal) && subtotal >= 0,
       400,
       'Giá trị đơn hàng không hợp lệ.',
     );
+    const { rows } = await resolveSelectedCart(req.user.id);
     res.json({
-      data: await validatePromotion(d, req.body.code, subtotal),
+      data: await validatePromotion(
+        d,
+        req.body.code,
+        subtotal,
+        false,
+        rows.length ? rows : null,
+      ),
     });
   });
   app.post('/api/prescriptions', auth, parsePrescription, async (req, res) => {
@@ -833,17 +1223,94 @@ export function installOrders(
       city: address.city,
     };
     const orderId = await d.transaction(async () => {
-      const rows = await cartRows(d, req.user.id);
-      assert(rows.length, 400, 'Giỏ hàng đang trống.');
-      for (const r of rows)
+      const { allRows, rows } = await resolveSelectedCart(
+        req.user.id,
+        req.body || {},
+      );
+      assert(allRows.length, 400, 'Giỏ hàng đang trống.');
+      assert(
+        rows.length,
+        400,
+        'Vui lòng chọn ít nhất 1 sản phẩm trong giỏ hàng để đặt.',
+      );
+
+      // Expand standalone products & combo components and verify aggregated stock
+      const orderLines = [];
+      const neededByProduct = new Map();
+      for (const r of rows) {
+        if (r.itemType === 'combo') {
+          const combo = r.combo;
+          assert(
+            combo && combo.active && combo.items?.length,
+            409,
+            `${combo?.name || 'Combo'} không còn kinh doanh.`,
+          );
+          const orig = Math.max(1, combo.originalPrice || 0);
+          for (const ci of combo.items) {
+            const p = ci.product;
+            assert(
+              p?.active && p?.categoryActive,
+              409,
+              `${p?.name || 'Sản phẩm trong combo'} không còn kinh doanh.`,
+            );
+            const totalQty = ci.quantity * r.quantity;
+            const unitPrice = Math.max(
+              0,
+              Math.floor((Number(p.price || 0) * Number(combo.price || 0)) / orig),
+            );
+            orderLines.push({
+              productId: p.id,
+              name: p.name,
+              unit: p.unit,
+              image: p.image,
+              price: unitPrice,
+              quantity: totalQty,
+              prescriptionRequired: !!p.prescriptionRequired,
+              comboId: combo.id,
+              comboName: combo.name,
+            });
+            const prev = neededByProduct.get(p.id) || {
+              product: p,
+              quantity: 0,
+            };
+            prev.quantity += totalQty;
+            neededByProduct.set(p.id, prev);
+          }
+        } else {
+          const p = r.product;
+          assert(
+            p?.active && p?.categoryActive,
+            409,
+            `${p?.name || 'Sản phẩm'} không còn kinh doanh.`,
+          );
+          orderLines.push({
+            productId: r.productId,
+            name: p.name,
+            unit: p.unit,
+            image: p.image,
+            price: p.price,
+            quantity: r.quantity,
+            prescriptionRequired: !!p.prescriptionRequired,
+            comboId: null,
+            comboName: '',
+          });
+          const prev = neededByProduct.get(r.productId) || {
+            product: p,
+            quantity: 0,
+          };
+          prev.quantity += r.quantity;
+          neededByProduct.set(r.productId, prev);
+        }
+      }
+      for (const { product, quantity } of neededByProduct.values()) {
         assert(
-          r.product?.active &&
-            r.product?.categoryActive &&
-            r.quantity <= r.product.stock,
+          quantity <= product.stock,
           409,
-          `${r.product?.name || 'Sản phẩm'} không còn đủ tồn kho.`,
+          `${product.name || 'Sản phẩm'} không còn đủ tồn kho.`,
         );
-      const requiresRx = rows.some((r) => r.product.prescriptionRequired);
+      }
+
+      const requiresRx = orderLines.some((l) => l.prescriptionRequired);
       let rx = null;
       if (requiresRx) {
         rx = await d.one(
@@ -862,17 +1329,20 @@ export function installOrders(
           'Cần tải đơn thuốc mới để dược sĩ đối chiếu với giỏ hàng này.',
         );
       }
-      const subtotal = rows.reduce(
-          (n, r) => n + r.product.price * r.quantity,
-          0,
-        ),
+      const subtotal = computeCartRowsSubtotal(rows),
         settings = await getSettings(d),
         shipping =
           subtotal >= Number(settings.freeShippingThreshold)
             ? 0
             : Number(settings.shippingFee);
       const promo = req.body.promotionCode
-          ? await validatePromotion(d, req.body.promotionCode, subtotal)
+          ? await validatePromotion(
+              d,
+              req.body.promotionCode,
+              subtotal,
+              false,
+              rows,
+            )
           : null,
         discount = promo?.discount || 0;
       const status =
@@ -896,24 +1366,26 @@ export function installOrders(
         note: text(req.body.note, 1000),
         created_at: now(),
       });
-      for (const r of rows)
+      for (const line of orderLines)
         await d.insert('chi_tiet_don_hang', {
           order_id: id,
-          product_id: r.productId,
-          name: r.product.name,
-          unit: r.product.unit,
-          image: r.product.image,
-          price: r.product.price,
-          quantity: r.quantity,
-          prescription_required: r.product.prescriptionRequired ? 1 : 0,
+          product_id: line.productId,
+          name: line.name,
+          unit: line.unit,
+          image: line.image,
+          price: line.price,
+          quantity: line.quantity,
+          prescription_required: line.prescriptionRequired ? 1 : 0,
+          combo_id: line.comboId,
+          combo_name: line.comboName,
         });
       await reserveStock(
         d,
         id,
-        rows.map((r) => ({
-          productId: r.productId,
-          name: r.product.name,
-          quantity: r.quantity,
+        [...neededByProduct.values()].map(({ product, quantity }) => ({
+          productId: product.id,
+          name: product.name,
+          quantity,
         })),
       );
       if (rx)
@@ -929,10 +1401,27 @@ export function installOrders(
           'UPDATE khuyen_mai SET used_count=used_count+1 WHERE id=?',
           promo.id,
         );
-      await d.run(
-        'DELETE FROM chi_tiet_gio_hang WHERE cart_id=(SELECT id FROM gio_hang WHERE user_id=?)',
+      const userCart = await d.one(
+        'SELECT id FROM gio_hang WHERE user_id=?',
         req.user.id,
       );
+      if (userCart) {
+        for (const r of rows) {
+          if (r.itemType === 'combo') {
+            await d.run(
+              'DELETE FROM chi_tiet_gio_hang_combo WHERE cart_id=? AND id=?',
+              userCart.id,
+              r.comboCartId,
+            );
+          } else {
+            await d.run(
+              'DELETE FROM chi_tiet_gio_hang WHERE cart_id=? AND id=?',
+              userCart.id,
+              r.id,
+            );
+          }
+        }
+      }
       await d.insert('order_status_history', {
         order_id: id,
         status,

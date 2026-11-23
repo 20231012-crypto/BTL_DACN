@@ -1,9 +1,10 @@
-import { camel, normalize, now } from '../repositories/database.js';
+import { camel, normalize, now, today } from '../repositories/database.js';
 import {
   assert,
   text,
   getSettings,
   productList,
+  comboList,
   audit,
   orderView,
 } from './shared.js';
@@ -199,6 +200,15 @@ export function installChatbot(app, d, { auth }, options) {
     );
     const rule = rules.find((r) => normalized.includes(normalize(r.keyword)));
     const urgent = critical.some((k) => normalized.includes(k));
+    const extraGeminiKeys =
+      typeof settings.geminiApiKey === 'string' && settings.geminiApiKey.trim()
+        ? [settings.geminiApiKey.trim()]
+        : [];
+    const availableGeminiKeys = geminiKeys(extraGeminiKeys);
+    const canCallGemini =
+      availableGeminiKeys.length > 0 &&
+      (!options.testing || options.allowProviderInTests);
+
     if (urgent || rule) {
       reply =
         (!urgent && rule?.response) ||
@@ -219,17 +229,6 @@ export function installChatbot(app, d, { auth }, options) {
         'Trường hợp này cần dược sĩ hoặc bác sĩ đánh giá trực tiếp. Tôi có thể kết nối bạn với dược sĩ để trao đổi về thuốc và cách sử dụng an toàn. Thông tin chatbot chỉ để tham khảo.';
       mode = 'safety';
       support = await requestSupport();
-    } else if (
-      /phi giao|phi ship|mien phi.*giao|phi van chuyen/.test(normalized)
-    ) {
-      reply = `Phí giao hàng hiện là ${settings.shippingFee.toLocaleString('vi-VN')}đ. Đơn có tiền hàng từ ${settings.freeShippingThreshold.toLocaleString('vi-VN')}đ được miễn phí giao. Chi phí hiển thị ở bước đặt hàng.`;
-    } else if (
-      /mua thuoc ke don|tai (anh |tep )?don thuoc|kiem duyet don thuoc/.test(
-        normalized,
-      )
-    ) {
-      reply =
-        'Thêm sản phẩm vào giỏ rồi đính kèm đơn thuốc ở bước đặt hàng. Dược sĩ sẽ đối chiếu đơn với sản phẩm trước khi đơn được thanh toán hoặc xác nhận.';
     } else if (
       /theo doi|trang thai don|don hang cua toi|\b(?:at|ma)\d[a-z0-9]{5,}/.test(
         normalized,
@@ -271,6 +270,12 @@ export function installChatbot(app, d, { auth }, options) {
         ? `Đơn ${o.code} của bạn: ${labels[o.status] || o.status}. Tổng tiền ${o.total.toLocaleString('vi-VN')}đ. Bạn có thể mở Đơn hàng để xem tiến trình và gửi yêu cầu hỗ trợ.`
         : 'Tôi chưa tìm thấy đơn hàng phù hợp trong tài khoản của bạn. Hãy kiểm tra mã đơn tại mục Đơn hàng.';
     } else {
+      const isShippingQuery =
+        /phi giao|phi ship|mien phi.*giao|phi van chuyen/.test(normalized);
+      const isRxProcessQuery =
+        /mua thuoc ke don|tai (anh |tep )?don thuoc|kiem duyet don thuoc/.test(
+          normalized,
+        );
       const knowledge = await d.all(
         'SELECT * FROM tri_thuc_chatbot WHERE active=1 AND reviewed_at IS NOT NULL',
       );
@@ -292,10 +297,17 @@ export function installChatbot(app, d, { auth }, options) {
         .filter((k) => k.score >= 12)
         .sort((a, b) => b.score - a.score);
 
-      const allProducts = await productList(d);
-      const categories = await d.all(
-        'SELECT name FROM danh_muc WHERE active=1 ORDER BY id',
-      );
+      const [allProducts, activeCombos, activePromos, categories] =
+        await Promise.all([
+          productList(d),
+          comboList(d, false),
+          d.all(
+            'SELECT code, name, type, value, min_order, max_discount, apply_scope FROM khuyen_mai WHERE active=1 AND start_date<=? AND end_date>=? AND used_count<usage_limit ORDER BY id DESC LIMIT 6',
+            today(),
+            today(),
+          ),
+          d.all('SELECT name FROM danh_muc WHERE active=1 ORDER BY id'),
+        ]);
       const otcInStock = allProducts.filter(
         (p) => !p.prescriptionRequired && p.stock > 0,
       );
@@ -303,7 +315,7 @@ export function installChatbot(app, d, { auth }, options) {
         /co (nhung )?(san pham|mat hang|danh muc|thuoc) nao|ban (nhung )?gi|san pham noi bat|goi y san pham/.test(
           normalized,
         );
-      if (tokens.length) {
+      if (!isShippingQuery && !isRxProcessQuery && tokens.length) {
         products = otcInStock
           .map((p) => ({
             product: p,
@@ -317,30 +329,33 @@ export function installChatbot(app, d, { auth }, options) {
         products = otcInStock.slice(0, 3);
       }
 
-      const rxMentioned = tokens.length
-        ? allProducts
-            .filter((p) => p.prescriptionRequired)
-            .map((p) => ({
-              product: p,
-              score: Math.max(
-                searchScore(`${p.name} ${p.ingredient || ''}`, normalized),
-                tokens.some((t) =>
-                  t.length >= 4 &&
-                  normalize(`${p.name} ${p.ingredient || ''}`).includes(t),
-                )
-                  ? 65
-                  : 0,
-              ),
-            }))
-            .filter((row) => row.score >= 60)
-            .sort((a, b) => b.score - a.score)
-            .slice(0, 2)
-            .map((row) => row.product)
-        : [];
+      const rxMentioned =
+        !isShippingQuery && !isRxProcessQuery && tokens.length
+          ? allProducts
+              .filter((p) => p.prescriptionRequired)
+              .map((p) => ({
+                product: p,
+                score: Math.max(
+                  searchScore(`${p.name} ${p.ingredient || ''}`, normalized),
+                  tokens.some(
+                    (t) =>
+                      t.length >= 4 &&
+                      normalize(`${p.name} ${p.ingredient || ''}`).includes(t),
+                  )
+                    ? 65
+                    : 0,
+                ),
+              }))
+              .filter((row) => row.score >= 60)
+              .sort((a, b) => b.score - a.score)
+              .slice(0, 2)
+              .map((row) => row.product)
+          : [];
 
       const storeFacts = [
         `Cửa hàng: ${settings.storeName}.`,
         `Phí giao hàng tiêu chuẩn: ${settings.shippingFee.toLocaleString('vi-VN')}đ; miễn phí giao cho đơn từ ${settings.freeShippingThreshold.toLocaleString('vi-VN')}đ.`,
+        `Quy trình mua thuốc kê đơn: Thêm sản phẩm vào giỏ hàng, đính kèm ảnh/PDF đơn thuốc hợp lệ ở bước đặt hàng hoặc mục Thuốc theo đơn để dược sĩ đối chiếu và phê duyệt trước khi xác nhận/thanh toán.`,
         `Thời hạn tiếp nhận yêu cầu đổi trả: ${settings.returnWindowDays} ngày kể từ khi nhận hàng (thuốc còn nguyên niêm phong theo quy định).`,
         categories.length
           ? `Các danh mục đang bán: ${categories.map((c) => c.name).join(', ')}.`
@@ -348,6 +363,34 @@ export function installChatbot(app, d, { auth }, options) {
       ]
         .filter(Boolean)
         .join('\n');
+
+      const comboText = activeCombos.length
+        ? activeCombos
+            .slice(0, 4)
+            .map(
+              (c) =>
+                `- ${c.name}: Giá combo ${c.price.toLocaleString('vi-VN')}đ (giá gốc ${c.originalPrice.toLocaleString('vi-VN')}đ, tiết kiệm ${c.savings.toLocaleString('vi-VN')}đ) | Gồm: ${c.items.map((i) => `${i.quantity}× ${i.product.name}`).join(', ')} | Còn ${c.stock} combo`,
+            )
+            .join('\n')
+        : '';
+
+      const promoText = activePromos.length
+        ? activePromos
+            .map((p) => {
+              const scopeLabel =
+                p.apply_scope === 'combo'
+                  ? 'áp dụng cho Combo'
+                  : p.apply_scope === 'product'
+                    ? 'áp dụng cho sản phẩm chỉ định'
+                    : 'áp dụng toàn đơn';
+              const disc =
+                p.type === 'percent'
+                  ? `giảm ${p.value}%${p.max_discount ? ` (tối đa ${p.max_discount.toLocaleString('vi-VN')}đ)` : ''}`
+                  : `giảm ${p.value.toLocaleString('vi-VN')}đ`;
+              return `- Mã ${p.code} (${p.name}): ${disc}, tối thiểu ${p.min_order.toLocaleString('vi-VN')}đ (${scopeLabel})`;
+            })
+            .join('\n')
+        : '';
 
       const knowledgeText = matching
         .slice(0, 3)
@@ -388,30 +431,39 @@ export function installChatbot(app, d, { auth }, options) {
         productText
           ? `[Sản phẩm không kê đơn đang bán và còn hàng]\n${productText}`
           : '',
+        comboText ? `[Combo sản phẩm tiết kiệm]\n${comboText}` : '',
+        promoText ? `[Chương trình khuyến mãi/Voucher đang áp dụng]\n${promoText}` : '',
         rxText
           ? `[Sản phẩm kê đơn được nhắc tới - KHÔNG tự gợi ý mua nếu chưa có đơn]\n${rxText}`
           : '',
       ].filter(Boolean);
       const context = contextSections.join('\n\n');
 
-      const fallbackReply = matching[0]?.content
-        ? products.length
-          ? `${matching[0].content}\n\nSản phẩm phù hợp đang có:\n${products
-              .map((p) => `• ${p.name} — ${p.price.toLocaleString('vi-VN')}đ/${p.unit} (Còn ${p.stock})`)
-              .join('\n')}`
-          : matching[0].content
-        : products.length
-          ? `An Tâm hiện có các sản phẩm phù hợp sau:\n${products
-              .map((p) => `• ${p.name} — ${p.price.toLocaleString('vi-VN')}đ/${p.unit} (Còn ${p.stock})`)
-              .join('\n')}\n\nBạn có thể bấm vào từng sản phẩm để xem chi tiết hoặc chọn “Kết nối dược sĩ” khi cần tư vấn thêm. Thông tin chỉ mang tính tham khảo.`
-          : rxMentioned.length
-            ? `${rxMentioned[0].name} là thuốc kê đơn cần đơn thuốc hợp lệ của bác sĩ. Bạn vui lòng chuẩn bị ảnh/PDF đơn thuốc ở mục “Thuốc theo đơn” hoặc bấm “Kết nối dược sĩ” để được kiểm duyệt và hướng dẫn.`
-            : 'Tôi có thể giúp tra cứu sản phẩm, chính sách giao hàng, thanh toán và theo dõi đơn hàng. Câu hỏi này cần thêm thông tin hoặc tư vấn chuyên môn. Bạn có thể chọn “Kết nối dược sĩ” để được nhân viên hỗ trợ. Thông tin tại đây chỉ mang tính tham khảo.';
+      const fallbackReply = isShippingQuery
+        ? `Phí giao hàng hiện là ${settings.shippingFee.toLocaleString('vi-VN')}đ. Đơn có tiền hàng từ ${settings.freeShippingThreshold.toLocaleString('vi-VN')}đ được miễn phí giao. Chi phí hiển thị ở bước đặt hàng.`
+        : isRxProcessQuery
+          ? 'Thêm sản phẩm vào giỏ rồi đính kèm đơn thuốc ở bước đặt hàng. Dược sĩ sẽ đối chiếu đơn với sản phẩm trước khi đơn được thanh toán hoặc xác nhận.'
+          : matching[0]?.content
+            ? products.length
+              ? `${matching[0].content}\n\nSản phẩm phù hợp đang có:\n${products
+                  .map(
+                    (p) =>
+                      `• ${p.name} — ${p.price.toLocaleString('vi-VN')}đ/${p.unit} (Còn ${p.stock})`,
+                  )
+                  .join('\n')}`
+              : matching[0].content
+            : products.length
+              ? `An Tâm hiện có các sản phẩm phù hợp sau:\n${products
+                  .map(
+                    (p) =>
+                      `• ${p.name} — ${p.price.toLocaleString('vi-VN')}đ/${p.unit} (Còn ${p.stock})`,
+                  )
+                  .join('\n')}\n\nBạn có thể bấm vào từng sản phẩm để xem chi tiết hoặc chọn “Kết nối dược sĩ” khi cần tư vấn thêm. Thông tin chỉ mang tính tham khảo.`
+              : rxMentioned.length
+                ? `${rxMentioned[0].name} là thuốc kê đơn cần đơn thuốc hợp lệ của bác sĩ. Bạn vui lòng chuẩn bị ảnh/PDF đơn thuốc ở mục “Thuốc theo đơn” hoặc bấm “Kết nối dược sĩ” để được kiểm duyệt và hướng dẫn.`
+                : 'Tôi có thể giúp tra cứu sản phẩm, combo ưu đãi, mã giảm giá, chính sách giao hàng, thanh toán và theo dõi đơn hàng. Câu hỏi này cần thêm thông tin hoặc tư vấn chuyên môn. Bạn có thể chọn “Kết nối dược sĩ” để được nhân viên hỗ trợ. Thông tin tại đây chỉ mang tính tham khảo.';
       reply = fallbackReply;
 
-      const canCallGemini =
-        geminiKeys().length > 0 &&
-        (!options.testing || options.allowProviderInTests);
       if (canCallGemini) {
         const recentHistory = session
           ? (
@@ -432,6 +484,8 @@ export function installChatbot(app, d, { auth }, options) {
             question: redactPii(message),
             context,
             history: recentHistory,
+            apiKeys: extraGeminiKeys,
+            modelOverride: settings.geminiModel || '',
           });
           mode = 'gemini';
         } catch (err) {
@@ -477,7 +531,7 @@ export function installChatbot(app, d, { auth }, options) {
         products,
         handoff: support,
         createdAt: now(),
-        providerConfigured: geminiKeys().length > 0,
+        providerConfigured: availableGeminiKeys.length > 0,
       },
     });
   });

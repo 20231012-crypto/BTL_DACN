@@ -1,16 +1,19 @@
 /**
- * Checkout Controller: coordinates saved addresses, prescription upload, promotions, and order placement.
+ * Checkout Controller: coordinates selected cart items (products & combos), saved addresses,
+ * prescription upload, voucher picker (manual selection or best auto-selection), and order placement.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { fetchAddresses } from '../models/accountModel.js';
 import {
   computeCartSubtotal,
+  extractCartSelectionPayload,
+  getSelectedCartItems,
   hasPrescriptionItem,
 } from '../models/cartModel.js';
 import { uploadPrescription } from '../models/httpClient.js';
 import {
   createCustomerOrder,
-  fetchActivePromotions,
+  evaluatePromotionsForSelection,
   validatePromotionCode,
 } from '../models/orderModel.js';
 import { useApp } from './AppContext.jsx';
@@ -40,6 +43,10 @@ export function useCheckoutController() {
   const [method, setMethod] = useState('cod');
   const [promotionCode, setPromotionCode] = useState('');
   const [promotion, setPromotion] = useState(null);
+  const [voucherModalOpen, setVoucherModalOpen] = useState(false);
+  const [evaluatedPromos, setEvaluatedPromos] = useState([]);
+  const [bestPromotion, setBestPromotion] = useState(null);
+  const [loadingPromos, setLoadingPromos] = useState(false);
   const [prescription, setPrescription] = useState(
     selectedPrescription?.userId === user?.id ? selectedPrescription : null,
   );
@@ -47,10 +54,22 @@ export function useCheckoutController() {
   const [note, setNote] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [promos, setPromos] = useState([]);
 
-  const rx = hasPrescriptionItem(cart);
-  const subtotal = computeCartSubtotal(cart);
+  const checkoutItems = useMemo(() => getSelectedCartItems(cart), [cart]);
+  const selectionPayload = useMemo(
+    () => extractCartSelectionPayload(checkoutItems),
+    [checkoutItems],
+  );
+  const selectionSignature = useMemo(
+    () =>
+      checkoutItems
+        .map((i) => `${i.id}:${i.quantity}`)
+        .join('|'),
+    [checkoutItems],
+  );
+
+  const rx = hasPrescriptionItem(checkoutItems);
+  const subtotal = computeCartSubtotal(checkoutItems);
   const shippingFee = config
     ? subtotal >= config.freeShippingThreshold
       ? 0
@@ -74,10 +93,39 @@ export function useCheckoutController() {
         if (def) setAddressId(String(def.id));
       })
       .catch(() => {});
-    fetchActivePromotions()
-      .then(setPromos)
-      .catch(() => {});
   }, [user]);
+
+  const refreshPromotions = useCallback(async () => {
+    if (!user || !checkoutItems.length) {
+      setEvaluatedPromos([]);
+      setBestPromotion(null);
+      setPromotion(null);
+      return;
+    }
+    setLoadingPromos(true);
+    try {
+      const res = await evaluatePromotionsForSelection(selectionPayload);
+      const list = Array.isArray(res?.promotions) ? res.promotions : [];
+      setEvaluatedPromos(list);
+      setBestPromotion(res?.bestPromotion || null);
+      setPromotion((current) => {
+        if (!current) return null;
+        const updated = list.find(
+          (p) => p.code === current.code && p.eligible,
+        );
+        return updated || null;
+      });
+    } catch {
+      setEvaluatedPromos([]);
+      setBestPromotion(null);
+    } finally {
+      setLoadingPromos(false);
+    }
+  }, [user, checkoutItems.length, selectionPayload]);
+
+  useEffect(() => {
+    refreshPromotions();
+  }, [selectionSignature, refreshPromotions]);
 
   const upload = async (e) => {
     const file = e.target.files[0];
@@ -94,21 +142,58 @@ export function useCheckoutController() {
     }
   };
 
-  const applyCode = async () => {
+  const applyCode = async (overrideCode) => {
+    const codeToApply = String(overrideCode ?? promotionCode)
+      .trim()
+      .toUpperCase();
+    if (!codeToApply) return;
     try {
       setError('');
-      const result = await validatePromotionCode(promotionCode, subtotal);
+      const result = await validatePromotionCode(
+        codeToApply,
+        subtotal,
+        selectionPayload,
+      );
+      setPromotionCode(result.code);
       setPromotion(result);
-      notify('Đã kiểm tra mã ưu đãi.');
+      setVoucherModalOpen(false);
+      notify(`Đã áp dụng voucher ${result.code} (giảm ${result.discount.toLocaleString('vi-VN')}đ).`);
     } catch (err) {
       setPromotion(null);
       setError(err.message);
     }
   };
 
+  const selectPromotion = (promo) => {
+    if (!promo?.eligible) return;
+    setError('');
+    setPromotionCode(promo.code);
+    setPromotion(promo);
+    setVoucherModalOpen(false);
+    notify(
+      `Đã chọn voucher ${promo.code} — giảm ${promo.discount.toLocaleString('vi-VN')}đ.`,
+    );
+  };
+
+  const applyBestPromotion = () => {
+    if (!bestPromotion) {
+      notify('Hiện chưa có voucher phù hợp cho các sản phẩm đã chọn.', 'info');
+      return;
+    }
+    selectPromotion(bestPromotion);
+  };
+
+  const clearPromotion = () => {
+    setPromotion(null);
+    setPromotionCode('');
+    setError('');
+  };
+
   const placeOrder = async (e) => {
     e.preventDefault();
     setError('');
+    if (!checkoutItems.length)
+      return setError('Vui lòng chọn ít nhất 1 sản phẩm trong giỏ hàng.');
     if (rx && !prescription)
       return setError('Vui lòng tải đơn thuốc để dược sĩ kiểm duyệt.');
     setBusy(true);
@@ -118,6 +203,7 @@ export function useCheckoutController() {
         paymentMethod: method,
         ...(prescription ? { prescriptionId: prescription.id } : {}),
         promotionCode: promotion?.code || undefined,
+        ...selectionPayload,
         note,
       });
       await refreshCart();
@@ -132,6 +218,7 @@ export function useCheckoutController() {
 
   return {
     cart,
+    checkoutItems,
     addresses,
     addressId,
     setAddressId,
@@ -142,16 +229,25 @@ export function useCheckoutController() {
     promotionCode,
     setPromotionCode: (val) => {
       setPromotionCode(val);
-      setPromotion(null);
+      if (promotion && promotion.code !== val.trim().toUpperCase()) {
+        setPromotion(null);
+      }
     },
     promotion,
+    promos: evaluatedPromos,
+    bestPromotion,
+    loadingPromos,
+    voucherModalOpen,
+    setVoucherModalOpen,
+    selectPromotion,
+    applyBestPromotion,
+    clearPromotion,
     prescription,
     uploading,
     note,
     setNote,
     error,
     busy,
-    promos,
     rx,
     subtotal,
     shippingFee,

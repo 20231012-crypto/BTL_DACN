@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useHomeController } from '../../controllers/useHomeController.js';
 import HeroBanner from '../components/HeroBanner.jsx';
+import ComboCard from '../components/ComboCard.jsx';
 import Link from '../components/Link.jsx';
 import { LogoIcon } from '../components/Logo.jsx';
 import ProductCard from '../components/ProductCard.jsx';
@@ -148,6 +149,28 @@ export default function HomeView() {
           />
         )}
       </section>
+      {c.combos?.length > 0 && (
+        <section className="container combo-section">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">TIẾT KIỆM HƠN KHI MUA CÙNG NHAU</span>
+              <h2>Combo chăm sóc sức khỏe</h2>
+            </div>
+            <Link to="/products" className="subtle-link">
+              Khám phá sản phẩm <ArrowRight size={17} />
+            </Link>
+          </div>
+          <div className="combo-grid">
+            {c.combos.slice(0, 4).map((combo) => (
+              <ComboCard
+                key={combo.id}
+                combo={combo}
+                onAdd={c.addComboToCart}
+              />
+            ))}
+          </div>
+        </section>
+      )}
       <section className="container care-banner">
         <div className="care-icon">
           <LogoIcon size={64} />

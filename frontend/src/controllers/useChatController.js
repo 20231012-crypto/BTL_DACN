@@ -23,10 +23,18 @@ export function useChatController({ onClose, full = false }) {
   );
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState('knowledge');
+  const [mode, setMode] = useState(() =>
+    config?.geminiConfigured ? 'gemini' : 'knowledge',
+  );
   const [sessions, setSessions] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const initializedRef = useRef(false);
+
+  useEffect(() => {
+    if (!messages.length && config?.geminiConfigured) {
+      setMode('gemini');
+    }
+  }, [config?.geminiConfigured, messages.length]);
 
   const openSession = useCallback(
     async (id) => {
@@ -91,7 +99,7 @@ export function useChatController({ onClose, full = false }) {
   const startNewChat = () => {
     setMessages([]);
     setSessionId(null);
-    setMode('knowledge');
+    setMode(config?.geminiConfigured ? 'gemini' : 'knowledge');
     setShowHistory(false);
     writeSavedChatSessionId(storageKey, 'new');
   };

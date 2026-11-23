@@ -30,6 +30,7 @@ export default function AdminSettingsView({
 }) {
   const dirty = useMemo(
     () =>
+      Boolean(form.geminiApiKey?.trim()) ||
       EDITABLE_SETTINGS_KEYS.some((key) => {
         if (key === 'chatbotEnabled') return !!form[key] !== !!data?.[key];
         return String(form[key] ?? '') !== String(data?.[key] ?? '');
@@ -48,6 +49,10 @@ export default function AdminSettingsView({
       otpTtlMinutes: Number(form.otpTtlMinutes || 1),
       paymentTimeoutMinutes: Number(form.paymentTimeoutMinutes || 1),
       chatbotEnabled: !!form.chatbotEnabled,
+      geminiModel: form.geminiModel || 'gemini-2.5-flash',
+      ...(form.geminiApiKey !== undefined && form.geminiApiKey !== ''
+        ? { geminiApiKey: form.geminiApiKey.trim() }
+        : {}),
     };
     onSubmit(e, payload);
   };
@@ -190,7 +195,36 @@ export default function AdminSettingsView({
               name="chatbotEnabled"
               value={form.chatbotEnabled}
               onChange={onChange}
-              hint="Khi bật, khách hàng có thể trò chuyện với trợ lý AI theo cơ sở tri thức và quy tắc an toàn đã duyệt."
+              hint="Khi bật, Góc tư vấn sử dụng Gemini AI theo khóa đã cấu hình cùng cơ sở tri thức và quy tắc an toàn đã duyệt."
+            />
+          </div>
+          <div className="adm-form-grid" style={{ marginTop: 12 }}>
+            <Field
+              label="Model Gemini AI"
+              name="geminiModel"
+              value={form.geminiModel || data?.geminiModel || 'gemini-2.5-flash'}
+              onChange={onChange}
+              placeholder="gemini-2.5-flash"
+              hint={
+                data?.geminiKeySource === 'env'
+                  ? `Đang dùng Gemini API key có sẵn từ biến môi trường (${data?.geminiKeyMasked}).`
+                  : data?.geminiKeySource === 'settings'
+                    ? `Đang dùng Gemini API key đã lưu trong cấu hình (${data?.geminiKeyMasked}).`
+                    : 'Chưa phát hiện biến môi trường GEMINI_API_KEY; có thể nhập key dự phòng bên cạnh.'
+              }
+            />
+            <Field
+              label="Gemini API Key dự phòng (tùy chọn)"
+              name="geminiApiKey"
+              type="password"
+              value={form.geminiApiKey || ''}
+              onChange={onChange}
+              placeholder={
+                data?.geminiConfigured
+                  ? 'Để trống để giữ nguyên key hiện tại'
+                  : 'Nhập Gemini API Key (AIza...)'
+              }
+              hint="Key lưu phía máy chủ, không lộ ra trình duyệt khách hàng."
             />
           </div>
         </section>

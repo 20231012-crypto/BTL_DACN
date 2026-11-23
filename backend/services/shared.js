@@ -160,10 +160,84 @@ export async function productList(d, query = {}, hidden = false) {
   if (query.sort === 'newest') list.sort((a, b) => b.id - a.id);
   return list;
 }
+export const parseIdList = (raw) => {
+  try {
+    const parsed = Array.isArray(raw) ? raw : JSON.parse(raw || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return [
+      ...new Set(
+        parsed
+          .map((x) => Number(x))
+          .filter((n) => Number.isSafeInteger(n) && n > 0),
+      ),
+    ];
+  } catch {
+    return [];
+  }
+};
+export async function getCombo(d, id, includeHidden = false) {
+  const comboId = Number(id);
+  if (!Number.isSafeInteger(comboId) || comboId < 1) return null;
+  const row = await d.one('SELECT * FROM combo_san_pham WHERE id=?', comboId);
+  if (!row) return null;
+  if (!includeHidden && !row.active) return null;
+  const itemRows = await d.all(
+    'SELECT * FROM combo_san_pham_item WHERE combo_id=? ORDER BY id',
+    row.id,
+  );
+  const items = [];
+  for (const ir of itemRows) {
+    const product = await getProduct(d, ir.product_id, true);
+    if (!product) continue;
+    items.push({
+      id: ir.id,
+      productId: ir.product_id,
+      quantity: ir.quantity,
+      product,
+    });
+  }
+  const allProductsActive =
+    items.length > 0 &&
+    items.every((i) => i.product?.active && i.product?.categoryActive);
+  if (!includeHidden && !allProductsActive) return null;
+  const originalPrice = items.reduce(
+    (sum, i) => sum + Number(i.product.price || 0) * i.quantity,
+    0,
+  );
+  const stock = allProductsActive
+    ? Math.min(
+        ...items.map((i) =>
+          Math.floor(Number(i.product.stock || 0) / i.quantity),
+        ),
+      )
+    : 0;
+  return {
+    ...camel(row),
+    active: !!row.active,
+    price: Number(row.price || 0),
+    originalPrice,
+    savings: Math.max(0, originalPrice - Number(row.price || 0)),
+    stock: Math.max(0, stock),
+    prescriptionRequired: items.some((i) => i.product?.prescriptionRequired),
+    image: row.image || items[0]?.product?.image || '/assets/products/vitamin-c.svg',
+    items,
+  };
+}
+export async function comboList(d, includeHidden = false) {
+  const rows = await d.all(
+    `SELECT id FROM combo_san_pham ${includeHidden ? '' : 'WHERE active=1'} ORDER BY id DESC`,
+  );
+  const out = [];
+  for (const r of rows) {
+    const c = await getCombo(d, r.id, includeHidden);
+    if (c) out.push(c);
+  }
+  return out;
+}
 export async function cartRows(d, userId) {
   const cart = await d.one('SELECT id FROM gio_hang WHERE user_id=?', userId);
   if (!cart) return [];
-  return await Promise.all(
+  const productRows = await Promise.all(
     (
       await d.all(
         'SELECT * FROM chi_tiet_gio_hang WHERE cart_id=? ORDER BY id',
@@ -171,11 +245,30 @@ export async function cartRows(d, userId) {
       )
     ).map(async (x) => ({
       id: x.id,
+      itemType: 'product',
       productId: x.product_id,
       quantity: x.quantity,
+      selected: x.selected === undefined ? true : !!x.selected,
       product: await getProduct(d, x.product_id, true),
     })),
   );
+  const comboCartRows = await Promise.all(
+    (
+      await d.all(
+        'SELECT * FROM chi_tiet_gio_hang_combo WHERE cart_id=? ORDER BY id',
+        cart.id,
+      )
+    ).map(async (x) => ({
+      id: `combo-${x.id}`,
+      comboCartId: x.id,
+      itemType: 'combo',
+      comboId: x.combo_id,
+      quantity: x.quantity,
+      selected: x.selected === undefined ? true : !!x.selected,
+      combo: await getCombo(d, x.combo_id, true),
+    })),
+  );
+  return [...productRows, ...comboCartRows.filter((x) => x.combo)];
 }
 export function requestView(row) {
   const { evidence_storage_name, evidence_mime_type, ...data } = row;

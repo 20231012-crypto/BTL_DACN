@@ -1,4 +1,4 @@
-export function geminiKeys() {
+export function geminiKeys(extraKeys = []) {
   const source = process.env.GEMINI_API_KEYS?.trim();
   let values = [];
   if (source) {
@@ -10,6 +10,9 @@ export function geminiKeys() {
     if (!Array.isArray(values)) values = [];
   }
   if (process.env.GEMINI_API_KEY) values.push(process.env.GEMINI_API_KEY);
+  if (Array.isArray(extraKeys)) values.push(...extraKeys);
+  else if (typeof extraKeys === 'string' && extraKeys.trim())
+    values.push(extraKeys);
   return [
     ...new Set(
       values
@@ -25,8 +28,9 @@ export async function geminiRequest(
   body,
   timeoutMs = 20000,
   attemptMs = 8000,
+  extraKeys = [],
 ) {
-  const keys = geminiKeys();
+  const keys = geminiKeys(extraKeys);
   if (!keys.length) throw new Error('Chưa cấu hình Gemini.');
   const deadline = Date.now() + timeoutMs;
   for (const key of keys) {

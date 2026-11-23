@@ -104,10 +104,22 @@ export const fetchActivePromotions = async () => {
   return Array.isArray(data) ? data : [];
 };
 
-export const validatePromotionCode = (code, subtotal) =>
+export const evaluatePromotionsForSelection = (selectionPayload = {}) =>
+  api('/promotions/evaluate', {
+    method: 'POST',
+    body: selectionPayload,
+  });
+
+export const validatePromotionCode = (
+  code,
+  subtotal,
+  selectionPayload = null,
+) =>
   api('/promotions/validate', {
     method: 'POST',
-    body: { code, subtotal },
+    body: selectionPayload
+      ? { code, subtotal, ...selectionPayload }
+      : { code, subtotal },
   });
 
 export const filterCustomerOrders = (orders, filter) =>

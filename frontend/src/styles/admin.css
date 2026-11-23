@@ -4699,3 +4699,136 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+/* === Admin Combos & Scoped Promotions === */
+.adm-combo-item-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.adm-combo-item-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #edf6f1;
+  color: #154e3b;
+  font-size: 0.76rem;
+}
+.adm-scope-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #1d4ed8;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.adm-scope-picker {
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8faf9;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.adm-scope-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.adm-scope-picker-head input {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  font-size: 0.84rem;
+  min-width: 190px;
+}
+.adm-scope-picker-list {
+  max-height: 200px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 6px;
+}
+.adm-scope-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+.adm-scope-option span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.adm-scope-option small {
+  color: #15664b;
+  font-weight: 600;
+}
+.adm-combo-presets {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+}
+.adm-combo-builder {
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8faf9;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.adm-combo-builder-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.adm-combo-row {
+  display: grid;
+  grid-template-columns: 1fr 90px auto;
+  gap: 8px;
+  align-items: center;
+}
+.adm-combo-row select,
+.adm-combo-row input {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  background: #fff;
+}
+.adm-combo-summary-strip {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  padding-top: 6px;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+.adm-field-error {
+  color: #b43c32;
+  font-size: 0.8rem;
+}
+.adm-support-closed-note {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #f3f4f6;
+  color: #374151;
+  font-size: 0.86rem;
+}

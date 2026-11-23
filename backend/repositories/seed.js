@@ -77,8 +77,92 @@ export async function seedDatabase(
   }
   if (!demoData && !sampleCatalogOwnerId) return;
   await d.transaction(async () => {
-    if (demoData && (await d.one('SELECT COUNT(*) n FROM nguoi_dung')).n)
+    if (demoData && (await d.one('SELECT COUNT(*) n FROM nguoi_dung')).n) {
+      const existingCombos = await d.one(
+        'SELECT COUNT(*) n FROM combo_san_pham',
+      );
+      if (!existingCombos.n) {
+        const sampleProducts = await d.all(
+          'SELECT id FROM thuoc WHERE active=1 AND prescription_required=0 ORDER BY id LIMIT 6',
+        );
+        if (sampleProducts.length >= 4) {
+          const pIds = sampleProducts.map((p) => p.id);
+          const c1 = await d.insert('combo_san_pham', {
+            name: 'Combo Tăng Đề Kháng Toàn Diện',
+            slug: 'combo-tang-de-khang-toan-dien',
+            description:
+              'Kết hợp bổ sung vitamin và khoáng chất thiết yếu giúp tăng cường đề kháng mỗi ngày với giá tiết kiệm.',
+            image: '/assets/products/vitamin-c.svg',
+            price: 169000,
+            active: 1,
+            created_at: now(),
+          });
+          await d.insert('combo_san_pham_item', {
+            combo_id: c1,
+            product_id: pIds[1],
+            quantity: 1,
+          });
+          await d.insert('combo_san_pham_item', {
+            combo_id: c1,
+            product_id: pIds[3],
+            quantity: 1,
+          });
+          const c2 = await d.insert('combo_san_pham', {
+            name: 'Combo Tủ Thuốc Gia Đình An Tâm',
+            slug: 'combo-tu-thuoc-gia-dinh-an-tam',
+            description:
+              'Bộ sản phẩm thiết yếu chăm sóc sức khỏe hằng ngày cho cả gia đình, tiết kiệm hơn khi mua lẻ.',
+            image: '/assets/products/paracetamol.svg',
+            price: 119000,
+            active: 1,
+            created_at: now(),
+          });
+          await d.insert('combo_san_pham_item', {
+            combo_id: c2,
+            product_id: pIds[0],
+            quantity: 2,
+          });
+          await d.insert('combo_san_pham_item', {
+            combo_id: c2,
+            product_id: pIds[2],
+            quantity: 1,
+          });
+          if (!(await d.one("SELECT id FROM khuyen_mai WHERE code='COMBO15'"))) {
+            await d.insert('khuyen_mai', {
+              code: 'COMBO15',
+              name: 'Giảm 15% cho Combo tiết kiệm',
+              type: 'percent',
+              value: 15,
+              min_order: 100000,
+              max_discount: 60000,
+              usage_limit: 300,
+              start_date: daysFromNow(-15),
+              end_date: daysFromNow(90),
+              apply_scope: 'combo',
+              target_ids_json: JSON.stringify([c1, c2]),
+            });
+          }
+          if (
+            !(await d.one("SELECT id FROM khuyen_mai WHERE code='SPVITAMIN15'"))
+          ) {
+            await d.insert('khuyen_mai', {
+              code: 'SPVITAMIN15',
+              name: 'Giảm 15.000đ cho sản phẩm bổ sung chỉ định',
+              type: 'fixed',
+              value: 15000,
+              min_order: 50000,
+              max_discount: 15000,
+              usage_limit: 300,
+              start_date: daysFromNow(-15),
+              end_date: daysFromNow(90),
+              apply_scope: 'product',
+              target_ids_json: JSON.stringify([pIds[1], pIds[3]]),
+            });
+          }
+        }
+      }
       return;
+    }
     if (!demoData && (await d.one('SELECT id FROM thuoc LIMIT 1'))) return;
     if (demoData) {
       const hash = bcrypt.hashSync('Demo@123', 10);
@@ -562,7 +646,79 @@ export async function seedDatabase(
       usage_limit: 200,
       start_date: daysFromNow(-10),
       end_date: daysFromNow(60),
+      apply_scope: 'order',
+      target_ids_json: '[]',
     });
+    if (productIds.length >= 6) {
+      const combo1Id = await d.insert('combo_san_pham', {
+        name: 'Combo Tăng Đề Kháng Toàn Diện',
+        slug: 'combo-tang-de-khang-toan-dien',
+        description:
+          'Kết hợp bổ sung vitamin và khoáng chất thiết yếu giúp tăng cường đề kháng mỗi ngày với giá tiết kiệm.',
+        image: '/assets/products/vitamin-c.svg',
+        price: 169000,
+        active: 1,
+        created_at: now(),
+      });
+      await d.insert('combo_san_pham_item', {
+        combo_id: combo1Id,
+        product_id: productIds[1],
+        quantity: 1,
+      });
+      await d.insert('combo_san_pham_item', {
+        combo_id: combo1Id,
+        product_id: productIds[4],
+        quantity: 1,
+      });
+
+      const combo2Id = await d.insert('combo_san_pham', {
+        name: 'Combo Tủ Thuốc Gia Đình An Tâm',
+        slug: 'combo-tu-thuoc-gia-dinh-an-tam',
+        description:
+          'Bộ sản phẩm thiết yếu chăm sóc sức khỏe hằng ngày cho cả gia đình, tiết kiệm hơn khi mua lẻ.',
+        image: '/assets/products/paracetamol.svg',
+        price: 119000,
+        active: 1,
+        created_at: now(),
+      });
+      await d.insert('combo_san_pham_item', {
+        combo_id: combo2Id,
+        product_id: productIds[0],
+        quantity: 2,
+      });
+      await d.insert('combo_san_pham_item', {
+        combo_id: combo2Id,
+        product_id: productIds[5],
+        quantity: 1,
+      });
+
+      await d.insert('khuyen_mai', {
+        code: 'COMBO15',
+        name: 'Giảm 15% cho Combo tiết kiệm',
+        type: 'percent',
+        value: 15,
+        min_order: 100000,
+        max_discount: 60000,
+        usage_limit: 300,
+        start_date: daysFromNow(-15),
+        end_date: daysFromNow(90),
+        apply_scope: 'combo',
+        target_ids_json: JSON.stringify([combo1Id, combo2Id]),
+      });
+      await d.insert('khuyen_mai', {
+        code: 'SPVITAMIN15',
+        name: 'Giảm 15.000đ cho sản phẩm bổ sung chỉ định',
+        type: 'fixed',
+        value: 15000,
+        min_order: 50000,
+        max_discount: 15000,
+        usage_limit: 300,
+        start_date: daysFromNow(-15),
+        end_date: daysFromNow(90),
+        apply_scope: 'product',
+        target_ids_json: JSON.stringify([productIds[1], productIds[4]]),
+      });
+    }
     if (!demoData) return;
     const addressesByUser = {
       1: await d.one('SELECT * FROM dia_chi_giao_hang WHERE user_id=1'),

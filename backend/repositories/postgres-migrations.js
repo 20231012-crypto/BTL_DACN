@@ -10,6 +10,7 @@ export async function initializePostgresSchema(store) {
     orderFulfillment,
     chatMessageProducts,
     userProfileFields,
+    combosVouchersCart,
   ] = await Promise.all([
     readFile(new URL('20261118000100_minhan.sql', migrations), 'utf8'),
     readFile(new URL('20261118180033_rename_schema_to_antam.sql', migrations), 'utf8'),
@@ -17,6 +18,7 @@ export async function initializePostgresSchema(store) {
     readFile(new URL('20261119000200_order_fulfillment_fields.sql', migrations), 'utf8'),
     readFile(new URL('20261119000300_chat_message_products.sql', migrations), 'utf8'),
     readFile(new URL('20261119000400_user_profile_fields.sql', migrations), 'utf8'),
+    readFile(new URL('20261123000100_combos_vouchers_cart.sql', migrations), 'utf8'),
   ]);
 
   await store.transaction(async () => {
@@ -32,6 +34,7 @@ export async function initializePostgresSchema(store) {
     await store.migrate(orderFulfillment);
     await store.migrate(chatMessageProducts);
     await store.migrate(userProfileFields);
+    await store.migrate(combosVouchersCart);
   });
 }
 
@@ -90,6 +93,19 @@ export async function applyPendingMigrations(store) {
       );
       await store.transaction(async () => {
         await store.migrate(userProfileFields);
+      });
+    }
+
+    const comboTbl = await store.one(
+      "SELECT to_regclass('antam.combo_san_pham') IS NOT NULL AS present",
+    );
+    if (!comboTbl?.present) {
+      const combosVouchersCart = await readFile(
+        new URL('20261123000100_combos_vouchers_cart.sql', migrations),
+        'utf8',
+      );
+      await store.transaction(async () => {
+        await store.migrate(combosVouchersCart);
       });
     }
   } catch (error) {

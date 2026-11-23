@@ -18,9 +18,18 @@ const SYSTEM_PROMPT = [
   '8. Trình bày ngắn gọn, rõ ràng (dùng gạch đầu dòng nếu liệt kê nhiều sản phẩm hoặc nhiều ý). Khi nội dung liên quan sức khỏe hoặc dùng sản phẩm, kết thúc bằng 1 câu nhắc ngắn rằng thông tin chỉ mang tính tham khảo, không thay thế tư vấn của bác sĩ hoặc dược sĩ.',
 ].join('\n');
 
-export async function generateAnswer({ question, context = '', history = [] }) {
-  if (!geminiKeys().length) return null;
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+export async function generateAnswer({
+  question,
+  context = '',
+  history = [],
+  apiKeys = [],
+  modelOverride = '',
+}) {
+  if (!geminiKeys(apiKeys).length) return null;
+  const model =
+    (typeof modelOverride === 'string' && modelOverride.trim()) ||
+    process.env.GEMINI_MODEL ||
+    'gemini-2.5-flash';
   if (!/^[a-zA-Z0-9._-]+$/.test(model))
     throw new Error('Cấu hình model Gemini không hợp lệ.');
 
@@ -52,8 +61,9 @@ export async function generateAnswer({ question, context = '', history = [] }) {
       contents,
       generationConfig,
     },
-    10000,
-    6000,
+    15000,
+    9000,
+    apiKeys,
   );
   const output = result.candidates?.[0]?.content?.parts
     ?.filter((part) => !part.thought)

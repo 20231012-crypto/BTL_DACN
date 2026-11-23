@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { useCatalogController } from '../../controllers/useCatalogController.js';
+import ComboCard from '../components/ComboCard.jsx';
 import Link from '../components/Link.jsx';
 import Pagination from '../components/Pagination.jsx';
 import ProductCard from '../components/ProductCard.jsx';
@@ -276,6 +277,25 @@ export default function CatalogView() {
             </select>
           </div>
           <ErrorBox error={c.error} />
+          {c.combos?.length > 0 && !c.activeFilters.length && (
+            <section className="catalog-combos-block">
+              <div className="catalog-combos-head">
+                <h2>Combo tiết kiệm</h2>
+                <span className="muted small">
+                  {c.combos.length} gói kết hợp ưu đãi
+                </span>
+              </div>
+              <div className="combo-grid">
+                {c.combos.map((combo) => (
+                  <ComboCard
+                    key={combo.id}
+                    combo={combo}
+                    onAdd={c.addComboToCart}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
           {!c.items && !c.error ? (
             <Spinner />
           ) : c.pagedItems?.length ? (

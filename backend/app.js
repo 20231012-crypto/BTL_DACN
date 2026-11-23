@@ -12,6 +12,8 @@ import {
   getSettings,
   getProduct,
   productList,
+  getCombo,
+  comboList,
 } from './services/shared.js';
 import { installAuth } from './services/auth.js';
 import { installOrders, expireOrders } from './services/orders.js';
@@ -219,6 +221,9 @@ export async function createApp(options = {}) {
   );
   app.get('/api/config', edgeCache(60, 300), async (req, res) => {
     const s = await getSettings(d);
+    const hasGemini =
+      geminiKeys().length > 0 ||
+      Boolean(typeof s.geminiApiKey === 'string' && s.geminiApiKey.trim());
     res.json({
       data: {
         storeName: s.storeName,
@@ -228,7 +233,8 @@ export async function createApp(options = {}) {
         chatbotEnabled: s.chatbotEnabled,
         otpMode: config.demo ? 'demo' : 'email',
         googleConfigured: Boolean(config.google),
-        prescriptionReadingConfigured: geminiKeys().length > 0,
+        geminiConfigured: hasGemini,
+        prescriptionReadingConfigured: hasGemini,
         uploadMode: config.attachmentStorage ? 'signed' : 'multipart',
         paymentProvider: config.vnpay ? 'vnpay' : config.demo ? 'demo' : 'cod',
         paymentMethods: [
@@ -239,6 +245,16 @@ export async function createApp(options = {}) {
         ],
       },
     });
+  });
+  app.get('/api/combos', edgeCache(30, 120), async (req, res) =>
+    res.json({
+      data: await comboList(d, false),
+    }),
+  );
+  app.get('/api/combos/:id', async (req, res) => {
+    const combo = await getCombo(d, req.params.id, false);
+    assert(combo, 404, 'Không tìm thấy combo sản phẩm.');
+    res.json({ data: combo });
   });
   app.get('/api/products', edgeCache(30, 120), async (req, res) =>
     res.json({

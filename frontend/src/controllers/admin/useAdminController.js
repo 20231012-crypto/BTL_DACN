@@ -48,6 +48,7 @@ export function useAdminController({ user, onLogout, navItems }) {
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [products, setProducts] = useState([]);
+  const [combos, setCombos] = useState([]);
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [manufacturers, setManufacturers] = useState([]);
@@ -126,11 +127,17 @@ export function useAdminController({ user, onLogout, navItems }) {
       if (view === 'dashboard' && res.result?.queues) {
         setNavCounts(res.result.queues);
       }
-      if (view === 'products' || view === 'inventory') {
+      if (
+        view === 'products' ||
+        view === 'combos' ||
+        view === 'inventory' ||
+        view === 'promotions'
+      ) {
         const partners = await fetchAdminProductsAndPartners(
           hasPermission('catalog'),
         );
         setProducts(partners.products);
+        setCombos(partners.combos || []);
         if (hasPermission('catalog')) {
           setCategories(partners.categories);
           setManufacturers(partners.manufacturers);
@@ -391,6 +398,7 @@ export function useAdminController({ user, onLogout, navItems }) {
     saving,
     setSaving,
     products,
+    combos,
     categories,
     suppliers,
     manufacturers,

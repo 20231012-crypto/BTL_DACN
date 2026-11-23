@@ -1,13 +1,14 @@
 /**
- * Home Controller: loads featured products and handles category tab filtering on storefront home.
+ * Home Controller: loads featured products and active product combos for the storefront homepage.
  */
 import { useEffect, useState } from 'react';
-import { fetchFeaturedProducts } from '../models/catalogModel.js';
+import { fetchCombos, fetchFeaturedProducts } from '../models/catalogModel.js';
 import { useApp } from './AppContext.jsx';
 
 export function useHomeController() {
-  const { categories, setChatOpen } = useApp();
+  const { categories, setChatOpen, addComboToCart } = useApp();
   const [products, setProducts] = useState(null);
+  const [combos, setCombos] = useState([]);
   const [error, setError] = useState('');
   const [category, setCategory] = useState('all');
 
@@ -15,6 +16,9 @@ export function useHomeController() {
     fetchFeaturedProducts()
       .then(setProducts)
       .catch((e) => setError(e.message));
+    fetchCombos()
+      .then(setCombos)
+      .catch(() => setCombos([]));
   }, []);
 
   const shown = products
@@ -24,10 +28,12 @@ export function useHomeController() {
   return {
     categories,
     products,
+    combos,
     shown,
     error,
     category,
     setCategory,
+    addComboToCart,
     openChat: () => setChatOpen(true),
   };
 }

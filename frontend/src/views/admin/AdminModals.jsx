@@ -256,16 +256,55 @@ function ProductModal({ item, form, change, categories, manufacturers, submit, c
   );
 }
 
-function PromotionModal({ item, form, change, submit, close, saving }) {
+function PromotionModal({
+  item,
+  form,
+  setForm,
+  change,
+  products = [],
+  combos = [],
+  submit,
+  close,
+  saving,
+}) {
+  const [targetSearch, setTargetSearch] = React.useState('');
   const edit = !!item.id;
   const invalidDates =
     form.startDate && form.endDate && form.startDate > form.endDate;
   const minLimit = edit ? Math.max(1, Number(item.usedCount || 1)) : 1;
+  const applyScope = form.applyScope || 'order';
+  const selectedIds = Array.isArray(form.targetIds)
+    ? form.targetIds.map(Number)
+    : [];
+  const needTargets = applyScope === 'product' && selectedIds.length === 0;
+
+  const toggleTarget = (id) => {
+    const numId = Number(id);
+    setForm((prev) => {
+      const cur = Array.isArray(prev.targetIds)
+        ? prev.targetIds.map(Number)
+        : [];
+      const next = cur.includes(numId)
+        ? cur.filter((x) => x !== numId)
+        : [...cur, numId];
+      return { ...prev, targetIds: next };
+    });
+  };
+
+  const candidates = (applyScope === 'combo' ? combos : products).filter(
+    (entry) => {
+      if (!targetSearch.trim()) return true;
+      return String(entry.name || '')
+        .toLowerCase()
+        .includes(targetSearch.trim().toLowerCase());
+    },
+  );
 
   return (
     <Modal
       title={edit ? 'Chỉnh sửa khuyến mãi' : 'Tạo khuyến mãi mới'}
       onClose={close}
+      wide
     >
       <form
         onSubmit={(e) =>
@@ -281,6 +320,8 @@ function PromotionModal({ item, form, change, submit, close, saving }) {
               maxDiscount:
                 Number(form.maxDiscount) > 0 ? Number(form.maxDiscount) : null,
               usageLimit: Number(form.usageLimit) || 100,
+              applyScope,
+              targetIds: applyScope === 'order' ? [] : selectedIds,
             },
           )
         }
@@ -299,6 +340,69 @@ function PromotionModal({ item, form, change, submit, close, saving }) {
             ],
             form,
             change,
+          )}
+          <Field label="Phạm vi áp dụng" wide>
+            <select
+              name="applyScope"
+              value={applyScope}
+              onChange={(e) => {
+                const nextScope = e.target.value;
+                setTargetSearch('');
+                setForm((prev) => ({
+                  ...prev,
+                  applyScope: nextScope,
+                  targetIds: [],
+                }));
+              }}
+            >
+              <option value="order">Tổng giá trị đơn hàng</option>
+              <option value="product">Sản phẩm nhất định</option>
+              <option value="combo">Combo sản phẩm</option>
+            </select>
+          </Field>
+          {applyScope !== 'order' && (
+            <div className="adm-field is-wide adm-scope-picker">
+              <div className="adm-scope-picker-head">
+                <span>
+                  {applyScope === 'combo'
+                    ? `Chọn combo áp dụng (${selectedIds.length ? `Đã chọn ${selectedIds.length}` : 'Bỏ trống = áp dụng mọi combo'})`
+                    : `Chọn sản phẩm áp dụng (Đã chọn ${selectedIds.length}) *`}
+                </span>
+                <input
+                  type="search"
+                  placeholder={
+                    applyScope === 'combo' ? 'Lọc combo...' : 'Lọc sản phẩm...'
+                  }
+                  value={targetSearch}
+                  onChange={(e) => setTargetSearch(e.target.value)}
+                />
+              </div>
+              <div className="adm-scope-picker-list">
+                {candidates.length === 0 ? (
+                  <small className="muted">Không có mục phù hợp.</small>
+                ) : (
+                  candidates.map((entry) => {
+                    const checked = selectedIds.includes(Number(entry.id));
+                    return (
+                      <label key={entry.id} className="adm-scope-option">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleTarget(entry.id)}
+                        />
+                        <span>{entry.name}</span>
+                        <small>{money(entry.price)}</small>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+              {needTargets && (
+                <small className="adm-field-error">
+                  Vui lòng chọn ít nhất 1 sản phẩm áp dụng.
+                </small>
+              )}
+            </div>
           )}
           <Field label="Hình thức giảm">
             <select
@@ -323,7 +427,9 @@ function PromotionModal({ item, form, change, submit, close, saving }) {
               ],
               [
                 'minOrder',
-                'Giá trị đơn tối thiểu (đ)',
+                applyScope === 'order'
+                  ? 'Giá trị đơn tối thiểu (đ)'
+                  : 'Giá trị hàng áp dụng tối thiểu (đ)',
                 'number',
                 false,
                 { min: 0 },
@@ -366,7 +472,7 @@ function PromotionModal({ item, form, change, submit, close, saving }) {
           </button>
           <button
             className="adm-btn primary"
-            disabled={saving || invalidDates}
+            disabled={saving || invalidDates || needTargets}
             type="submit"
           >
             {saving ? (
@@ -375,6 +481,254 @@ function PromotionModal({ item, form, change, submit, close, saving }) {
               <Check size={16} />
             )}{' '}
             {edit ? 'Lưu khuyến mãi' : 'Tạo khuyến mãi'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function ComboModal({
+  item,
+  form,
+  setForm,
+  change,
+  products = [],
+  submit,
+  close,
+  saving,
+}) {
+  const edit = !!item.id;
+  const rows =
+    Array.isArray(form.items) && form.items.length
+      ? form.items
+      : [
+          { productId: '', quantity: 1 },
+          { productId: '', quantity: 1 },
+        ];
+  const productMap = new Map(products.map((p) => [Number(p.id), p]));
+
+  const updateRow = (idx, field, val) => {
+    setForm((prev) => {
+      const next = [...(prev.items || rows)];
+      next[idx] = { ...next[idx], [field]: val };
+      return { ...prev, items: next };
+    });
+  };
+  const addRow = () =>
+    setForm((prev) => ({
+      ...prev,
+      items: [...(prev.items || rows), { productId: '', quantity: 1 }],
+    }));
+  const removeRow = (idx) =>
+    setForm((prev) => ({
+      ...prev,
+      items: (prev.items || rows).filter((_, i) => i !== idx),
+    }));
+
+  const validItems = rows
+    .map((r) => ({
+      productId: Number(r.productId),
+      quantity: Math.max(1, Number(r.quantity) || 1),
+      product: productMap.get(Number(r.productId)),
+    }))
+    .filter((r) => r.productId > 0 && r.product);
+
+  const originalPrice = validItems.reduce(
+    (s, r) => s + Number(r.product.price || 0) * r.quantity,
+    0,
+  );
+  const availableStock = validItems.length
+    ? Math.min(
+        ...validItems.map((r) =>
+          Math.floor(Number(r.product.stock || 0) / r.quantity),
+        ),
+      )
+    : 0;
+  const comboPrice = Number(form.price || 0);
+  const savings = Math.max(0, originalPrice - comboPrice);
+  const hasDuplicates =
+    new Set(validItems.map((r) => r.productId)).size !== validItems.length;
+  const totalQty = validItems.reduce((s, r) => s + r.quantity, 0);
+  const invalidCombo =
+    !validItems.length ||
+    (validItems.length < 2 && totalQty < 2) ||
+    hasDuplicates;
+
+  return (
+    <Modal
+      title={edit ? 'Chỉnh sửa Combo sản phẩm' : 'Tạo Combo sản phẩm mới'}
+      onClose={close}
+      wide
+    >
+      <form
+        onSubmit={(e) =>
+          submit(
+            e,
+            `/admin/combos${edit ? `/${item.id}` : ''}`,
+            edit ? 'PATCH' : 'POST',
+            {
+              name: String(form.name || '').trim(),
+              description: String(form.description || '').trim(),
+              image: String(form.image || '').trim(),
+              price: Number(form.price || 0),
+              active: form.active !== false,
+              items: validItems.map(({ productId, quantity }) => ({
+                productId,
+                quantity,
+              })),
+            },
+          )
+        }
+      >
+        <div className="adm-modal-body adm-form-grid">
+          <Field
+            label="Tên gói Combo"
+            name="name"
+            value={form.name}
+            onChange={change}
+            required
+            wide
+            placeholder="VD: Combo Tăng Đề Kháng Toàn Diện"
+          />
+          <Field
+            label="Mô tả ngắn"
+            name="description"
+            type="textarea"
+            value={form.description}
+            onChange={change}
+            wide
+            placeholder="Công dụng và lợi ích khi mua trọn gói combo..."
+          />
+          <Field
+            label="Ảnh đại diện (URL)"
+            name="image"
+            value={form.image}
+            onChange={change}
+            placeholder="/assets/products/vitamin-c.svg"
+          />
+          <Field
+            label="Giá bán Combo (đ)"
+            name="price"
+            type="number"
+            min={0}
+            value={form.price}
+            onChange={change}
+            required
+            hint={
+              originalPrice > 0
+                ? `Tổng giá lẻ: ${money(originalPrice)} · Tiết kiệm ${money(savings)}`
+                : 'Chọn sản phẩm thành phần để xem tổng giá lẻ.'
+            }
+          />
+          {originalPrice > 0 && (
+            <div className="adm-field is-wide adm-combo-presets">
+              <span>Gợi ý giá nhanh từ tổng giá lẻ ({money(originalPrice)}):</span>
+              {[5, 10, 15, 20].map((pct) => {
+                const suggested =
+                  Math.round((originalPrice * (100 - pct)) / 100 / 1000) * 1000;
+                return (
+                  <button
+                    key={pct}
+                    type="button"
+                    className="adm-quick-chip"
+                    onClick={() =>
+                      setForm((prev) => ({ ...prev, price: suggested }))
+                    }
+                  >
+                    Giảm {pct}% ({money(suggested)})
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="adm-field is-wide adm-combo-builder">
+            <div className="adm-combo-builder-head">
+              <strong>Thành phần tổ hợp sản phẩm</strong>
+              <button
+                type="button"
+                className="adm-btn small"
+                onClick={addRow}
+              >
+                <Plus size={14} /> Thêm sản phẩm
+              </button>
+            </div>
+            {rows.map((row, idx) => (
+              <div key={idx} className="adm-combo-row">
+                <select
+                  value={row.productId || ''}
+                  onChange={(e) =>
+                    updateRow(idx, 'productId', Number(e.target.value) || '')
+                  }
+                  required
+                >
+                  <option value="">-- Chọn sản phẩm --</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} — {money(p.price)} (Tồn: {p.stock})
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  min={1}
+                  max={99}
+                  value={row.quantity || 1}
+                  onChange={(e) =>
+                    updateRow(idx, 'quantity', Math.max(1, Number(e.target.value) || 1))
+                  }
+                  aria-label="Số lượng trong combo"
+                />
+                {rows.length > 1 && (
+                  <button
+                    type="button"
+                    className="adm-icon-btn"
+                    onClick={() => removeRow(idx)}
+                    aria-label="Xóa dòng"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                )}
+              </div>
+            ))}
+            <div className="adm-combo-summary-strip">
+              <span>
+                Tổng giá lẻ: <strong>{money(originalPrice)}</strong>
+              </span>
+              <span>
+                Tồn combo khả dụng: <strong>{count(availableStock)}</strong> gói
+              </span>
+            </div>
+            {hasDuplicates && (
+              <small className="adm-field-error">
+                Không được chọn trùng cùng một sản phẩm trong combo.
+              </small>
+            )}
+          </div>
+
+          <CheckField
+            label="Mở bán combo trên cửa hàng"
+            name="active"
+            value={form.active !== false}
+            onChange={change}
+          />
+        </div>
+        <div className="adm-modal-footer">
+          <button type="button" className="adm-btn" onClick={close}>
+            Đóng
+          </button>
+          <button
+            className="adm-btn primary"
+            disabled={saving || invalidCombo}
+            type="submit"
+          >
+            {saving ? (
+              <LoaderCircle className="adm-spin" size={16} />
+            ) : (
+              <Check size={16} />
+            )}{' '}
+            {edit ? 'Lưu Combo' : 'Tạo Combo'}
           </button>
         </div>
       </form>
@@ -1339,7 +1693,25 @@ export default function AdminModals({ c, user, config }) {
       <PromotionModal
         item={item}
         form={form}
+        setForm={setForm}
         change={change}
+        products={c.products}
+        combos={c.combos}
+        submit={submit}
+        close={close}
+        saving={saving}
+      />
+    );
+  }
+
+  if (type === 'combo') {
+    return (
+      <ComboModal
+        item={item}
+        form={form}
+        setForm={setForm}
+        change={change}
+        products={c.products}
         submit={submit}
         close={close}
         saving={saving}

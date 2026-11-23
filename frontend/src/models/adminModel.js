@@ -63,17 +63,19 @@ export async function fetchAdminViewData(view, tab, range, dashDays) {
 
 export async function fetchAdminProductsAndPartners(canCatalog) {
   const safeGet = (path) => api(path).catch(() => []);
-  const [p, c, s, m] = await Promise.all([
+  const [p, c, s, m, cb] = await Promise.all([
     safeGet('/admin/products'),
     canCatalog ? safeGet('/admin/categories') : Promise.resolve([]),
     safeGet('/admin/suppliers'),
     canCatalog ? safeGet('/admin/manufacturers') : Promise.resolve([]),
+    safeGet('/admin/combos'),
   ]);
   return {
     products: list(p),
     categories: list(c),
     suppliers: list(s),
     manufacturers: list(m),
+    combos: list(cb),
   };
 }
 
@@ -170,6 +172,20 @@ export function prepareModalForm(type, item = {}, extraForm = {}) {
   if (type === 'prescription') {
     prepared.productIds = Array.isArray(item.approvedProductIds)
       ? [...item.approvedProductIds]
+      : [];
+  }
+  if (type === 'promotion') {
+    prepared.applyScope = prepared.applyScope || 'order';
+    prepared.targetIds = Array.isArray(prepared.targetIds)
+      ? prepared.targetIds.map(Number)
+      : [];
+  }
+  if (type === 'combo') {
+    prepared.items = Array.isArray(prepared.items)
+      ? prepared.items.map((it) => ({
+          productId: Number(it.productId || it.product?.id || ''),
+          quantity: Number(it.quantity || 1),
+        }))
       : [];
   }
   return prepared;

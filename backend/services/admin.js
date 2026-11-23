@@ -14,8 +14,12 @@ import {
   publicUser,
   productList,
   getProduct,
+  comboList,
+  getCombo,
   orderView,
+  parseIdList,
 } from './shared.js';
+import { geminiKeys } from '../integrations/gemini-client.js';
 import { defaultSettings, permissionNames } from '../repositories/seed.js';
 import bcrypt from 'bcryptjs';
 import { randomToken } from './shared.js';
@@ -845,18 +849,192 @@ export function installAdmin(
       },
     );
   }
-  app.get('/api/admin/promotions', permission('promotions'), async (req, res) =>
-    res.json({
-      data: (await d.all('SELECT * FROM khuyen_mai ORDER BY id DESC')).map(
-        (x) => ({
-          ...camel(x),
-          active: !!x.active,
-        }),
+  const formatAdminPromotion = async (row) => {
+    const applyScope = row.apply_scope || 'order';
+    const targetIds = parseIdList(row.target_ids_json);
+    const { target_ids_json, ...rest } = row;
+    return {
+      ...camel(rest),
+      active: !!row.active,
+      applyScope,
+      targetIds,
+    };
+  };
+  app.get('/api/admin/combos', auth, async (req, res) => {
+    assert(
+      req.user.permissions.some((p) =>
+        ['catalog', 'promotions', 'orders'].includes(p),
       ),
-    }),
+      403,
+      'Bạn không có quyền xem combo sản phẩm.',
+    );
+    res.json({
+      data: await comboList(d, true),
+    });
+  });
+  const validateComboBody = async (body, old = null) => {
+    const name = text(body.name ?? old?.name, 160);
+    assert(name.length >= 2, 400, 'Tên combo cần ít nhất 2 ký tự.');
+    const price = Number(body.price ?? old?.price);
+    assert(number(price, 0), 400, 'Giá bán combo không hợp lệ.');
+    const description = text(body.description ?? old?.description ?? '', 2000);
+    const image = text(body.image ?? old?.image ?? '', 500);
+    const active =
+      body.active === undefined
+        ? old
+          ? old.active
+            ? 1
+            : 0
+          : 1
+        : body.active === false || body.active === 0
+          ? 0
+          : 1;
+    let items = null;
+    if (body.items !== undefined || !old) {
+      assert(
+        Array.isArray(body.items) && body.items.length >= 1,
+        400,
+        'Combo cần chọn ít nhất 1 sản phẩm thành phần.',
+      );
+      const seen = new Set();
+      items = [];
+      let totalQty = 0;
+      for (const raw of body.items) {
+        const productId = positiveInt(raw.productId);
+        const quantity = positiveInt(raw.quantity, 99);
+        assert(productId && quantity, 400, 'Sản phẩm hoặc số lượng trong combo không hợp lệ.');
+        assert(!seen.has(productId), 400, 'Không được chọn trùng sản phẩm trong cùng một combo.');
+        const prod = await d.one('SELECT id FROM thuoc WHERE id=?', productId);
+        assert(prod, 404, 'Sản phẩm thành phần không tồn tại.');
+        seen.add(productId);
+        totalQty += quantity;
+        items.push({ productId, quantity });
+      }
+      assert(
+        items.length >= 2 || totalQty >= 2,
+        400,
+        'Combo cần kết hợp ít nhất 2 sản phẩm hoặc tổng số lượng từ 2 trở lên.',
+      );
+    }
+    const baseSlug = slugify(name) || `combo-${Date.now()}`;
+    return { name, baseSlug, price, description, image, active, items };
+  };
+  app.post('/api/admin/combos', permission('catalog'), async (req, res) => {
+    const v = await validateComboBody(req.body);
+    let slug = v.baseSlug;
+    if (await d.one('SELECT id FROM combo_san_pham WHERE slug=?', slug)) {
+      slug = `${v.baseSlug}-${Date.now().toString().slice(-5)}`;
+    }
+    const comboId = await d.transaction(async () => {
+      const id = await d.insert('combo_san_pham', {
+        name: v.name,
+        slug,
+        description: v.description,
+        image: v.image,
+        price: v.price,
+        active: v.active,
+        created_at: now(),
+        updated_at: now(),
+      });
+      for (const item of v.items) {
+        await d.insert('combo_san_pham_item', {
+          combo_id: id,
+          product_id: item.productId,
+          quantity: item.quantity,
+        });
+      }
+      await audit(d, req.user.id, 'combo.create', 'combo', id);
+      return id;
+    });
+    res.status(201).json({ data: await getCombo(d, comboId, true) });
+  });
+  app.patch('/api/admin/combos/:id', permission('catalog'), async (req, res) => {
+    const old = await getCombo(d, req.params.id, true);
+    assert(old, 404, 'Không tìm thấy combo sản phẩm.');
+    const v = await validateComboBody(req.body, old);
+    await d.transaction(async () => {
+      await d.update(
+        'combo_san_pham',
+        {
+          name: v.name,
+          description: v.description,
+          image: v.image,
+          price: v.price,
+          active: v.active,
+          updated_at: now(),
+        },
+        old.id,
+      );
+      if (v.items) {
+        await d.run('DELETE FROM combo_san_pham_item WHERE combo_id=?', old.id);
+        for (const item of v.items) {
+          await d.insert('combo_san_pham_item', {
+            combo_id: old.id,
+            product_id: item.productId,
+            quantity: item.quantity,
+          });
+        }
+      }
+      await audit(d, req.user.id, 'combo.update', 'combo', old.id);
+    });
+    res.json({ data: await getCombo(d, old.id, true) });
+  });
+  app.delete(
+    '/api/admin/combos/:id',
+    permission('catalog'),
+    async (req, res) => {
+      const old = await d.one(
+        'SELECT id FROM combo_san_pham WHERE id=?',
+        req.params.id,
+      );
+      assert(old, 404, 'Không tìm thấy combo sản phẩm.');
+      await d.update(
+        'combo_san_pham',
+        { active: 0, updated_at: now() },
+        old.id,
+      );
+      await audit(d, req.user.id, 'combo.deactivate', 'combo', old.id);
+      res.json({ data: { deactivated: true } });
+    },
   );
-  const promotionValues = (body, old = {}) => {
-    const p = { ...camel(old), ...body },
+  app.get('/api/admin/promotions', permission('promotions'), async (req, res) => {
+    const rows = await d.all('SELECT * FROM khuyen_mai ORDER BY id DESC');
+    const [prods, combos] = await Promise.all([
+      d.all('SELECT id, name FROM thuoc'),
+      d.all('SELECT id, name FROM combo_san_pham'),
+    ]);
+    const prodMap = new Map(prods.map((p) => [p.id, p.name]));
+    const comboMap = new Map(combos.map((c) => [c.id, c.name]));
+    res.json({
+      data: rows.map((x) => {
+        const applyScope = x.apply_scope || 'order';
+        const targetIds = parseIdList(x.target_ids_json);
+        const { target_ids_json, ...rest } = x;
+        const targetNames =
+          applyScope === 'product'
+            ? targetIds.map((id) => prodMap.get(id)).filter(Boolean)
+            : applyScope === 'combo'
+              ? targetIds.map((id) => comboMap.get(id)).filter(Boolean)
+              : [];
+        return {
+          ...camel(rest),
+          active: !!x.active,
+          applyScope,
+          targetIds,
+          targetNames,
+        };
+      }),
+    });
+  });
+  const promotionValues = async (body, old = {}) => {
+    const oldFormatted = old.id
+      ? {
+          ...camel(old),
+          applyScope: old.apply_scope || 'order',
+          targetIds: parseIdList(old.target_ids_json),
+        }
+      : {};
+    const p = { ...oldFormatted, ...body },
       code = text(p.code, 40).toUpperCase();
     assert(
       /^[A-Z0-9_-]{3,40}$/.test(code),
@@ -899,6 +1077,37 @@ export function installAdmin(
       400,
       'Lượt sử dụng tối đa không được nhỏ hơn số đã dùng.',
     );
+    const applyScope = p.applyScope || 'order';
+    assert(
+      ['order', 'product', 'combo'].includes(applyScope),
+      400,
+      'Phạm vi áp dụng khuyến mãi không hợp lệ.',
+    );
+    let targetIds = [];
+    if (applyScope === 'product') {
+      targetIds = parseIdList(p.targetIds);
+      assert(
+        targetIds.length >= 1,
+        400,
+        'Vui lòng chọn ít nhất 1 sản phẩm áp dụng.',
+      );
+      for (const tid of targetIds) {
+        assert(
+          await d.one('SELECT id FROM thuoc WHERE id=?', tid),
+          404,
+          'Sản phẩm áp dụng khuyến mãi không tồn tại.',
+        );
+      }
+    } else if (applyScope === 'combo') {
+      targetIds = parseIdList(p.targetIds);
+      for (const tid of targetIds) {
+        assert(
+          await d.one('SELECT id FROM combo_san_pham WHERE id=?', tid),
+          404,
+          'Combo sản phẩm áp dụng khuyến mãi không tồn tại.',
+        );
+      }
+    }
     return {
       code,
       name: text(p.name, 160),
@@ -916,13 +1125,15 @@ export function installAdmin(
       start_date: p.startDate,
       end_date: p.endDate,
       active: p.active === false || p.active === 0 ? 0 : 1,
+      apply_scope: applyScope,
+      target_ids_json: JSON.stringify(targetIds),
     };
   };
   app.post(
     '/api/admin/promotions',
     permission('promotions'),
     async (req, res) => {
-      const v = promotionValues(req.body);
+      const v = await promotionValues(req.body);
       assert(
         !(await d.one('SELECT id FROM khuyen_mai WHERE code=?', v.code)),
         409,
@@ -931,7 +1142,9 @@ export function installAdmin(
       const id = await d.insert('khuyen_mai', v);
       await audit(d, req.user.id, 'promotion.create', 'promotion', id);
       res.status(201).json({
-        data: camel(await d.one('SELECT * FROM khuyen_mai WHERE id=?', id)),
+        data: await formatAdminPromotion(
+          await d.one('SELECT * FROM khuyen_mai WHERE id=?', id),
+        ),
       });
     },
   );
@@ -944,7 +1157,7 @@ export function installAdmin(
         req.params.id,
       );
       assert(p, 404, 'Không tìm thấy mã.');
-      const v = promotionValues(req.body, p);
+      const v = await promotionValues(req.body, p);
       assert(
         !(await d.one(
           'SELECT id FROM khuyen_mai WHERE code=? AND id!=?',
@@ -957,7 +1170,9 @@ export function installAdmin(
       await d.update('khuyen_mai', v, p.id);
       await audit(d, req.user.id, 'promotion.update', 'promotion', p.id);
       res.json({
-        data: camel(await d.one('SELECT * FROM khuyen_mai WHERE id=?', p.id)),
+        data: await formatAdminPromotion(
+          await d.one('SELECT * FROM khuyen_mai WHERE id=?', p.id),
+        ),
       });
     },
   );
@@ -1379,20 +1594,47 @@ export function installAdmin(
       });
     },
   );
-  const settingsPayload = async () => ({
-    ...(await getSettings(d)),
-    demoMode: options.demo,
-    geminiConfigured: !!process.env.GEMINI_API_KEY,
-    smtpConfigured: !!process.env.SMTP_HOST,
-    emailConfigured: !!process.env.SMTP_HOST,
-    paymentConfigured: Boolean(options.vnpay),
-    googleConfigured: Boolean(options.google),
-    paymentProvider: options.vnpay
-      ? 'vnpay'
-      : options.demo
-        ? 'demo'
-        : 'cod',
-  });
+  const maskKey = (k) => {
+    const str = String(k || '').trim();
+    if (!str) return '';
+    if (str.length <= 8) return '••••••••';
+    return `${str.slice(0, 4)}••••${str.slice(-4)}`;
+  };
+  const settingsPayload = async () => {
+    const raw = await getSettings(d);
+    const { geminiApiKey, ...safeSettings } = raw;
+    const envKeys = geminiKeys();
+    const dbKey = typeof geminiApiKey === 'string' ? geminiApiKey.trim() : '';
+    const allKeys = geminiKeys(dbKey ? [dbKey] : []);
+    return {
+      ...safeSettings,
+      demoMode: options.demo,
+      geminiConfigured: allKeys.length > 0,
+      geminiKeySource: envKeys.length
+        ? 'env'
+        : dbKey
+          ? 'settings'
+          : 'none',
+      geminiKeyMasked: envKeys.length
+        ? maskKey(envKeys[0])
+        : dbKey
+          ? maskKey(dbKey)
+          : '',
+      geminiModel:
+        safeSettings.geminiModel ||
+        process.env.GEMINI_MODEL ||
+        'gemini-2.5-flash',
+      smtpConfigured: !!process.env.SMTP_HOST,
+      emailConfigured: !!process.env.SMTP_HOST,
+      paymentConfigured: Boolean(options.vnpay),
+      googleConfigured: Boolean(options.google),
+      paymentProvider: options.vnpay
+        ? 'vnpay'
+        : options.demo
+          ? 'demo'
+          : 'cod',
+    };
+  };
   app.get(
     '/api/admin/settings',
     admin,
@@ -1417,6 +1659,8 @@ export function installAdmin(
         'paymentTimeoutMinutes',
         'returnWindowDays',
         'chatbotEnabled',
+        'geminiApiKey',
+        'geminiModel',
       ];
       const values = {};
       for (const [key, val] of Object.entries(req.body)) {
@@ -1425,7 +1669,18 @@ export function installAdmin(
           assert(text(val, 100), 400, 'Tên nhà thuốc không được trống.');
           values[key] = text(val, 100);
         } else if (key === 'chatbotEnabled') values[key] = !!val;
-        else {
+        else if (key === 'geminiApiKey') {
+          const clean = text(val, 200);
+          values[key] = clean;
+        } else if (key === 'geminiModel') {
+          const clean = text(val, 80);
+          assert(
+            !clean || /^[a-zA-Z0-9._-]+$/.test(clean),
+            400,
+            'Tên model Gemini không hợp lệ.',
+          );
+          values[key] = clean || 'gemini-2.5-flash';
+        } else {
           assert(
             number(
               val,
@@ -1449,7 +1704,19 @@ export function installAdmin(
             k,
             JSON.stringify(v),
           );
-        await audit(d, req.user.id, 'settings.update', 'settings', '', values);
+        const auditValues = { ...values };
+        if ('geminiApiKey' in auditValues)
+          auditValues.geminiApiKey = auditValues.geminiApiKey
+            ? '[updated]'
+            : '[cleared]';
+        await audit(
+          d,
+          req.user.id,
+          'settings.update',
+          'settings',
+          '',
+          auditValues,
+        );
       });
       res.json({
         data: await settingsPayload(),
@@ -1800,6 +2067,13 @@ export function installAdmin(
           },
           s.id,
         );
+        if (status === 'resolved') {
+          await d.update(
+            'cuoc_hoi_thoai',
+            { status: 'closed', updated_at: now() },
+            s.session_id,
+          );
+        }
         if (reply)
           await d.insert('tin_nhan', {
             session_id: s.session_id,

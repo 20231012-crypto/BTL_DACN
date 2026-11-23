@@ -74,23 +74,31 @@ export const mergeMessages = (previous, incoming) => {
 };
 
 export const consultationStatusText = (consultation) => {
-  if (!consultation) return 'Gửi câu hỏi để dược sĩ nhận tư vấn cho bạn.';
-  if (consultation.status === 'resolved')
-    return 'Dược sĩ đã kết thúc tư vấn. Bạn nhắn tiếp để mở lại cuộc trò chuyện.';
+  if (!consultation)
+    return 'Chọn cuộc trò chuyện bên trái hoặc tạo cuộc trò chuyện mới để trao đổi cùng dược sĩ.';
+  if (consultation.status === 'resolved' || consultation.closed)
+    return 'Dược sĩ đã kết thúc và đóng cuộc trò chuyện này. Hãy mở cuộc trò chuyện mới nếu bạn cần hỏi thêm.';
   if (consultation.status === 'in_progress')
     return `${consultation.handlerName || 'Dược sĩ'} đang tư vấn cho bạn.`;
   return 'Đang chờ dược sĩ nhận cuộc tư vấn. Bạn có thể nhắn thêm thông tin trong lúc chờ.';
 };
 
-export const fetchConsultations = () => api('/consultations');
+export const fetchConsultations = async () => {
+  const rows = await api('/consultations');
+  return Array.isArray(rows) ? rows : [];
+};
 
 export const fetchConsultationMessages = (id, after = 0) =>
   api(`/consultations/${id}/messages?after=${after}`);
 
-export const createConsultation = (message, prescriptionId) =>
+export const createConsultation = (message, prescriptionId, title = '') =>
   api('/consultations', {
     method: 'POST',
-    body: { message, prescriptionId },
+    body: {
+      message,
+      ...(prescriptionId ? { prescriptionId } : {}),
+      ...(title ? { title } : {}),
+    },
   });
 
 export const sendConsultationMessage = (id, message) =>

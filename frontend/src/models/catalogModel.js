@@ -25,6 +25,13 @@ export const fetchFeaturedProducts = () =>
 
 export const fetchProductDetail = (id) => api(`/products/${id}`);
 
+export const fetchCombos = async () => {
+  const data = await api('/combos');
+  return Array.isArray(data) ? data : [];
+};
+
+export const fetchComboDetail = (id) => api(`/combos/${id}`);
+
 export const fetchRelatedProducts = async (categoryId, excludeId) => {
   const rows = await fetchProducts(
     `category=${categoryId}&prescription=all`,

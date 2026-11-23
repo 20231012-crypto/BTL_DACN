@@ -8,7 +8,11 @@ import {
   fetchManufacturers,
   fetchPublicConfig,
 } from '../models/catalogModel.js';
-import { addCartItem, fetchCart } from '../models/cartModel.js';
+import {
+  addCartItem,
+  addComboToCart as addComboToCartApi,
+  fetchCart,
+} from '../models/cartModel.js';
 import { fetchOrderById } from '../models/orderModel.js';
 import {
   loadWishlistFromStorage,
@@ -130,6 +134,26 @@ export function useAppController() {
     [user, route, notify, navigate, refreshCart],
   );
 
+  const addComboToCart = useCallback(
+    async (comboId, quantity = 1) => {
+      if (!user) {
+        notify('Đăng nhập để thêm combo vào giỏ hàng.', 'info');
+        navigate(`/login?next=${encodeURIComponent(route)}`);
+        return false;
+      }
+      try {
+        await addComboToCartApi(comboId, quantity);
+        await refreshCart();
+        notify('Đã thêm combo sản phẩm vào giỏ hàng.');
+        return true;
+      } catch (e) {
+        notify(e.message, 'error');
+        return false;
+      }
+    },
+    [user, route, notify, navigate, refreshCart],
+  );
+
   const reorder = useCallback(
     async (orderOrId) => {
       if (!user) {
@@ -208,6 +232,7 @@ export function useAppController() {
     navigate,
     notify,
     addToCart,
+    addComboToCart,
     reorder,
     logout,
     chatOpen,
