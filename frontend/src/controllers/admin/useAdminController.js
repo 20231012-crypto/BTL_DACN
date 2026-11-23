@@ -174,6 +174,14 @@ export function useAdminController({ user, onLogout, navItems }) {
     return () => clearInterval(timer);
   }, [view, tab, modal]);
 
+  useEffect(() => {
+    if (!['orders', 'dashboard'].includes(view) || modal) return undefined;
+    const timer = setInterval(() => {
+      if (!document.hidden) load(true);
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [view, modal]);
+
   const change = (e) =>
     setForm((f) => ({
       ...f,
