@@ -361,8 +361,25 @@ export default function OrderDetailView({ id }) {
                       </p>
                     )}
                   {order.paymentMethod === 'bank_transfer' &&
+                    order.paymentStatus === 'paid' && (
+                      <div className="success-box" style={{ marginTop: 8 }}>
+                        <CheckCircle2 size={18} />
+                        Đã xác nhận thanh toán chuyển khoản VietQR thành công.
+                      </div>
+                    )}
+                  {order.paymentMethod === 'bank_transfer' &&
                     order.status === 'pending_payment' && (
-                      <BankTransfer orderId={order.id} />
+                      <BankTransfer
+                        orderId={order.id}
+                        demoMode={Boolean(c.config?.demoMode)}
+                        onPaid={() => {
+                          c.load();
+                          c.notify(
+                            'Thanh toán VietQR thành công! Đơn hàng đã chuyển sang Chờ xác nhận.',
+                          );
+                        }}
+                        onExpired={() => c.load()}
+                      />
                     )}
                   {order.paymentMethod === 'vnpay' &&
                     order.status === 'pending_payment' &&

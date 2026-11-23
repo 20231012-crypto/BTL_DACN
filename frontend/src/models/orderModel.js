@@ -31,6 +31,12 @@ export const switchOrderToCod = (orderId) =>
 export const fetchBankTransferDetails = (orderId, signal) =>
   api(`/orders/${orderId}/bank-transfer`, { signal });
 
+export const fetchOrderPaymentStatus = (orderId, signal) =>
+  api(`/orders/${orderId}/payment-status`, { signal });
+
+export const confirmBankTransferDemo = (orderId) =>
+  api(`/orders/${orderId}/bank-transfer/demo-confirm`, { method: 'POST' });
+
 export const replaceOrderPrescription = async (orderId, file, uploadMode) => {
   const attachment = await uploadPrescription(file, uploadMode);
   return api(`/orders/${orderId}/prescription`, {
