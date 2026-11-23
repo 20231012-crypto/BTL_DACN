@@ -76,7 +76,7 @@ export function useCheckoutController() {
       : config.shippingFee
     : null;
   const onlineMethods = (config?.paymentMethods || []).filter(
-    (value) => value !== 'cod',
+    (value) => value === 'bank_transfer',
   );
 
   useEffect(() => {
