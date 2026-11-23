@@ -9,6 +9,10 @@ import { openPostgres, postgresSql } from '../backend/repositories/postgres.js';
 import { initializePostgresSchema, applyPendingMigrations } from '../backend/repositories/postgres-migrations.js';
 import { createTestDatabase } from './postgres-fixture.js';
 import { resolveApiUrl } from '../api/index.js';
+import {
+  bankTransferConfig,
+  buildVietQrPayload,
+} from '../backend/services/bank-transfer.js';
 async function fixture(t, options = {}) {
   const storage = mkdtempSync(path.join(os.tmpdir(), 'antam-test-'));
   const postgres = await createTestDatabase();
@@ -2277,4 +2281,111 @@ test('Gemini chat falls back to alternate models on 429/404 and avoids single-le
     res.data.products.every((p) => /vitamin c/i.test(`${p.name} ${p.ingredient}`)),
     'Vitamin C query must not false-match unrelated products on single letter c',
   );
+});
+
+test('bankTransferConfig heals MB Bank aliases/typo BINs and QR proxy falls back cleanly to local EMVCo SVG', async (t) => {
+  const keys = [
+    'BANK_TRANSFER_BANK_BIN',
+    'BANK_TRANSFER_BANK_NAME',
+    'BANK_TRANSFER_ACCOUNT',
+    'BANK_TRANSFER_NAME',
+  ];
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  t.after(() => {
+    for (const k of keys) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  // 1. Typo 6-digit BIN with MB bank name auto-heals to 970422
+  process.env.BANK_TRANSFER_BANK_BIN = '970420';
+  process.env.BANK_TRANSFER_BANK_NAME = 'Ngân hàng Quân đội (MB)';
+  process.env.BANK_TRANSFER_ACCOUNT = ' "0333 123 456" ';
+  process.env.BANK_TRANSFER_NAME = '"NHA THUOC AN TAM"';
+  const healed = bankTransferConfig();
+  assert.equal(healed.bankBin, '970422');
+  assert.equal(healed.account, '0333123456');
+  assert.equal(healed.accountName, 'NHA THUOC AN TAM');
+
+  // 2. Short code MB in BIN env resolves to 970422
+  process.env.BANK_TRANSFER_BANK_BIN = 'MB';
+  process.env.BANK_TRANSFER_BANK_NAME = '';
+  const fromAlias = bankTransferConfig();
+  assert.equal(fromAlias.bankBin, '970422');
+  assert.equal(fromAlias.bankName, 'MB Bank');
+
+  // 3. EMVCo VietQR payload includes NAPAS GUID, MB BIN, amount, content, and valid CRC16
+  const payload = buildVietQrPayload({
+    bankBin: '970422',
+    account: '0333123456',
+    amount: 150000,
+    content: 'ANTAM42',
+  });
+  assert.ok(payload.includes('A000000727'));
+  assert.ok(payload.includes('970422'));
+  assert.ok(payload.includes('0333123456'));
+  assert.ok(payload.includes('QRIBFTTA'));
+  assert.ok(payload.includes('5303704'));
+  assert.ok(payload.includes('5406150000'));
+  assert.ok(payload.includes('ANTAM42'));
+  assert.match(payload, /6304[0-9A-F]{4}$/);
+
+  // 4. Same-origin QR proxy skips text/html upstream error and serves valid image, then local SVG when all fail
+  const { login } = await fixture(t, {
+    bankTransfer: {
+      bankBin: '970422',
+      account: '0333123456',
+      accountName: 'NHA THUOC AN TAM',
+      bankName: 'MB Bank',
+    },
+  });
+  const customer = await login('khach@antam.vn');
+  const other = await login('huong@antam.vn');
+  await add(customer, 1, 1);
+  const created = await order(customer, { paymentMethod: 'bank_transfer' });
+  assert.equal(created.status, 201);
+  const id = created.data.id;
+
+  const details = await customer(`/orders/${id}/bank-transfer`);
+  assert.equal(details.status, 200);
+  assert.equal(details.data.qrProxyUrl, `/api/orders/${id}/bank-transfer/qr`);
+
+  // Other user cannot access order QR
+  assert.equal((await other(`/orders/${id}/bank-transfer/qr`)).status, 404);
+
+  const originalFetch = globalThis.fetch;
+  let upstreamAttempt = 0;
+  let forceAllFail = false;
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    const s = String(url);
+    if (s.startsWith('https://qr.sepay.vn/') || s.startsWith('https://img.vietqr.io/')) {
+      upstreamAttempt += 1;
+      if (forceAllFail || upstreamAttempt === 1) {
+        return new Response('Failed to return content Error: Ngân hàng này không được hỗ trợ', {
+          status: 200,
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        });
+      }
+      return new Response(Buffer.alloc(256, 0x89), {
+        status: 200,
+        headers: { 'Content-Type': 'image/png' },
+      });
+    }
+    return originalFetch(url, init);
+  });
+
+  // First call: attempt 1 returns text/html -> skipped -> attempt 2 returns image/png
+  const proxied = await customer(`/orders/${id}/bank-transfer/qr`);
+  assert.equal(proxied.status, 200);
+  assert.match(proxied.headers.get('content-type'), /^image\/png/);
+  assert.equal(upstreamAttempt, 2);
+
+  // Second call: all external providers return non-image -> falls back to local EMVCo VietQR SVG
+  forceAllFail = true;
+  const localSvg = await customer(`/orders/${id}/bank-transfer/qr`);
+  assert.equal(localSvg.status, 200);
+  assert.match(localSvg.headers.get('content-type'), /^image\/svg\+xml/);
+  assert.equal(localSvg.headers.get('x-qr-source'), 'local-emvco');
+  assert.match(String(localSvg.body), /<svg[\s>]/);
 });

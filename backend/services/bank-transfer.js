@@ -1,29 +1,91 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
+import QRCode from 'qrcode';
 import { transactionJson } from '../repositories/transactions.js';
 import { assert, audit, orderView, text } from './shared.js';
 import { now } from '../repositories/database.js';
 import { setOrderStatus } from './orders.js';
 
+const VALID_NAPAS_BINS = {
+  970422: 'MB',
+  970436: 'VCB',
+  970407: 'TCB',
+  970415: 'ICB',
+  970418: 'BIDV',
+  970416: 'ACB',
+  970432: 'VPB',
+  970423: 'TPB',
+  970405: 'VBA',
+  970403: 'STB',
+  970448: 'OCB',
+  970441: 'VIB',
+  970437: 'HDB',
+  970443: 'SHB',
+  970426: 'MSB',
+  970440: 'SEAB',
+  970431: 'EIB',
+  970414: 'OCEANBANK',
+  970429: 'SCB',
+  970454: 'VCCB',
+  970449: 'LPB',
+  970438: 'BVB',
+  970428: 'NAB',
+  970419: 'NCB',
+  970425: 'ABB',
+  970433: 'VIETBANK',
+  970427: 'VAB',
+  970430: 'PGB',
+  970412: 'PVCB',
+  970409: 'BAB',
+  970452: 'KLB',
+  970400: 'SGICB',
+  970424: 'SHBVN',
+  970457: 'WVN',
+  546034: 'CAKE',
+  546035: 'Ubank',
+  963388: 'TIMO',
+  970406: 'DOB',
+  970408: 'GPB',
+  970421: 'VRB',
+  970434: 'IVB',
+  970439: 'PBVN',
+  970442: 'HLBVN',
+  970446: 'COOPBANK',
+  970458: 'UOB',
+  970462: 'KBHN',
+  970463: 'KBHCM',
+};
+
 const BANK_BIN_ALIASES = {
   MB: '970422',
   MBBANK: '970422',
+  MILITARYBANK: '970422',
+  QUANDOI: '970422',
+  NGANHANGQUANDOI: '970422',
+  NGANHANGTMCPQUANDOI: '970422',
   VCB: '970436',
   VIETCOMBANK: '970436',
+  NGOAITHUONG: '970436',
   TCB: '970407',
   TECHCOMBANK: '970407',
+  KYTHUONG: '970407',
   ACB: '970416',
+  ACHAU: '970416',
   BIDV: '970418',
   VPB: '970432',
   VPBANK: '970432',
   TPB: '970423',
   TPBANK: '970423',
+  TIENPHONG: '970423',
   ICB: '970415',
   VIETINBANK: '970415',
+  CONGTHUONG: '970415',
   STB: '970403',
   SACOMBANK: '970403',
   AGR: '970405',
+  VBA: '970405',
   AGRIBANK: '970405',
   OCB: '970448',
+  PHUONGDONG: '970448',
   VIB: '970441',
   HDB: '970437',
   HDBANK: '970437',
@@ -31,24 +93,156 @@ const BANK_BIN_ALIASES = {
   MSB: '970426',
   SEAB: '970440',
   SEABANK: '970440',
+  EIB: '970431',
+  EXIMBANK: '970431',
+  LPB: '970449',
+  LPBANK: '970449',
+  LIENVIETPOSTBANK: '970449',
+  NAB: '970428',
+  NAMABANK: '970428',
+  BVB: '970438',
+  BAOVIETBANK: '970438',
+  VCCB: '970454',
+  BVBANK: '970454',
+  TIMO: '963388',
+  CAKE: '546034',
+  UBANK: '546035',
+  SHINHAN: '970424',
+  SHINHANBANK: '970424',
+  WOORI: '970457',
+  WOORIBANK: '970457',
 };
 
-function resolveBankBin(raw) {
-  const clean = String(raw || '').trim();
-  if (/^\d{6}$/.test(clean)) return clean;
-  const key = clean.replace(/[\s_-]+/g, '').toUpperCase();
-  return BANK_BIN_ALIASES[key] || '';
+function cleanEnvValue(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^["'`]+|["'`]+$/g, '')
+    .trim();
+}
+
+function normalizeBankKey(raw) {
+  return cleanEnvValue(raw)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/gi, 'd')
+    .replace(/[^a-zA-Z0-9]+/g, '')
+    .toUpperCase();
+}
+
+function resolveBankAlias(raw) {
+  const clean = cleanEnvValue(raw);
+  if (!clean) return '';
+  const key = normalizeBankKey(clean);
+  if (BANK_BIN_ALIASES[key]) return BANK_BIN_ALIASES[key];
+  if (/\bMB\b/i.test(clean) || key.includes('MBBANK') || key.includes('QUANDOI'))
+    return '970422';
+  for (const [alias, bin] of Object.entries(BANK_BIN_ALIASES)) {
+    if (alias.length >= 4 && key.includes(alias)) return bin;
+  }
+  return '';
+}
+
+function emvTlv(id, value) {
+  const str = String(value || '');
+  return `${id}${String(str.length).padStart(2, '0')}${str}`;
+}
+
+function crc16CcittFalse(str) {
+  let crc = 0xffff;
+  for (let i = 0; i < str.length; i++) {
+    crc ^= str.charCodeAt(i) << 8;
+    for (let bit = 0; bit < 8; bit++) {
+      crc =
+        crc & 0x8000 ? ((crc << 1) ^ 0x1021) & 0xffff : (crc << 1) & 0xffff;
+    }
+  }
+  return crc.toString(16).toUpperCase().padStart(4, '0');
+}
+
+export function buildVietQrPayload({ bankBin, account, amount, content }) {
+  const cleanBin = cleanEnvValue(bankBin);
+  const cleanAccount = cleanEnvValue(account).replace(/[\s-]+/g, '');
+  const cleanContent = String(content || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/gi, 'd')
+    .replace(/[^A-Za-z0-9 _.-]/g, '')
+    .trim()
+    .slice(0, 50);
+  const beneficiary = emvTlv('00', cleanBin) + emvTlv('01', cleanAccount);
+  const merchantAccount =
+    emvTlv('00', 'A000000727') +
+    emvTlv('01', beneficiary) +
+    emvTlv('02', 'QRIBFTTA');
+  const parts = [
+    emvTlv('00', '01'),
+    emvTlv('01', Number(amount) > 0 ? '12' : '11'),
+    emvTlv('38', merchantAccount),
+    emvTlv('53', '704'),
+  ];
+  if (Number(amount) > 0)
+    parts.push(emvTlv('54', String(Math.round(Number(amount)))));
+  parts.push(emvTlv('58', 'VN'));
+  if (cleanContent) parts.push(emvTlv('62', emvTlv('08', cleanContent)));
+  const body = `${parts.join('')}6304`;
+  return `${body}${crc16CcittFalse(body)}`;
+}
+
+function buildQrUrls(config, order, content) {
+  const sepayParams = new URLSearchParams({
+    acc: config.account,
+    bank: config.bankBin,
+    amount: String(order.total),
+    des: content,
+    template: 'compact',
+  });
+  const sepayQrUrl = `https://qr.sepay.vn/img?${sepayParams}`;
+  const shortCode = VALID_NAPAS_BINS[config.bankBin];
+  const sepayShortQrUrl = shortCode
+    ? `https://qr.sepay.vn/img?${new URLSearchParams({
+        acc: config.account,
+        bank: shortCode,
+        amount: String(order.total),
+        des: content,
+        template: 'compact',
+      })}`
+    : '';
+  const vietQrParams = new URLSearchParams({
+    amount: String(order.total),
+    addInfo: content,
+    accountName: config.accountName,
+  });
+  const encodedAcc = encodeURIComponent(config.account);
+  const vietQrUrl = `https://img.vietqr.io/image/${config.bankBin}-${encodedAcc}-compact2.png?${vietQrParams}`;
+  const vietQrCompactUrl = `https://img.vietqr.io/image/${config.bankBin}-${encodedAcc}-compact.png?${vietQrParams}`;
+  return {
+    sepayQrUrl,
+    sepayShortQrUrl,
+    vietQrUrl,
+    vietQrCompactUrl,
+    candidates: [
+      sepayQrUrl,
+      sepayShortQrUrl,
+      vietQrUrl,
+      vietQrCompactUrl,
+    ].filter(Boolean),
+  };
 }
 
 export function bankTransferConfig() {
-  const rawBin = String(process.env.BANK_TRANSFER_BANK_BIN || '').trim();
+  const rawBin = cleanEnvValue(process.env.BANK_TRANSFER_BANK_BIN);
+  const rawBankName = cleanEnvValue(process.env.BANK_TRANSFER_BANK_NAME);
+  const binFromRaw = VALID_NAPAS_BINS[rawBin]
+    ? rawBin
+    : resolveBankAlias(rawBin);
+  const binFromName = resolveBankAlias(rawBankName);
   const bankBin =
-    resolveBankBin(rawBin) ||
-    resolveBankBin(process.env.BANK_TRANSFER_BANK_NAME);
-  const account = String(process.env.BANK_TRANSFER_ACCOUNT || '')
-    .replace(/[\s-]+/g, '')
-    .trim();
-  const accountName = String(process.env.BANK_TRANSFER_NAME || '').trim();
+    binFromRaw || binFromName || (/^\d{6}$/.test(rawBin) ? rawBin : '');
+  const account = cleanEnvValue(process.env.BANK_TRANSFER_ACCOUNT).replace(
+    /[\s-]+/g,
+    '',
+  );
+  const accountName = cleanEnvValue(process.env.BANK_TRANSFER_NAME);
   if (
     !/^\d{6}$/.test(bankBin) ||
     !/^[A-Za-z0-9]{4,30}$/.test(account) ||
@@ -64,9 +258,7 @@ export function bankTransferConfig() {
     bankBin,
     account,
     accountName,
-    bankName:
-      String(process.env.BANK_TRANSFER_BANK_NAME || '').trim() ||
-      (bankBin === '970422' ? 'MB Bank' : bankBin),
+    bankName: rawBankName || (bankBin === '970422' ? 'MB Bank' : bankBin),
     webhookSecret,
   };
 }
@@ -174,21 +366,9 @@ export function installBankTransfers(
       'Đơn chưa sẵn sàng hoặc đã hoàn tất thanh toán.',
     );
     const content = `ANTAM${order.id}`;
-    const sepayParams = new URLSearchParams({
-      acc: config.account,
-      bank: config.bankBin,
-      amount: String(order.total),
-      des: content,
-      template: 'compact',
-    });
-    const sepayQrUrl = `https://qr.sepay.vn/img?${sepayParams}`;
-    const vietQrParams = new URLSearchParams({
-      amount: String(order.total),
-      addInfo: content,
-      accountName: config.accountName,
-    });
-    const vietQrUrl = `https://img.vietqr.io/image/${config.bankBin}-${encodeURIComponent(config.account)}-compact2.png?${vietQrParams}`;
+    const { sepayQrUrl, vietQrUrl } = buildQrUrls(config, order, content);
     const qrUrl = sepayQrUrl;
+    const qrProxyUrl = `/api/orders/${order.id}/bank-transfer/qr`;
     const qrFallbackUrl = vietQrUrl;
     const { webhookSecret, ...publicBankConfig } = config;
     res.json({
@@ -197,10 +377,71 @@ export function installBankTransfers(
         amount: order.total,
         content,
         qrUrl,
+        qrProxyUrl,
         qrFallbackUrl,
         autoVerify: Boolean(webhookSecret),
       },
     });
+  });
+
+  app.get('/api/orders/:id/bank-transfer/qr', auth, async (req, res) => {
+    assert(config, 503, 'Nhà thuốc chưa cấu hình tài khoản nhận chuyển khoản.');
+    const order = await d.one(
+      'SELECT * FROM don_hang WHERE id=? AND user_id=?',
+      req.params.id,
+      req.user.id,
+    );
+    assert(
+      order && order.payment_method === 'bank_transfer',
+      404,
+      'Không tìm thấy đơn chuyển khoản.',
+    );
+    assert(
+      order.status === 'pending_payment' && order.payment_status !== 'paid',
+      409,
+      'Đơn chưa sẵn sàng hoặc đã hoàn tất thanh toán.',
+    );
+    const content = `ANTAM${order.id}`;
+    const { candidates } = buildQrUrls(config, order, content);
+    for (const url of candidates) {
+      try {
+        const upstream = await fetch(url, {
+          signal: AbortSignal.timeout(4500),
+          headers: { Accept: 'image/*,*/*;q=0.8' },
+        });
+        const contentType = String(
+          upstream.headers.get('content-type') || '',
+        ).toLowerCase();
+        if (!upstream.ok || !contentType.startsWith('image/')) continue;
+        const buf = Buffer.from(await upstream.arrayBuffer());
+        if (buf.length < 100) continue;
+        res.set({
+          'Content-Type': contentType,
+          'Cache-Control': 'private, max-age=300',
+        });
+        return res.status(200).send(buf);
+      } catch {
+        // Thử nguồn QR tiếp theo hoặc tạo mã VietQR EMVCo nội bộ.
+      }
+    }
+    const payload = buildVietQrPayload({
+      bankBin: config.bankBin,
+      account: config.account,
+      amount: order.total,
+      content,
+    });
+    const svg = await QRCode.toString(payload, {
+      type: 'svg',
+      margin: 2,
+      width: 280,
+      errorCorrectionLevel: 'M',
+    });
+    res.set({
+      'Content-Type': 'image/svg+xml; charset=utf-8',
+      'Cache-Control': 'private, max-age=300',
+      'X-QR-Source': 'local-emvco',
+    });
+    return res.status(200).send(svg);
   });
 
   app.get('/api/orders/:id/payment-status', auth, async (req, res) => {

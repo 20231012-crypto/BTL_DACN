@@ -1,7 +1,7 @@
 /**
  * VietQR Bank Transfer Modal View powered by useBankTransferController.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   Check,
@@ -9,6 +9,7 @@ import {
   Clock3,
   Copy,
   LoaderCircle,
+  RefreshCw,
   X,
 } from 'lucide-react';
 import { money } from '../../models/formatters.js';
@@ -29,8 +30,8 @@ export default function BankTransfer({
 }) {
   const [confirmAbandon, setConfirmAbandon] = useState(false);
   const [abandoning, setAbandoning] = useState(false);
-  const [useFallbackQr, setUseFallbackQr] = useState(false);
-  const [qrLoadError, setQrLoadError] = useState(false);
+  const [qrIndex, setQrIndex] = useState(0);
+  const [qrRetryNonce, setQrRetryNonce] = useState(0);
 
   const handleConfirmAbandon = async () => {
     if (!onAbandon || abandoning) return;
@@ -56,6 +57,21 @@ export default function BankTransfer({
     onExpired,
     onAutoClose: onClose,
   });
+
+  useEffect(() => {
+    setQrIndex(0);
+    setQrRetryNonce(0);
+  }, [details?.qrProxyUrl, details?.qrUrl]);
+
+  const qrSources = details
+    ? [details.qrProxyUrl, details.qrUrl, details.qrFallbackUrl].filter(Boolean)
+    : [];
+  const rawQrSrc = qrIndex < qrSources.length ? qrSources[qrIndex] : '';
+  const activeQrSrc =
+    rawQrSrc && qrRetryNonce > 0
+      ? `${rawQrSrc}${rawQrSrc.includes('?') ? '&' : '?'}r=${qrRetryNonce}`
+      : rawQrSrc;
+  const qrLoadError = Boolean(details) && !activeQrSrc;
 
   return (
     <div
@@ -153,28 +169,29 @@ export default function BankTransfer({
             <div className="qr-modal-grid">
               <div className="qr-image-box">
                 {qrLoadError ? (
-                  <p className="small muted" role="alert">
-                    Không tải được ảnh QR tự động. Bạn vẫn có thể chuyển khoản
-                    thủ công theo đúng số tài khoản, số tiền và nội dung bên
-                    cạnh.
-                  </p>
+                  <div className="small muted" role="alert">
+                    <p>
+                      Không tải được ảnh QR tự động. Bạn vẫn có thể chuyển khoản
+                      thủ công theo đúng số tài khoản, số tiền và nội dung bên
+                      cạnh.
+                    </p>
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      onClick={() => {
+                        setQrIndex(0);
+                        setQrRetryNonce((n) => n + 1);
+                      }}
+                    >
+                      <RefreshCw size={14} /> Thử tải lại mã QR
+                    </button>
+                  </div>
                 ) : (
                   <img
-                    src={
-                      useFallbackQr && details.qrFallbackUrl
-                        ? details.qrFallbackUrl
-                        : details.qrUrl
-                    }
+                    src={activeQrSrc}
                     alt={`Mã VietQR chuyển ${money(details.amount)}`}
                     width="240"
-                    height="284"
-                    onError={() => {
-                      if (!useFallbackQr && details.qrFallbackUrl) {
-                        setUseFallbackQr(true);
-                      } else {
-                        setQrLoadError(true);
-                      }
-                    }}
+                    onError={() => setQrIndex((prev) => prev + 1)}
                   />
                 )}
                 <div className="qr-live-pill">
@@ -186,7 +203,13 @@ export default function BankTransfer({
               <div className="qr-info-box">
                 <dl>
                   <dt>Ngân hàng</dt>
-                  <dd>{details.bankName}</dd>
+                  <dd>
+                    {details.bankName}
+                    {details.bankBin &&
+                    !String(details.bankName || '').includes(details.bankBin)
+                      ? ` (${details.bankBin})`
+                      : ''}
+                  </dd>
                   <dt>Số tài khoản</dt>
                   <dd>
                     <span>{details.account}</span>
