@@ -32,6 +32,20 @@ import {
 export default function OrderDetailView({ id }) {
   const c = useOrderDetailController(id);
   const order = c.order;
+  const [qrOpen, setQrOpen] = React.useState(false);
+  const autoOpenedRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (
+      !autoOpenedRef.current &&
+      order?.paymentMethod === 'bank_transfer' &&
+      order?.status === 'pending_payment' &&
+      c.route.includes('created=1')
+    ) {
+      autoOpenedRef.current = true;
+      setQrOpen(true);
+    }
+  }, [order?.paymentMethod, order?.status, c.route]);
 
   return (
     <RequireLogin>
@@ -46,18 +60,43 @@ export default function OrderDetailView({ id }) {
         ) : (
           order && (
             <>
-              {c.route.includes('created=1') && (
+              {order.status === 'pending_payment' ? (
+                <div className="order-success order-banner-pending">
+                  <Clock3 size={30} />
+                  <div>
+                    <h2>Đơn hàng đang chờ thanh toán</h2>
+                    <p>
+                      {order.paymentMethod === 'bank_transfer'
+                        ? 'Vui lòng bấm "Thanh toán tiếp" để mở mã VietQR và chuyển đúng số tiền, nội dung. Hệ thống sẽ tự động xác nhận ngay khi nhận được tiền.'
+                        : 'Vui lòng hoàn tất thanh toán trực tuyến để Nhà thuốc An Tâm tiến hành xác nhận đơn hàng.'}
+                    </p>
+                  </div>
+                </div>
+              ) : order.status === 'pending_prescription' ? (
+                <div className="order-success order-banner-pending">
+                  <Clock3 size={30} />
+                  <div>
+                    <h2>Đơn hàng đang chờ dược sĩ kiểm duyệt đơn thuốc</h2>
+                    <p>
+                      Dược sĩ sẽ đối chiếu ảnh đơn thuốc bạn đã tải lên trước khi
+                      chuyển sang bước thanh toán và giao hàng.
+                    </p>
+                  </div>
+                </div>
+              ) : (c.justPaid || c.route.includes('created=1')) && (
                 <div className="order-success">
                   <CheckCircle2 size={31} />
                   <div>
-                    <h2>An Tâm đã nhận đơn hàng của bạn</h2>
+                    <h2>
+                      {c.justPaid ||
+                      (order.paymentStatus === 'paid' &&
+                        order.paymentMethod !== 'cod')
+                        ? 'Thanh toán thành công! An Tâm đã nhận đơn hàng của bạn'
+                        : 'Đặt hàng thành công! An Tâm đã nhận đơn hàng của bạn'}
+                    </h2>
                     <p>
-                      {order.prescriptionStatus &&
-                      !['approved', 'DaDuyet'].includes(
-                        order.prescriptionStatus,
-                      )
-                        ? 'Đơn thuốc sẽ được dược sĩ kiểm duyệt trước khi tiếp tục xử lý.'
-                        : 'Bạn có thể theo dõi quá trình xử lý ngay tại đây.'}
+                      Đơn hàng đang ở trạng thái Chờ xác nhận. Bạn có thể theo
+                      dõi từng bước xử lý ngay tại đây.
                     </p>
                   </div>
                 </div>
@@ -72,14 +111,16 @@ export default function OrderDetailView({ id }) {
                   <p className="muted">Đặt lúc {dateTime(order.createdAt)}</p>
                 </div>
                 <div className="order-title-actions">
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-small"
-                    disabled={c.busy}
-                    onClick={c.handleReorder}
-                  >
-                    <RotateCcw size={14} /> Mua lại
-                  </button>
+                  {c.canReorder && (
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-small"
+                      disabled={c.busy}
+                      onClick={c.handleReorder}
+                    >
+                      <RotateCcw size={14} /> Mua lại
+                    </button>
+                  )}
                   <button
                     className="btn btn-outline btn-small"
                     onClick={c.load}
@@ -379,17 +420,13 @@ export default function OrderDetailView({ id }) {
                     )}
                   {order.paymentMethod === 'bank_transfer' &&
                     order.status === 'pending_payment' && (
-                      <BankTransfer
-                        orderId={order.id}
-                        demoMode={Boolean(c.config?.demoMode)}
-                        onPaid={() => {
-                          c.load();
-                          c.notify(
-                            'Thanh toán VietQR thành công! Đơn hàng đã chuyển sang Chờ xác nhận.',
-                          );
-                        }}
-                        onExpired={() => c.load()}
-                      />
+                      <button
+                        type="button"
+                        className="btn btn-primary full-width"
+                        onClick={() => setQrOpen(true)}
+                      >
+                        <CreditCard size={17} /> Thanh toán tiếp
+                      </button>
                     )}
                   {order.paymentMethod === 'vnpay' &&
                     order.status === 'pending_payment' &&
@@ -589,6 +626,29 @@ export default function OrderDetailView({ id }) {
               </button>
             </form>
           </Modal>
+        )}
+        {qrOpen && order && (
+          <BankTransfer
+            orderId={order.id}
+            orderCode={order.code}
+            createdAt={order.createdAt}
+            timeoutMinutes={c.config?.paymentTimeoutMinutes || 30}
+            onPaid={() => {
+              c.setJustPaid(true);
+              c.load();
+              c.notify(
+                'Thanh toán VietQR thành công! Đơn hàng đã chuyển sang Chờ xác nhận.',
+              );
+            }}
+            onExpired={() => c.load()}
+            onAbandon={async () => {
+              await c.abandonBankTransfer(
+                'Khách chọn hủy đơn chưa thanh toán để quay về giỏ hàng',
+              );
+              setQrOpen(false);
+            }}
+            onClose={() => setQrOpen(false)}
+          />
         )}
       </main>
     </RequireLogin>

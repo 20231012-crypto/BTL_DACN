@@ -42,6 +42,7 @@ export function useOrderDetailController(id) {
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
   const [rxAdjustment, setRxAdjustment] = useState(null);
+  const [justPaid, setJustPaid] = useState(false);
 
   const paymentReturn = new URLSearchParams(route.split('?')[1]).get('payment');
 
@@ -163,6 +164,35 @@ export function useOrderDetailController(id) {
       await reorder(order);
     });
 
+  const abandonBankTransfer = async (
+    reasonText = 'Khách đóng cửa sổ thanh toán VietQR',
+  ) => {
+    if (
+      !order ||
+      order.status !== 'pending_payment' ||
+      order.paymentStatus === 'paid'
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await submitOrderRequest({
+        orderId: order.id,
+        type: 'cancel',
+        reason: reasonText,
+      });
+      await reorder(order);
+      notify(
+        `Đã hủy đơn ${order.code}, sản phẩm đã về giỏ để bạn thêm hoặc đặt lại.`,
+        'info',
+      );
+    } catch (err) {
+      notify(err.message || 'Không thể hủy giao dịch chờ thanh toán.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const delivered = ['delivered', 'DaGiao'].includes(order?.status);
   const terminal = [
     'cancelled',
@@ -181,8 +211,15 @@ export function useOrderDetailController(id) {
         r.status === 'approved' ||
         (r.type === 'refund' && r.status === 'pending'),
     );
-  const step = ORDER_STEPS.findIndex(
+  const isOnlineOrder = order && order.paymentMethod !== 'cod';
+  const steps = isOnlineOrder
+    ? [['pending_payment', 'Thanh toán'], ...ORDER_STEPS]
+    : ORDER_STEPS;
+  const step = steps.findIndex(
     (s) => s[0] === (STATUS_MAP[order?.status] || order?.status),
+  );
+  const canReorder = ['delivered', 'DaGiao', 'cancelled', 'DaHuy', 'returned'].includes(
+    order?.status,
   );
 
   return {
@@ -193,10 +230,13 @@ export function useOrderDetailController(id) {
     error,
     busy,
     paymentReturn,
-    steps: ORDER_STEPS,
+    steps,
     step,
     delivered,
     terminal,
+    canReorder,
+    justPaid,
+    setJustPaid,
     pendingRequest,
     refundAvailable,
     load,
@@ -221,5 +261,6 @@ export function useOrderDetailController(id) {
     setComment,
     submitReview,
     handleReorder,
+    abandonBankTransfer,
   };
 }
