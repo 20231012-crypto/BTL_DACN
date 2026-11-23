@@ -323,7 +323,7 @@ export async function createApp(options = {}) {
     }),
   );
   installOrders(app, d, guards, config);
-  installBankTransfers(app, d, guards, config.bankTransfer);
+  installBankTransfers(app, d, guards, config.bankTransfer, config);
   installLocations(app);
   installUploadIntents(app, d, guards.auth, config.attachmentStorage);
   installAdmin(app, d, guards, config);
