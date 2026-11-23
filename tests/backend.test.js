@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHmac } from 'node:crypto';
 import { createApp } from '../backend/app.js';
-import { openPostgres } from '../backend/repositories/postgres.js';
+import { openPostgres, postgresSql } from '../backend/repositories/postgres.js';
 import { initializePostgresSchema, applyPendingMigrations } from '../backend/repositories/postgres-migrations.js';
 import { createTestDatabase } from './postgres-fixture.js';
 import { resolveApiUrl } from '../api/index.js';
@@ -1316,6 +1316,14 @@ test('pending PostgreSQL migrations are applied once and never block startup', a
   assert.equal(applied.length, 2);
   assert.match(applied[0], /CREATE TABLE IF NOT EXISTS antam\.hang_tra_ve/);
   assert.match(applied[1], /CREATE TABLE IF NOT EXISTS antam\.combo_san_pham/);
+  assert.match(
+    postgresSql('SELECT * FROM chi_tiet_gio_hang_combo WHERE cart_id=?'),
+    /FROM antam\.chi_tiet_gio_hang_combo WHERE cart_id=\$1/,
+  );
+  assert.match(
+    postgresSql('SELECT * FROM combo_san_pham JOIN combo_san_pham_item ON combo_id=combo_san_pham.id'),
+    /FROM antam\.combo_san_pham JOIN antam\.combo_san_pham_item/,
+  );
   const log = console.error;
   console.error = () => {};
   try {

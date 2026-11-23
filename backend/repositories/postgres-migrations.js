@@ -99,7 +99,17 @@ export async function applyPendingMigrations(store) {
     const comboTbl = await store.one(
       "SELECT to_regclass('antam.combo_san_pham') IS NOT NULL AS present",
     );
-    if (!comboTbl?.present) {
+    const cartSelectedCol = await store.one(
+      "SELECT COUNT(*)::int AS cnt FROM information_schema.columns WHERE table_schema='antam' AND table_name='chi_tiet_gio_hang' AND column_name='selected'",
+    );
+    const promoScopeCol = await store.one(
+      "SELECT COUNT(*)::int AS cnt FROM information_schema.columns WHERE table_schema='antam' AND table_name='khuyen_mai' AND column_name='apply_scope'",
+    );
+    if (
+      !comboTbl?.present ||
+      (cartSelectedCol && cartSelectedCol.cnt === 0) ||
+      (promoScopeCol && promoScopeCol.cnt === 0)
+    ) {
       const combosVouchersCart = await readFile(
         new URL('20261123000100_combos_vouchers_cart.sql', migrations),
         'utf8',
