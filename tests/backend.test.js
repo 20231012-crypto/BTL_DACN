@@ -1651,6 +1651,10 @@ test('chatbot looks up standalone AT order codes, redacts PII for Gemini and fal
               content: {
                 parts: [
                   {
+                    thought: true,
+                    text: 'Internal reasoning should not appear in final reply.',
+                  },
+                  {
                     text: 'Vitamin C hỗ trợ tăng cường sức đề kháng. Thông tin chỉ mang tính tham khảo.',
                   },
                 ],
@@ -1686,6 +1690,30 @@ test('chatbot looks up standalone AT order codes, redacts PII for Gemini and fal
   assert.match(aiReply.data.reply, /Vitamin C/);
   assert.ok(!sentBody.includes('khach@antam.vn'), 'email must be redacted');
   assert.ok(!sentBody.includes('0901234567'), 'phone must be redacted');
+  assert.ok(
+    !aiReply.data.reply.includes('Internal reasoning'),
+    'thought parts must be filtered',
+  );
+  const parsedRequest = JSON.parse(sentBody);
+  assert.equal(parsedRequest.generationConfig.temperature, 0.15);
+  assert.equal(parsedRequest.generationConfig.thinkingConfig.thinkingBudget, 0);
+  const lastTurnText = parsedRequest.contents.at(-1).parts[0].text;
+  assert.match(lastTurnText, /NGỮ CẢNH NHÀ THUỐC/);
+  assert.match(lastTurnText, /Tồn kho: Còn/);
+
+  const catalogQuestion = await customer('/chat', 'POST', {
+    message: 'Nhà thuốc có sản phẩm nào?',
+  });
+  assert.equal(catalogQuestion.status, 200);
+  assert.ok(catalogQuestion.data.products.length > 0);
+  assert.ok(catalogQuestion.data.products.every((p) => !p.prescriptionRequired));
+
+  const rxQuestion = await customer('/chat', 'POST', {
+    message: 'Amoxicillin có bán không?',
+  });
+  assert.equal(rxQuestion.status, 200);
+  assert.deepEqual(rxQuestion.data.products, []);
+  assert.match(sentBody, /THUỐC KÊ ĐƠN/);
 
   failProvider = true;
   const fallback = await customer('/chat', 'POST', {
@@ -1694,6 +1722,7 @@ test('chatbot looks up standalone AT order codes, redacts PII for Gemini and fal
   assert.equal(fallback.status, 200);
   assert.equal(fallback.data.mode, 'knowledge_fallback');
   assert.ok(fallback.data.products.length > 0);
+  assert.match(fallback.data.reply, /đ\//);
 });
 
 test('customer profile stores and validates birthDate and gender (UC02.1)', async (t) => {

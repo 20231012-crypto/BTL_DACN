@@ -10,6 +10,41 @@ import {
 import { generateAnswer } from '../integrations/gemini.js';
 import { geminiKeys } from '../integrations/gemini-client.js';
 import { CONSULTATION_TITLE } from './consultation.js';
+import { searchScore } from '../../shared/search.js';
+
+const CHAT_STOP_WORDS = new Set([
+  'toi', 'minh', 'ban', 'cho', 'hoi', 'thuoc', 'san', 'pham', 'nha', 'co',
+  'nao', 'khong', 'gi', 'gia', 'bao', 'nhieu', 'mua', 'dung', 'can', 'the',
+  'cach', 'hang', 'duoc', 'voi', 'va', 'la', 'bi', 'neu', 'nhe', 'em', 'anh',
+  'chi', 'tu', 'van', 'xem', 'tim', 'giup', 'voi', 'nay', 'kia', 'mot', 'nhung',
+]);
+
+const extractTokens = (normalizedText) => {
+  const raw = normalizedText.split(/[^a-z0-9]+/).filter(Boolean);
+  return raw.filter((word, idx) => {
+    if (CHAT_STOP_WORDS.has(word)) return false;
+    if (word.length >= 3) return true;
+    // Giữ mã vitamin/khoáng chất ngắn (C, D, E, K, Zn, B1...) khi đứng cạnh từ khóa liên quan hoặc có chữ số.
+    if (/\d/.test(word)) return true;
+    return word.length === 1 && idx > 0 && raw[idx - 1] === 'vitamin';
+  });
+};
+
+const scoreProductForChat = (product, query, tokens) => {
+  const primary = `${product.name} ${product.ingredient || ''} ${product.categoryName || ''}`;
+  const secondary = `${product.usage || ''} ${product.description || ''} ${product.manufacturer || ''}`;
+  let score = Math.max(
+    searchScore(primary, query) * 2,
+    searchScore(secondary, query),
+  );
+  const pNorm = normalize(primary);
+  const sNorm = normalize(secondary);
+  for (const token of tokens) {
+    if (pNorm.includes(token)) score += 35;
+    else if (sNorm.includes(token)) score += 16;
+  }
+  return score;
+};
 
 const redactPii = (value) =>
   String(value || '')
@@ -239,60 +274,139 @@ export function installChatbot(app, d, { auth }, options) {
       const knowledge = await d.all(
         'SELECT * FROM tri_thuc_chatbot WHERE active=1 AND reviewed_at IS NOT NULL',
       );
+      const tokens = extractTokens(normalized);
       const matching = knowledge
-        .map((k) => ({
-          ...k,
-          score: k.keywords
+        .map((k) => {
+          const keywordHits = k.keywords
             .split(',')
             .filter((w) => w.trim() && normalized.includes(normalize(w.trim())))
-            .length,
-        }))
-        .filter((k) => k.score > 0)
+            .length;
+          const titleScore = searchScore(k.title, normalized);
+          const contentNorm = normalize(`${k.title} ${k.content}`);
+          const tokenHits = tokens.filter((t) => contentNorm.includes(t)).length;
+          return {
+            ...k,
+            score: keywordHits * 40 + (titleScore >= 60 ? titleScore : 0) + tokenHits * 12,
+          };
+        })
+        .filter((k) => k.score >= 12)
         .sort((a, b) => b.score - a.score);
-      const ignoredWords = new Set([
-        'thuoc',
-        'pham',
-        'can',
-        'ban',
-        'cho',
-        'minh',
-        'toi',
-        'hang',
-        'nao',
-        'sinh',
-        'the',
-        'cach',
-        'khong',
-        'dung',
-        'mua',
-      ]);
-      const words = normalized
-        .split(/[^a-z0-9]+/)
-        .filter((word) => word.length >= 3 && !ignoredWords.has(word));
-      products = (await productList(d))
-        .filter(
-          (p) =>
-            !p.prescriptionRequired &&
-            p.stock > 0 &&
-            words.some((w) =>
-              normalize(`${p.name} ${p.ingredient}`).includes(w),
-            ),
-        )
-        .slice(0, 3);
-      let context = matching
-        .slice(0, 2)
-        .map((k) => k.content)
+
+      const allProducts = await productList(d);
+      const categories = await d.all(
+        'SELECT name FROM danh_muc WHERE active=1 ORDER BY id',
+      );
+      const otcInStock = allProducts.filter(
+        (p) => !p.prescriptionRequired && p.stock > 0,
+      );
+      const askingCatalog =
+        /co (nhung )?(san pham|mat hang|danh muc|thuoc) nao|ban (nhung )?gi|san pham noi bat|goi y san pham/.test(
+          normalized,
+        );
+      if (tokens.length) {
+        products = otcInStock
+          .map((p) => ({
+            product: p,
+            score: scoreProductForChat(p, normalized, tokens),
+          }))
+          .filter((row) => row.score > 0)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 3)
+          .map((row) => row.product);
+      } else if (askingCatalog) {
+        products = otcInStock.slice(0, 3);
+      }
+
+      const rxMentioned = tokens.length
+        ? allProducts
+            .filter((p) => p.prescriptionRequired)
+            .map((p) => ({
+              product: p,
+              score: Math.max(
+                searchScore(`${p.name} ${p.ingredient || ''}`, normalized),
+                tokens.some((t) =>
+                  t.length >= 4 &&
+                  normalize(`${p.name} ${p.ingredient || ''}`).includes(t),
+                )
+                  ? 65
+                  : 0,
+              ),
+            }))
+            .filter((row) => row.score >= 60)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 2)
+            .map((row) => row.product)
+        : [];
+
+      const storeFacts = [
+        `Cửa hàng: ${settings.storeName}.`,
+        `Phí giao hàng tiêu chuẩn: ${settings.shippingFee.toLocaleString('vi-VN')}đ; miễn phí giao cho đơn từ ${settings.freeShippingThreshold.toLocaleString('vi-VN')}đ.`,
+        `Thời hạn tiếp nhận yêu cầu đổi trả: ${settings.returnWindowDays} ngày kể từ khi nhận hàng (thuốc còn nguyên niêm phong theo quy định).`,
+        categories.length
+          ? `Các danh mục đang bán: ${categories.map((c) => c.name).join(', ')}.`
+          : '',
+      ]
+        .filter(Boolean)
         .join('\n');
-      if (products.length)
-        context +=
-          '\nSản phẩm mẫu đang có: ' +
-          products
-            .map((p) => `${p.name}, ${p.unit}, ${p.price}đ, ${p.description}`)
-            .join('\n');
-      const fallbackReply = context
-        ? matching[0]?.content ||
-          'Tôi tìm thấy một số sản phẩm phù hợp với từ khóa của bạn. Bạn hãy xem chi tiết và hỏi dược sĩ nếu cần lựa chọn sản phẩm cho tình trạng sức khỏe cụ thể.'
-        : 'Tôi có thể giúp tra cứu sản phẩm, chính sách giao hàng, thanh toán và theo dõi đơn hàng. Câu hỏi này cần thêm thông tin hoặc tư vấn chuyên môn. Bạn có thể chọn “Kết nối dược sĩ” để được nhân viên hỗ trợ. Thông tin tại đây chỉ mang tính tham khảo.';
+
+      const knowledgeText = matching
+        .slice(0, 3)
+        .map((k) => `- ${k.title}: ${k.content}`)
+        .join('\n');
+
+      const productText = products.length
+        ? products
+            .map((p) =>
+              [
+                `- ${p.name}`,
+                `Danh mục: ${p.categoryName || 'Chăm sóc sức khỏe'}`,
+                p.ingredient ? `Hoạt chất: ${p.ingredient}` : '',
+                `Giá: ${p.price.toLocaleString('vi-VN')}đ / ${p.unit}`,
+                `Tồn kho: Còn ${p.stock} ${p.unit}`,
+                p.usage ? `Công dụng/hướng dẫn chung: ${p.usage}` : '',
+                p.description ? `Mô tả: ${p.description}` : '',
+                p.warning ? `Lưu ý: ${p.warning}` : '',
+              ]
+                .filter(Boolean)
+                .join(' | '),
+            )
+            .join('\n')
+        : '';
+
+      const rxText = rxMentioned.length
+        ? rxMentioned
+            .map(
+              (p) =>
+                `- ${p.name} (Hoạt chất: ${p.ingredient || 'theo nhãn'} | Giá tham khảo: ${p.price.toLocaleString('vi-VN')}đ / ${p.unit} | THUỐC KÊ ĐƠN: cần ảnh/PDF đơn thuốc hợp lệ và dược sĩ duyệt trước khi bán)`,
+            )
+            .join('\n')
+        : '';
+
+      const contextSections = [
+        `[Thông tin nhà thuốc]\n${storeFacts}`,
+        knowledgeText ? `[Tri thức đã được dược sĩ rà soát]\n${knowledgeText}` : '',
+        productText
+          ? `[Sản phẩm không kê đơn đang bán và còn hàng]\n${productText}`
+          : '',
+        rxText
+          ? `[Sản phẩm kê đơn được nhắc tới - KHÔNG tự gợi ý mua nếu chưa có đơn]\n${rxText}`
+          : '',
+      ].filter(Boolean);
+      const context = contextSections.join('\n\n');
+
+      const fallbackReply = matching[0]?.content
+        ? products.length
+          ? `${matching[0].content}\n\nSản phẩm phù hợp đang có:\n${products
+              .map((p) => `• ${p.name} — ${p.price.toLocaleString('vi-VN')}đ/${p.unit} (Còn ${p.stock})`)
+              .join('\n')}`
+          : matching[0].content
+        : products.length
+          ? `An Tâm hiện có các sản phẩm phù hợp sau:\n${products
+              .map((p) => `• ${p.name} — ${p.price.toLocaleString('vi-VN')}đ/${p.unit} (Còn ${p.stock})`)
+              .join('\n')}\n\nBạn có thể bấm vào từng sản phẩm để xem chi tiết hoặc chọn “Kết nối dược sĩ” khi cần tư vấn thêm. Thông tin chỉ mang tính tham khảo.`
+          : rxMentioned.length
+            ? `${rxMentioned[0].name} là thuốc kê đơn cần đơn thuốc hợp lệ của bác sĩ. Bạn vui lòng chuẩn bị ảnh/PDF đơn thuốc ở mục “Thuốc theo đơn” hoặc bấm “Kết nối dược sĩ” để được kiểm duyệt và hướng dẫn.`
+            : 'Tôi có thể giúp tra cứu sản phẩm, chính sách giao hàng, thanh toán và theo dõi đơn hàng. Câu hỏi này cần thêm thông tin hoặc tư vấn chuyên môn. Bạn có thể chọn “Kết nối dược sĩ” để được nhân viên hỗ trợ. Thông tin tại đây chỉ mang tính tham khảo.';
       reply = fallbackReply;
 
       const canCallGemini =
