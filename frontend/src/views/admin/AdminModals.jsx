@@ -30,6 +30,7 @@ import {
   fmtDate,
   formatAuditDetail,
   money,
+  normalizeSearch,
   vnDate,
 } from '../../models/formatters.js';
 import { buildDefaultRolePermissions } from '../../models/adminModel.js';
@@ -291,14 +292,41 @@ function PromotionModal({
     });
   };
 
-  const candidates = (applyScope === 'combo' ? combos : products).filter(
-    (entry) => {
-      if (!targetSearch.trim()) return true;
-      return String(entry.name || '')
-        .toLowerCase()
-        .includes(targetSearch.trim().toLowerCase());
-    },
-  );
+  const pool = applyScope === 'combo' ? combos : products;
+  const poolMap = new Map(pool.map((entry) => [Number(entry.id), entry]));
+  const selectedEntries = selectedIds
+    .map((id) => poolMap.get(id))
+    .filter(Boolean);
+
+  const normalizedQuery = normalizeSearch(targetSearch.trim());
+  const candidates = pool.filter((entry) => {
+    if (!normalizedQuery) return true;
+    const hay = normalizeSearch(
+      [
+        entry.name,
+        entry.categoryName,
+        entry.ingredient,
+        ...(entry.items || []).map((i) => i.product?.name || ''),
+      ]
+        .filter(Boolean)
+        .join(' '),
+    );
+    return hay.includes(normalizedQuery);
+  });
+
+  const selectAllVisible = () => {
+    setForm((prev) => {
+      const cur = new Set(
+        Array.isArray(prev.targetIds) ? prev.targetIds.map(Number) : [],
+      );
+      candidates.forEach((entry) => cur.add(Number(entry.id)));
+      return { ...prev, targetIds: [...cur] };
+    });
+  };
+
+  const clearAllTargets = () => {
+    setForm((prev) => ({ ...prev, targetIds: [] }));
+  };
 
   return (
     <Modal
@@ -361,37 +389,109 @@ function PromotionModal({
             </select>
           </Field>
           {applyScope !== 'order' && (
-            <div className="adm-field is-wide adm-scope-picker">
+            <div className="adm-scope-picker">
               <div className="adm-scope-picker-head">
-                <span>
-                  {applyScope === 'combo'
-                    ? `Chọn combo áp dụng (${selectedIds.length ? `Đã chọn ${selectedIds.length}` : 'Bỏ trống = áp dụng mọi combo'})`
-                    : `Chọn sản phẩm áp dụng (Đã chọn ${selectedIds.length}) *`}
-                </span>
+                <div className="adm-scope-picker-title">
+                  <strong>
+                    {applyScope === 'combo'
+                      ? `Chọn combo áp dụng (${selectedIds.length ? `Đã chọn ${selectedIds.length}` : 'Bỏ trống = áp dụng mọi combo'})`
+                      : `Chọn sản phẩm áp dụng (Đã chọn ${selectedIds.length}) *`}
+                  </strong>
+                  <div className="adm-scope-picker-actions">
+                    {candidates.length > 0 && (
+                      <button
+                        type="button"
+                        className="adm-quick-chip"
+                        onClick={selectAllVisible}
+                      >
+                        Chọn tất cả ({candidates.length})
+                      </button>
+                    )}
+                    {selectedIds.length > 0 && (
+                      <button
+                        type="button"
+                        className="adm-quick-chip"
+                        onClick={clearAllTargets}
+                      >
+                        Bỏ chọn hết
+                      </button>
+                    )}
+                  </div>
+                </div>
                 <input
                   type="search"
+                  className="adm-scope-search"
                   placeholder={
-                    applyScope === 'combo' ? 'Lọc combo...' : 'Lọc sản phẩm...'
+                    applyScope === 'combo'
+                      ? 'Tìm tên combo...'
+                      : 'Tìm tên sản phẩm, hoạt chất, danh mục...'
                   }
                   value={targetSearch}
                   onChange={(e) => setTargetSearch(e.target.value)}
                 />
               </div>
+              {selectedEntries.length > 0 && (
+                <div className="adm-scope-selected-chips">
+                  {selectedEntries.map((entry) => (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      className="adm-scope-chip"
+                      onClick={() => toggleTarget(entry.id)}
+                      title="Bấm để bỏ chọn"
+                    >
+                      <span>{entry.name}</span>
+                      <b>×</b>
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="adm-scope-picker-list">
                 {candidates.length === 0 ? (
                   <small className="muted">Không có mục phù hợp.</small>
                 ) : (
                   candidates.map((entry) => {
                     const checked = selectedIds.includes(Number(entry.id));
+                    const subText =
+                      applyScope === 'combo'
+                        ? (entry.items || [])
+                            .map(
+                              (ci) =>
+                                `${ci.quantity}× ${ci.product?.name || ''}`,
+                            )
+                            .join(' + ')
+                        : [
+                            entry.categoryName,
+                            entry.unit,
+                            entry.stock !== undefined
+                              ? `Tồn: ${count(entry.stock)}`
+                              : '',
+                          ]
+                            .filter(Boolean)
+                            .join(' · ');
                     return (
-                      <label key={entry.id} className="adm-scope-option">
+                      <label
+                        key={entry.id}
+                        className={`adm-scope-option ${checked ? 'is-checked' : ''}`}
+                      >
                         <input
                           type="checkbox"
                           checked={checked}
                           onChange={() => toggleTarget(entry.id)}
                         />
-                        <span>{entry.name}</span>
-                        <small>{money(entry.price)}</small>
+                        <div className="adm-scope-option-info">
+                          <span className="adm-scope-option-name">
+                            {entry.name}
+                          </span>
+                          {subText && (
+                            <small className="adm-scope-option-sub">
+                              {subText}
+                            </small>
+                          )}
+                        </div>
+                        <b className="adm-scope-option-price">
+                          {money(entry.price)}
+                        </b>
                       </label>
                     );
                   })

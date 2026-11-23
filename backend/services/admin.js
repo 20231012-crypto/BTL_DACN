@@ -595,7 +595,7 @@ export function installAdmin(
   app.get('/api/admin/products', auth, async (req, res) => {
     assert(
       req.user.permissions.some((code) =>
-        ['catalog', 'inventory'].includes(code),
+        ['catalog', 'inventory', 'promotions'].includes(code),
       ),
       403,
       'Bạn không có quyền xem danh sách sản phẩm quản trị.',
