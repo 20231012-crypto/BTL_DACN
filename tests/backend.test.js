@@ -1868,3 +1868,116 @@ test('admin promotions maxDiscount=0, audit, enriched prescriptions/catalog/know
   assert.equal(typeof patchSettings.data.googleConfigured, 'boolean');
   assert.equal(typeof patchSettings.data.paymentConfigured, 'boolean');
 });
+
+test('VietQR webhook auto-confirms payment with strict token/amount/idempotency checks and syncs customer & admin order views', async (t) => {
+  const { login, client, d } = await fixture(t, {
+    bankTransfer: {
+      bankBin: '970436',
+      account: '1012345678',
+      accountName: 'NHA THUOC AN TAM',
+      bankName: 'Vietcombank',
+      webhookSecret: 'test-sepay-secret-2026',
+    },
+  });
+  const customer = await login();
+  const otherCustomer = await login('huong@antam.vn');
+  const admin = await login('admin@antam.vn');
+  const anon = client();
+
+  await add(customer, 1, 2);
+  const created = await order(customer, { paymentMethod: 'bank_transfer' });
+  assert.equal(created.status, 201);
+  assert.equal(created.data.status, 'pending_payment');
+  assert.equal(created.data.paymentStatus, 'unpaid');
+
+  const qr = await customer(`/orders/${created.data.id}/bank-transfer`);
+  assert.equal(qr.status, 200);
+  assert.equal(qr.data.autoVerify, true);
+  assert.equal(qr.data.content, `ANTAM${created.data.id}`);
+  assert.equal(qr.data.webhookSecret, undefined);
+
+  // Payment status endpoint is scoped to the order owner
+  const beforeStatus = await customer(`/orders/${created.data.id}/payment-status`);
+  assert.equal(beforeStatus.status, 200);
+  assert.equal(beforeStatus.data.paymentStatus, 'unpaid');
+  assert.equal((await otherCustomer(`/orders/${created.data.id}/payment-status`)).status, 404);
+
+  // Wrong webhook token -> 401
+  const badToken = await anon('/payments/bank-transfer/webhook', 'POST', {
+    transferType: 'in',
+    accountNumber: '1012345678',
+    transferAmount: created.data.total,
+    content: `ANTAM${created.data.id}`,
+    referenceCode: 'FT2611230001',
+  }, { Authorization: 'Apikey wrong-token' });
+  assert.equal(badToken.status, 401);
+
+  // Outgoing transfer ignored
+  const outgoing = await anon('/payments/bank-transfer/webhook', 'POST', {
+    transferType: 'out',
+    accountNumber: '1012345678',
+    transferAmount: created.data.total,
+    content: `ANTAM${created.data.id}`,
+    referenceCode: 'FT2611230002',
+  }, { Authorization: 'Apikey test-sepay-secret-2026' });
+  assert.equal(outgoing.status, 200);
+  assert.equal(outgoing.data.processed, false);
+
+  // Underpayment rejected & audited, order stays unpaid
+  const mismatch = await anon('/payments/bank-transfer/webhook', 'POST', {
+    transferType: 'in',
+    accountNumber: '1012345678',
+    transferAmount: created.data.total - 1000,
+    content: `Khach CK ANTAM${created.data.id}`,
+    referenceCode: 'FT2611230003',
+  }, { Authorization: 'Apikey test-sepay-secret-2026' });
+  assert.equal(mismatch.status, 200);
+  assert.equal(mismatch.data.processed, false);
+  assert.equal(mismatch.data.reason, 'amount_mismatch');
+  assert.equal(
+    (await customer(`/orders/${created.data.id}/payment-status`)).data.paymentStatus,
+    'unpaid',
+  );
+
+  // Valid SePay webhook -> auto-marks paid + transitions to pending
+  const okHook = await anon('/payments/bank-transfer/webhook', 'POST', {
+    transferType: 'in',
+    gateway: 'Vietcombank',
+    accountNumber: '1012345678',
+    transferAmount: created.data.total,
+    content: `MBVCB.12345.ANTAM${created.data.id}.CT tu KH`,
+    referenceCode: 'FT2611239999',
+  }, { Authorization: 'Apikey test-sepay-secret-2026' });
+  assert.equal(okHook.status, 200);
+  assert.equal(okHook.data.processed, true);
+  assert.equal(okHook.data.paymentStatus, 'paid');
+  assert.equal(okHook.data.status, 'pending');
+
+  // Duplicate webhook delivery is idempotent
+  const dupHook = await anon('/payments/bank-transfer/webhook', 'POST', {
+    transferType: 'in',
+    accountNumber: '1012345678',
+    transferAmount: created.data.total,
+    content: `ANTAM${created.data.id}`,
+    referenceCode: 'FT2611239999',
+  }, { Authorization: 'Apikey test-sepay-secret-2026' });
+  assert.equal(dupHook.status, 200);
+  assert.equal(dupHook.data.alreadyPaid, true);
+
+  // Both customer and admin views reflect paid + pending + transaction
+  const customerStatus = await customer(`/orders/${created.data.id}/payment-status`);
+  assert.equal(customerStatus.data.paymentStatus, 'paid');
+  assert.equal(customerStatus.data.status, 'pending');
+
+  const adminOrder = (await admin(`/admin/orders/${created.data.id}`)).data;
+  assert.equal(adminOrder.paymentStatus, 'paid');
+  assert.equal(adminOrder.status, 'pending');
+  assert.equal(adminOrder.transactions.length, 1);
+  assert.equal(adminOrder.transactions[0].providerReference, 'FT2611239999');
+
+  const auditRow = await d.one(
+    "SELECT * FROM nhat_ky_hoat_dong WHERE action='payment.bank_webhook' AND entity_id=?",
+    String(created.data.id),
+  );
+  assert.ok(auditRow);
+});
