@@ -6527,3 +6527,7 @@ svg {
 .qr-abandon-confirm .qr-modal-actions { margin-top: 0; }
 .btn-danger { background: #dc2626; color: #fff; border: 1px solid #dc2626; }
 .btn-danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c; }
+
+.checkout-layout {
+  padding-bottom: 96px;
+}
