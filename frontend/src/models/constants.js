@@ -364,7 +364,7 @@ export const ADMIN_SUBTITLES = {
   products:
     'Quản lý thông tin, giá bán, tồn kho và hiển thị danh mục sản phẩm.',
   combos:
-    'Cấu hình các gói combo chập tổ hợp sản phẩm tiết kiệm và kiểm soát tồn khả dụng.',
+    'Cấu hình các gói combo tổ hợp sản phẩm tiết kiệm và kiểm soát tồn khả dụng.',
   inventory: 'Kiểm soát tồn kho theo lô, hạn dùng FEFO và lịch sử xuất nhập.',
   catalog: 'Quản lý danh mục thuốc, nhà cung cấp và nhà sản xuất đối tác.',
   promotions: 'Thiết lập mã giảm giá, hạn mức sử dụng và thời gian hiệu lực.',
