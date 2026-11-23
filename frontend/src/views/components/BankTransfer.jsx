@@ -29,6 +29,8 @@ export default function BankTransfer({
 }) {
   const [confirmAbandon, setConfirmAbandon] = useState(false);
   const [abandoning, setAbandoning] = useState(false);
+  const [useFallbackQr, setUseFallbackQr] = useState(false);
+  const [qrLoadError, setQrLoadError] = useState(false);
 
   const handleConfirmAbandon = async () => {
     if (!onAbandon || abandoning) return;
@@ -150,12 +152,31 @@ export default function BankTransfer({
 
             <div className="qr-modal-grid">
               <div className="qr-image-box">
-                <img
-                  src={details.qrUrl}
-                  alt={`Mã VietQR chuyển ${money(details.amount)}`}
-                  width="240"
-                  height="284"
-                />
+                {qrLoadError ? (
+                  <p className="small muted" role="alert">
+                    Không tải được ảnh QR tự động. Bạn vẫn có thể chuyển khoản
+                    thủ công theo đúng số tài khoản, số tiền và nội dung bên
+                    cạnh.
+                  </p>
+                ) : (
+                  <img
+                    src={
+                      useFallbackQr && details.qrFallbackUrl
+                        ? details.qrFallbackUrl
+                        : details.qrUrl
+                    }
+                    alt={`Mã VietQR chuyển ${money(details.amount)}`}
+                    width="240"
+                    height="284"
+                    onError={() => {
+                      if (!useFallbackQr && details.qrFallbackUrl) {
+                        setUseFallbackQr(true);
+                      } else {
+                        setQrLoadError(true);
+                      }
+                    }}
+                  />
+                )}
                 <div className="qr-live-pill">
                   <i />
                   <span>Đang tự động kiểm tra giao dịch…</span>

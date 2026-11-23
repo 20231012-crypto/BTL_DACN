@@ -4,14 +4,55 @@ import { assert, audit, orderView, text } from './shared.js';
 import { now } from '../repositories/database.js';
 import { setOrderStatus } from './orders.js';
 
+const BANK_BIN_ALIASES = {
+  MB: '970422',
+  MBBANK: '970422',
+  VCB: '970436',
+  VIETCOMBANK: '970436',
+  TCB: '970407',
+  TECHCOMBANK: '970407',
+  ACB: '970416',
+  BIDV: '970418',
+  VPB: '970432',
+  VPBANK: '970432',
+  TPB: '970423',
+  TPBANK: '970423',
+  ICB: '970415',
+  VIETINBANK: '970415',
+  STB: '970403',
+  SACOMBANK: '970403',
+  AGR: '970405',
+  AGRIBANK: '970405',
+  OCB: '970448',
+  VIB: '970441',
+  HDB: '970437',
+  HDBANK: '970437',
+  SHB: '970443',
+  MSB: '970426',
+  SEAB: '970440',
+  SEABANK: '970440',
+};
+
+function resolveBankBin(raw) {
+  const clean = String(raw || '').trim();
+  if (/^\d{6}$/.test(clean)) return clean;
+  const key = clean.replace(/[\s_-]+/g, '').toUpperCase();
+  return BANK_BIN_ALIASES[key] || '';
+}
+
 export function bankTransferConfig() {
-  const bankBin = process.env.BANK_TRANSFER_BANK_BIN;
-  const account = process.env.BANK_TRANSFER_ACCOUNT;
-  const accountName = process.env.BANK_TRANSFER_NAME;
+  const rawBin = String(process.env.BANK_TRANSFER_BANK_BIN || '').trim();
+  const bankBin =
+    resolveBankBin(rawBin) ||
+    resolveBankBin(process.env.BANK_TRANSFER_BANK_NAME);
+  const account = String(process.env.BANK_TRANSFER_ACCOUNT || '')
+    .replace(/[\s-]+/g, '')
+    .trim();
+  const accountName = String(process.env.BANK_TRANSFER_NAME || '').trim();
   if (
-    !/^\d{6}$/.test(bankBin || '') ||
-    !/^\d{6,30}$/.test(account || '') ||
-    !accountName?.trim()
+    !/^\d{6}$/.test(bankBin) ||
+    !/^[A-Za-z0-9]{4,30}$/.test(account) ||
+    !accountName
   )
     return null;
   const webhookSecret = (
@@ -22,8 +63,10 @@ export function bankTransferConfig() {
   return {
     bankBin,
     account,
-    accountName: accountName.trim(),
-    bankName: process.env.BANK_TRANSFER_BANK_NAME || bankBin,
+    accountName,
+    bankName:
+      String(process.env.BANK_TRANSFER_BANK_NAME || '').trim() ||
+      (bankBin === '970422' ? 'MB Bank' : bankBin),
     webhookSecret,
   };
 }
@@ -131,12 +174,22 @@ export function installBankTransfers(
       'Đơn chưa sẵn sàng hoặc đã hoàn tất thanh toán.',
     );
     const content = `ANTAM${order.id}`;
-    const params = new URLSearchParams({
+    const sepayParams = new URLSearchParams({
+      acc: config.account,
+      bank: config.bankBin,
+      amount: String(order.total),
+      des: content,
+      template: 'compact',
+    });
+    const sepayQrUrl = `https://qr.sepay.vn/img?${sepayParams}`;
+    const vietQrParams = new URLSearchParams({
       amount: String(order.total),
       addInfo: content,
       accountName: config.accountName,
     });
-    const qrUrl = `https://img.vietqr.io/image/${config.bankBin}-${config.account}-compact2.png?${params}`;
+    const vietQrUrl = `https://img.vietqr.io/image/${config.bankBin}-${encodeURIComponent(config.account)}-compact2.png?${vietQrParams}`;
+    const qrUrl = sepayQrUrl;
+    const qrFallbackUrl = vietQrUrl;
     const { webhookSecret, ...publicBankConfig } = config;
     res.json({
       data: {
@@ -144,6 +197,7 @@ export function installBankTransfers(
         amount: order.total,
         content,
         qrUrl,
+        qrFallbackUrl,
         autoVerify: Boolean(webhookSecret),
       },
     });
