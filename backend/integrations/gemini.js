@@ -1,12 +1,17 @@
 // Official REST reference: https://ai.google.dev/gemini-api/docs/text-generation
 // Only de-identified, minimal retrieved context and recent turns are sent.
-import { geminiKeys, geminiRequest } from './gemini-client.js';
+import {
+  geminiKeys,
+  geminiRequest,
+  isGeminiKeyError,
+} from './gemini-client.js';
 
 const FALLBACK_MODELS = [
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
   'gemini-2.0-flash',
   'gemini-2.0-flash-lite',
+  'gemini-flash-latest',
 ];
 
 const SYSTEM_PROMPT = [
@@ -63,7 +68,7 @@ export async function generateAnswer({
     const generationConfig = {
       temperature: 0.15,
       maxOutputTokens: 1000,
-      ...(/^gemini-2\.5-flash/.test(model)
+      ...(model === 'gemini-2.5-flash'
         ? { thinkingConfig: { thinkingBudget: 0 } }
         : {}),
     };
@@ -87,9 +92,75 @@ export async function generateAnswer({
       return output.trim().slice(0, 5000);
     } catch (error) {
       lastError = error;
-      // Only fall through to alternate models on model/quota/server/timeout errors; stop on bad key (401/403).
-      if (error.httpStatus === 401 || error.httpStatus === 403) break;
+      // Đã thử toàn bộ key mà vẫn lỗi key (401/403 hoặc 400 API_KEY_INVALID) -> dừng sớm không lặp model.
+      if (isGeminiKeyError(error.httpStatus, error.detail || error.message))
+        break;
     }
   }
   throw lastError || new Error('Gemini tạm thời chưa xử lý được.');
+}
+
+export async function testGeminiConnection({
+  apiKeys = [],
+  modelOverride = '',
+} = {}) {
+  const keys = geminiKeys(apiKeys);
+  if (!keys.length) {
+    return { ok: false, error: 'Chưa cấu hình Gemini API Key.' };
+  }
+  const primaryModel =
+    (typeof modelOverride === 'string' && modelOverride.trim()) ||
+    process.env.GEMINI_MODEL?.trim() ||
+    'gemini-2.5-flash';
+  if (!/^[a-zA-Z0-9._-]+$/.test(primaryModel)) {
+    return { ok: false, error: 'Tên model Gemini không hợp lệ.' };
+  }
+  const modelsToTry = [...new Set([primaryModel, ...FALLBACK_MODELS])];
+  const started = Date.now();
+  let lastError = null;
+  for (const model of modelsToTry) {
+    try {
+      const result = await geminiRequest(
+        `models/${model}:generateContent`,
+        {
+          contents: [
+            { role: 'user', parts: [{ text: 'Trả lời đúng 1 từ: OK' }] },
+          ],
+          generationConfig: {
+            temperature: 0,
+            maxOutputTokens: 16,
+            ...(model === 'gemini-2.5-flash'
+              ? { thinkingConfig: { thinkingBudget: 0 } }
+              : {}),
+          },
+        },
+        10000,
+        6000,
+        apiKeys,
+      );
+      const textOut = result.candidates?.[0]?.content?.parts
+        ?.filter((p) => !p.thought)
+        .map((p) => p.text || '')
+        .join(' ')
+        .trim();
+      if (textOut) {
+        return {
+          ok: true,
+          model,
+          latencyMs: Date.now() - started,
+          sample: textOut.slice(0, 40),
+        };
+      }
+    } catch (error) {
+      lastError = error;
+      if (isGeminiKeyError(error.httpStatus, error.detail || error.message))
+        break;
+    }
+  }
+  return {
+    ok: false,
+    error: lastError?.message || 'Không kết nối được tới Google Gemini API.',
+    httpStatus: lastError?.httpStatus || 0,
+    latencyMs: Date.now() - started,
+  };
 }

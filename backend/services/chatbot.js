@@ -20,7 +20,9 @@ const CHAT_STOP_WORDS = new Set([
   'chi', 'tu', 'van', 'xem', 'tim', 'giup', 'nay', 'kia', 'mot', 'nhung',
   'xin', 'chao', 'gioi', 'thieu', 'tam', 've', 'cua', 'cac', 'biet', 'them',
   'tiet', 'vui', 'long', 'lam', 'sao', 'tai', 'khi', 'trong', 'ngoai', 'hay',
-  'nhat', 'khach', 'vay', 'nhu', 'de', 'duoc', 'dang', 'ban', 'coi', 'thu',
+  'nhat', 'khach', 'vay', 'nhu', 'de', 'dang', 'coi', 'thu', 'thi', 'luc',
+  'tot', 'nen', 'gio', 'ngay', 'qua', 'rat', 'hon', 'cung', 'van', 'sau',
+  'truoc', 'moi', 'nua', 'roi', 'chua', 'deu', 'den', 'theo', 'uong',
 ]);
 
 const extractTokens = (normalizedText) => {
@@ -320,7 +322,7 @@ export function installChatbot(app, d, { auth }, options) {
               tokenHits * 12,
           };
         })
-        .filter((k) => k.score >= 12)
+        .filter((k) => k.score >= 24)
         .sort((a, b) => b.score - a.score);
 
       const [allProducts, activeCombos, activePromos, categories] =

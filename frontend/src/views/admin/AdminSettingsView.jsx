@@ -1,7 +1,7 @@
 /**
  * Admin System Settings & Backup View.
  */
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Boxes,
   Check,
@@ -11,9 +11,11 @@ import {
   RotateCcw,
   Settings,
   ShieldCheck,
+  Sparkles,
   Store,
 } from 'lucide-react';
 import { EDITABLE_SETTINGS_KEYS } from '../../models/constants.js';
+import { api } from '../../models/httpClient.js';
 import { Badge, CheckField, Field } from './adminUi.jsx';
 
 export default function AdminSettingsView({
@@ -28,6 +30,30 @@ export default function AdminSettingsView({
   onOpenBackup,
   onOpenRestore,
 }) {
+  const [geminiTesting, setGeminiTesting] = useState(false);
+  const [geminiTestResult, setGeminiTestResult] = useState(null);
+
+  const handleTestGemini = async () => {
+    if (geminiTesting) return;
+    setGeminiTesting(true);
+    setGeminiTestResult(null);
+    try {
+      const result = await api('/admin/settings/gemini-test', {
+        method: 'POST',
+        body: {
+          geminiModel: form.geminiModel || data?.geminiModel || '',
+          ...(form.geminiApiKey?.trim()
+            ? { geminiApiKey: form.geminiApiKey.trim() }
+            : {}),
+        },
+      });
+      setGeminiTestResult(result);
+    } catch (err) {
+      setGeminiTestResult({ ok: false, error: err.message });
+    } finally {
+      setGeminiTesting(false);
+    }
+  };
   const dirty = useMemo(
     () =>
       Boolean(form.geminiApiKey?.trim()) ||
@@ -206,15 +232,15 @@ export default function AdminSettingsView({
               onChange={onChange}
               placeholder="gemini-2.5-flash"
               hint={
-                data?.geminiKeySource === 'env'
-                  ? `Đang dùng Gemini API key có sẵn từ biến môi trường (${data?.geminiKeyMasked}).`
-                  : data?.geminiKeySource === 'settings'
-                    ? `Đang dùng Gemini API key đã lưu trong cấu hình (${data?.geminiKeyMasked}).`
-                    : 'Chưa phát hiện biến môi trường GEMINI_API_KEY; có thể nhập key dự phòng bên cạnh.'
+                data?.geminiKeySource === 'settings'
+                  ? `Đang ưu tiên Gemini API key đã lưu trong cấu hình (${data?.geminiKeyMasked})${data?.geminiEnvConfigured ? ', có biến môi trường dự phòng' : ''}.`
+                  : data?.geminiKeySource === 'env'
+                    ? `Đang dùng Gemini API key từ biến môi trường (${data?.geminiKeyMasked}).`
+                    : 'Chưa phát hiện biến môi trường GEMINI_API_KEY; hãy nhập key bên cạnh để bật AI.'
               }
             />
             <Field
-              label="Gemini API Key dự phòng (tùy chọn)"
+              label="Gemini API Key (ưu tiên cao nhất)"
               name="geminiApiKey"
               type="password"
               value={form.geminiApiKey || ''}
@@ -224,9 +250,53 @@ export default function AdminSettingsView({
                   ? 'Để trống để giữ nguyên key hiện tại'
                   : 'Nhập Gemini API Key (AIza...)'
               }
-              hint="Key lưu phía máy chủ, không lộ ra trình duyệt khách hàng."
+              hint="Key lưu phía máy chủ và được ưu tiên dùng trước biến môi trường, không lộ ra trình duyệt khách hàng."
             />
           </div>
+          <div
+            style={{
+              marginTop: 12,
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: 10,
+            }}
+          >
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={handleTestGemini}
+              disabled={geminiTesting}
+            >
+              {geminiTesting ? (
+                <LoaderCircle className="spin" size={15} />
+              ) : (
+                <Sparkles size={15} />
+              )}
+              {geminiTesting ? 'Đang kiểm tra Gemini…' : 'Kiểm tra kết nối Gemini AI'}
+            </button>
+            {geminiTestResult && (
+              <span
+                className="small"
+                style={{
+                  color: geminiTestResult.ok ? '#15803d' : '#b91c1c',
+                  fontWeight: 500,
+                }}
+              >
+                {geminiTestResult.ok
+                  ? `Kết nối thành công (${geminiTestResult.model}, ${geminiTestResult.latencyMs}ms).`
+                  : `Lỗi kết nối: ${geminiTestResult.error}`}
+              </span>
+            )}
+          </div>
+          {!geminiTestResult && data?.geminiLastError?.detail && (
+            <p
+              className="small"
+              style={{ marginTop: 8, color: '#b45309', marginBottom: 0 }}
+            >
+              Lần gián đoạn AI gần nhất: {data.geminiLastError.detail}
+            </p>
+          )}
         </section>
 
         <section className="adm-panel adm-settings-card">

@@ -20,6 +20,7 @@ import {
   parseIdList,
 } from './shared.js';
 import { geminiKeys } from '../integrations/gemini-client.js';
+import { testGeminiConnection } from '../integrations/gemini.js';
 import { defaultSettings, permissionNames } from '../repositories/seed.js';
 import bcrypt from 'bcryptjs';
 import { randomToken } from './shared.js';
@@ -1606,20 +1607,26 @@ export function installAdmin(
     const envKeys = geminiKeys();
     const dbKey = typeof geminiApiKey === 'string' ? geminiApiKey.trim() : '';
     const allKeys = geminiKeys(dbKey ? [dbKey] : []);
+    const lastFailure = await d.one(
+      "SELECT detail, created_at FROM nhat_ky_hoat_dong WHERE action='chatbot.provider_unavailable' ORDER BY id DESC LIMIT 1",
+    );
     return {
       ...safeSettings,
       demoMode: options.demo,
       geminiConfigured: allKeys.length > 0,
-      geminiKeySource: envKeys.length
-        ? 'env'
-        : dbKey
-          ? 'settings'
-          : 'none',
-      geminiKeyMasked: envKeys.length
-        ? maskKey(envKeys[0])
-        : dbKey
-          ? maskKey(dbKey)
+      geminiKeySource: dbKey ? 'settings' : envKeys.length ? 'env' : 'none',
+      geminiKeyMasked: dbKey
+        ? maskKey(dbKey)
+        : envKeys.length
+          ? maskKey(envKeys[0])
           : '',
+      geminiEnvConfigured: envKeys.length > 0,
+      geminiLastError: lastFailure
+        ? {
+            detail: lastFailure.detail,
+            createdAt: lastFailure.created_at,
+          }
+        : null,
       geminiModel:
         safeSettings.geminiModel ||
         process.env.GEMINI_MODEL ||
@@ -1643,6 +1650,36 @@ export function installAdmin(
       res.json({
         data: await settingsPayload(),
       }),
+  );
+  app.post(
+    '/api/admin/settings/gemini-test',
+    admin,
+    permission('settings'),
+    async (req, res) => {
+      const raw = await getSettings(d);
+      const inputKey = text(req.body?.geminiApiKey, 200);
+      const dbKey =
+        typeof raw.geminiApiKey === 'string' ? raw.geminiApiKey.trim() : '';
+      const extraKeys = [inputKey, dbKey].filter(Boolean);
+      const modelOverride =
+        text(req.body?.geminiModel, 80) || raw.geminiModel || '';
+      const result = await testGeminiConnection({
+        apiKeys: extraKeys,
+        modelOverride,
+      });
+      res.json({
+        data: {
+          ...result,
+          keySource: inputKey
+            ? 'input'
+            : dbKey
+              ? 'settings'
+              : geminiKeys().length
+                ? 'env'
+                : 'none',
+        },
+      });
+    },
   );
   app.patch(
     '/api/admin/settings',

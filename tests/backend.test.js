@@ -2389,3 +2389,86 @@ test('bankTransferConfig heals MB Bank aliases/typo BINs and QR proxy falls back
   assert.equal(localSvg.headers.get('x-qr-source'), 'local-emvco');
   assert.match(String(localSvg.body), /<svg[\s>]/);
 });
+
+test('Gemini prioritizes admin settings key, retries past HTTP 400 invalid key, exposes connection test, and avoids filler-word fallback mismatch', async (t) => {
+  const prevKey = process.env.GEMINI_API_KEY;
+  process.env.GEMINI_API_KEY = 'AIzaDeadEnvKey000000';
+  t.after(() => {
+    if (prevKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = prevKey;
+  });
+
+  const seenKeys = [];
+  const originalFetch = globalThis.fetch;
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    const s = String(url);
+    if (s.includes('generativelanguage.googleapis.com')) {
+      const usedKey = init?.headers?.['x-goog-api-key'] || '';
+      seenKeys.push(usedKey);
+      if (usedKey === 'AIzaDeadEnvKey000000' || usedKey === 'AIzaBadAdminKey111111') {
+        return new Response(
+          JSON.stringify({
+            error: {
+              code: 400,
+              status: 'INVALID_ARGUMENT',
+              message: 'API key not valid. Please pass a valid API key.',
+            },
+          }),
+          { status: 400, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [{ text: 'OK' }],
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    return originalFetch(url, init);
+  });
+
+  const { login } = await fixture(t, { allowProviderInTests: true });
+  const admin = await login('admin@antam.vn');
+  const customer = await login('khach@antam.vn');
+
+  // Admin saves a working key while dead env key exists -> settings key is tried FIRST and succeeds
+  const saved = await admin('/admin/settings', 'PATCH', {
+    geminiApiKey: 'AIzaGoodAdminKey222222',
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.data.geminiKeySource, 'settings');
+
+  const testOk = await admin('/admin/settings/gemini-test', 'POST', {});
+  assert.equal(testOk.status, 200);
+  assert.equal(testOk.data.ok, true);
+  assert.equal(seenKeys[0], 'AIzaGoodAdminKey222222');
+
+  // If input key fails with HTTP 400 API_KEY_INVALID, geminiRequest retries remaining keys and succeeds on saved key
+  seenKeys.length = 0;
+  const testFallback = await admin('/admin/settings/gemini-test', 'POST', {
+    geminiApiKey: 'AIzaBadAdminKey111111',
+  });
+  assert.equal(testFallback.status, 200);
+  assert.equal(testFallback.data.ok, true);
+  assert.deepEqual(seenKeys.slice(0, 2), [
+    'AIzaBadAdminKey111111',
+    'AIzaGoodAdminKey222222',
+  ]);
+
+  // Verify filler word "thì" in Vitamin C question never false-matches shipping policy when AI is unavailable
+  await admin('/admin/settings', 'PATCH', {
+    geminiApiKey: 'AIzaBadAdminKey111111',
+  });
+  const chatRes = await customer('/chat', 'POST', {
+    message: 'Cho tôi hỏi Vitamin C uống lúc nào thì tốt?',
+  });
+  assert.equal(chatRes.status, 200);
+  assert.equal(chatRes.data.mode, 'knowledge_fallback');
+  assert.doesNotMatch(chatRes.data.reply, /Phí giao hàng/);
+});

@@ -21,18 +21,32 @@ const splitKeyString = (raw) => {
     .filter(Boolean);
 };
 
+export function isGeminiKeyError(status, detail = '') {
+  if (status === 401 || status === 403) return true;
+  if (
+    status === 400 &&
+    /api[_ ]?key|invalid.*key|key.*expired|expired.*key|permission_denied/i.test(
+      String(detail || ''),
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function geminiKeys(extraKeys = []) {
   const values = [];
-  if (process.env.GEMINI_API_KEYS) {
-    values.push(...splitKeyString(process.env.GEMINI_API_KEYS));
-  }
-  if (process.env.GEMINI_API_KEY) {
-    values.push(...splitKeyString(process.env.GEMINI_API_KEY));
-  }
+  // Ưu tiên key quản trị viên vừa cấu hình trong Cài đặt hệ thống trước, sau đó mới đến biến môi trường dự phòng.
   if (Array.isArray(extraKeys)) {
     for (const item of extraKeys) values.push(...splitKeyString(item));
   } else if (typeof extraKeys === 'string' && extraKeys.trim()) {
     values.push(...splitKeyString(extraKeys));
+  }
+  if (process.env.GEMINI_API_KEY) {
+    values.push(...splitKeyString(process.env.GEMINI_API_KEY));
+  }
+  if (process.env.GEMINI_API_KEYS) {
+    values.push(...splitKeyString(process.env.GEMINI_API_KEYS));
   }
   return [...new Set(values.filter(Boolean))].slice(0, 5);
 }
@@ -76,7 +90,13 @@ export async function geminiRequest(
       } catch {
         lastDetail = `HTTP ${response.status}`;
       }
-      if (![401, 403, 429, 500, 502, 503, 504].includes(response.status)) break;
+      // Google Gemini trả 400 (API_KEY_INVALID / expired) cho key hỏng -> luôn thử tiếp các key còn lại.
+      if (
+        !isGeminiKeyError(response.status, lastDetail) &&
+        ![401, 403, 429, 500, 502, 503, 504].includes(response.status)
+      ) {
+        break;
+      }
     } catch (error) {
       if (!['TimeoutError', 'AbortError', 'TypeError'].includes(error.name))
         throw error;
@@ -89,5 +109,6 @@ export async function geminiRequest(
       : `Gemini không phản hồi${lastDetail ? ` (${lastDetail})` : ''}`,
   );
   err.httpStatus = lastStatus;
+  err.detail = lastDetail;
   throw err;
 }
