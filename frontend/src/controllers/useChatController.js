@@ -29,6 +29,7 @@ export function useChatController({ onClose, full = false }) {
   const [sessions, setSessions] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const initializedRef = useRef(false);
+  const messagesRef = useRef(null);
 
   useEffect(() => {
     if (!messages.length && config?.geminiConfigured) {
@@ -90,9 +91,11 @@ export function useChatController({ onClose, full = false }) {
   }, [user, messages]);
 
   useEffect(() => {
-    const box = document.querySelector(
-      full ? '.chat-full .chat-messages' : '.chat-popover .chat-messages',
-    );
+    const box =
+      messagesRef.current ||
+      document.querySelector(
+        full ? '.chat-full .chat-messages' : '.chat-popover .chat-messages',
+      );
     box?.scrollTo({ top: box.scrollHeight, behavior: 'smooth' });
   }, [messages, busy, full]);
 
@@ -157,5 +160,6 @@ export function useChatController({ onClose, full = false }) {
     startNewChat,
     send,
     handoff,
+    messagesRef,
   };
 }

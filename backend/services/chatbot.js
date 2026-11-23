@@ -17,18 +17,39 @@ const CHAT_STOP_WORDS = new Set([
   'toi', 'minh', 'ban', 'cho', 'hoi', 'thuoc', 'san', 'pham', 'nha', 'co',
   'nao', 'khong', 'gi', 'gia', 'bao', 'nhieu', 'mua', 'dung', 'can', 'the',
   'cach', 'hang', 'duoc', 'voi', 'va', 'la', 'bi', 'neu', 'nhe', 'em', 'anh',
-  'chi', 'tu', 'van', 'xem', 'tim', 'giup', 'voi', 'nay', 'kia', 'mot', 'nhung',
+  'chi', 'tu', 'van', 'xem', 'tim', 'giup', 'nay', 'kia', 'mot', 'nhung',
+  'xin', 'chao', 'gioi', 'thieu', 'tam', 've', 'cua', 'cac', 'biet', 'them',
+  'tiet', 'vui', 'long', 'lam', 'sao', 'tai', 'khi', 'trong', 'ngoai', 'hay',
+  'nhat', 'khach', 'vay', 'nhu', 'de', 'duoc', 'dang', 'ban', 'coi', 'thu',
 ]);
 
 const extractTokens = (normalizedText) => {
   const raw = normalizedText.split(/[^a-z0-9]+/).filter(Boolean);
-  return raw.filter((word, idx) => {
-    if (CHAT_STOP_WORDS.has(word)) return false;
-    if (word.length >= 3) return true;
-    // Giữ mã vitamin/khoáng chất ngắn (C, D, E, K, Zn, B1...) khi đứng cạnh từ khóa liên quan hoặc có chữ số.
-    if (/\d/.test(word)) return true;
-    return word.length === 1 && idx > 0 && raw[idx - 1] === 'vitamin';
-  });
+  const tokens = [];
+  for (let idx = 0; idx < raw.length; idx++) {
+    const word = raw[idx];
+    if (CHAT_STOP_WORDS.has(word)) continue;
+    // Gộp "vitamin c", "vitamin d", "vitamin e"... thành cụm để không tạo token 1 ký tự gây khớp nhầm.
+    if (
+      word === 'vitamin' &&
+      raw[idx + 1] &&
+      /^[a-z0-9]{1,3}$/.test(raw[idx + 1])
+    ) {
+      tokens.push(`vitamin ${raw[idx + 1]}`);
+      idx++;
+      continue;
+    }
+    if (word.length >= 3 || /\d/.test(word)) {
+      tokens.push(word);
+    }
+  }
+  return [...new Set(tokens)];
+};
+
+const containsWordToken = (haystack, token) => {
+  if (!token) return false;
+  if (token.includes(' ') || token.length >= 4) return haystack.includes(token);
+  return new RegExp(`(?:^|[^a-z0-9])${token}(?:$|[^a-z0-9])`).test(haystack);
 };
 
 const scoreProductForChat = (product, query, tokens) => {
@@ -41,8 +62,8 @@ const scoreProductForChat = (product, query, tokens) => {
   const pNorm = normalize(primary);
   const sNorm = normalize(secondary);
   for (const token of tokens) {
-    if (pNorm.includes(token)) score += 35;
-    else if (sNorm.includes(token)) score += 16;
+    if (containsWordToken(pNorm, token)) score += 35;
+    else if (containsWordToken(sNorm, token)) score += 16;
   }
   return score;
 };
@@ -288,10 +309,15 @@ export function installChatbot(app, d, { auth }, options) {
             .length;
           const titleScore = searchScore(k.title, normalized);
           const contentNorm = normalize(`${k.title} ${k.content}`);
-          const tokenHits = tokens.filter((t) => contentNorm.includes(t)).length;
+          const tokenHits = tokens.filter(
+            (t) => t.length >= 3 && containsWordToken(contentNorm, t),
+          ).length;
           return {
             ...k,
-            score: keywordHits * 40 + (titleScore >= 60 ? titleScore : 0) + tokenHits * 12,
+            score:
+              keywordHits * 40 +
+              (titleScore >= 60 ? titleScore : 0) +
+              tokenHits * 12,
           };
         })
         .filter((k) => k.score >= 12)
@@ -392,8 +418,10 @@ export function installChatbot(app, d, { auth }, options) {
             .join('\n')
         : '';
 
-      const knowledgeText = matching
-        .slice(0, 3)
+      const knowledgeForContext = matching.length
+        ? matching.slice(0, 4)
+        : knowledge.slice(0, 5);
+      const knowledgeText = knowledgeForContext
         .map((k) => `- ${k.title}: ${k.content}`)
         .join('\n');
 

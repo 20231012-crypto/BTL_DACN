@@ -44,11 +44,13 @@ function extractWebhookToken(req) {
   ).trim();
 }
 
-function parseOrderIdentifier(content) {
-  const raw = String(content || '');
-  const idMatch = /\bANTAM[\s_-]*(\d+)\b/i.exec(raw);
+function parseOrderIdentifier(content, paymentCode = '') {
+  const combined = `${paymentCode || ''} ${content || ''}`.trim();
+  const idMatch = /(?:^|[^A-Z])ANTAM[\s_-]*(\d+)(?!\d)/i.exec(combined);
   if (idMatch) return { type: 'id', value: Number(idMatch[1]) };
-  const codeMatch = /\b(AT\d[A-Z0-9]{5,})\b/i.exec(raw);
+  const codeMatch = /(?:^|[^A-Z0-9])(AT\d[A-Z0-9]{5,})(?![A-Z0-9])/i.exec(
+    combined,
+  );
   if (codeMatch) return { type: 'code', value: codeMatch[1].toUpperCase() };
   return null;
 }
@@ -191,26 +193,38 @@ export function installBankTransfers(
       const transferType = String(body.transferType || 'in').toLowerCase();
       if (transferType !== 'in') {
         return res.json({
+          success: true,
           data: { processed: false, reason: 'ignored_outgoing' },
         });
       }
       const incomingAccount = String(body.accountNumber || '').trim();
-      if (incomingAccount && incomingAccount !== config.account) {
+      const incomingSub = String(body.subAccount || '').trim();
+      const expectedAccount = String(config.account || '').trim();
+      const accountMatches =
+        (!incomingAccount && !incomingSub) ||
+        incomingAccount === expectedAccount ||
+        incomingSub === expectedAccount;
+      if (!accountMatches) {
         return res.json({
+          success: true,
           data: { processed: false, reason: 'account_mismatch' },
         });
       }
       const amount = Number(body.transferAmount ?? body.amount);
       const content = text(body.content || body.description || '', 1000);
-      const rawRef = text(
-        String(body.referenceCode || body.code || body.id || ''),
-        100,
-      );
+      const paymentCode = text(String(body.code || ''), 100);
+      const rawRef = text(String(body.referenceCode || ''), 100);
+      const sepayId = body.id !== undefined && body.id !== null ? String(body.id).trim() : '';
       const reference =
-        rawRef.length >= 6 ? rawRef : `VIETQR-${rawRef || randomUUID().slice(0, 8)}`;
-      const parsed = parseOrderIdentifier(content);
+        rawRef.length >= 6
+          ? rawRef
+          : sepayId
+            ? `SEPAY-${sepayId}`
+            : `VIETQR-${randomUUID().slice(0, 8)}`;
+      const parsed = parseOrderIdentifier(content, paymentCode);
       if (!parsed) {
         return res.json({
+          success: true,
           data: { processed: false, reason: 'order_not_found_in_content' },
         });
       }
@@ -220,6 +234,7 @@ export function installBankTransfers(
           : await d.one('SELECT * FROM don_hang WHERE code=?', parsed.value);
       if (!order || order.payment_method !== 'bank_transfer') {
         return res.json({
+          success: true,
           data: { processed: false, reason: 'order_not_found' },
         });
       }
@@ -231,6 +246,7 @@ export function installBankTransfers(
           gateway: text(body.gateway || 'sepay', 60),
         });
         return res.json({
+          success: true,
           data: {
             processed: false,
             reason: 'amount_mismatch',
@@ -240,6 +256,7 @@ export function installBankTransfers(
       }
       if (order.payment_status === 'paid') {
         return res.json({
+          success: true,
           data: {
             processed: true,
             alreadyPaid: true,
@@ -250,6 +267,7 @@ export function installBankTransfers(
       }
       if (order.status !== 'pending_payment') {
         return res.json({
+          success: true,
           data: {
             processed: false,
             reason: 'order_not_pending_payment',
@@ -267,6 +285,7 @@ export function installBankTransfers(
         meta: { gateway: text(body.gateway || 'sepay', 60) },
       });
       res.json({
+        success: true,
         data: {
           processed: true,
           alreadyPaid: result.alreadyPaid,

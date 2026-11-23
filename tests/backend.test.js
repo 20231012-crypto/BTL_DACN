@@ -1966,16 +1966,18 @@ test('VietQR webhook auto-confirms payment with strict token/amount/idempotency 
     'unpaid',
   );
 
-  // Valid SePay webhook -> auto-marks paid + transitions to pending
+  // Valid SePay webhook -> auto-marks paid + transitions to pending (including concatenated bank memo & subAccount)
   const okHook = await anon('/payments/bank-transfer/webhook', 'POST', {
+    id: 92704,
     transferType: 'in',
     gateway: 'Vietcombank',
     accountNumber: '1012345678',
     transferAmount: created.data.total,
-    content: `MBVCB.12345.ANTAM${created.data.id}.CT tu KH`,
+    content: `FT261123ANTAM${created.data.id}CT`,
     referenceCode: 'FT2611239999',
   }, { Authorization: 'Apikey test-sepay-secret-2026' });
   assert.equal(okHook.status, 200);
+  assert.equal(okHook.body.success, true);
   assert.equal(okHook.data.processed, true);
   assert.equal(okHook.data.paymentStatus, 'paid');
   assert.equal(okHook.data.status, 'pending');
@@ -2221,4 +2223,58 @@ test('chatbot routes policy questions through Gemini when configured via env or 
   assert.equal(shipReply.data.mode, 'gemini');
   assert.ok(geminiCalls >= 1);
   assert.match(lastPayload, /Combo sản phẩm tiết kiệm/);
+});
+
+test('Gemini chat falls back to alternate models on 429/404 and avoids single-letter token false matches', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const calledUrls = [];
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    const s = String(url);
+    if (s.includes('generativelanguage.googleapis.com')) {
+      calledUrls.push(s);
+      if (s.includes('gemini-2.5-flash:')) {
+        return new Response(
+          JSON.stringify({ error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'Quota exceeded' } }),
+          { status: 429, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    text: 'Vitamin C 1000mg hỗ trợ bổ sung vitamin C hằng ngày. Thông tin chỉ mang tính tham khảo.',
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    return originalFetch(url, init);
+  });
+
+  const { login } = await fixture(t, { allowProviderInTests: true });
+  const admin = await login('admin@antam.vn');
+  const customer = await login('khach@antam.vn');
+  await admin('/admin/settings', 'PATCH', {
+    geminiApiKey: 'AIzaTestFallbackKey987654',
+    geminiModel: 'gemini-2.5-flash',
+  });
+
+  const res = await customer('/chat', 'POST', {
+    message: 'Cho tôi hỏi về Vitamin C',
+  });
+  assert.equal(res.status, 200);
+  assert.equal(res.data.mode, 'gemini');
+  assert.ok(calledUrls.length >= 2, 'must retry with fallback Gemini model on 429');
+  assert.match(calledUrls[1], /gemini-2\.5-flash-lite/);
+  assert.ok(
+    res.data.products.every((p) => /vitamin c/i.test(`${p.name} ${p.ingredient}`)),
+    'Vitamin C query must not false-match unrelated products on single letter c',
+  );
 });

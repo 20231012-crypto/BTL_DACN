@@ -92,7 +92,7 @@ export default function ChatPanelView({ onClose, full = false }) {
           ))}
         </div>
       ) : (
-        <div className="chat-messages">
+        <div className="chat-messages" ref={c.messagesRef}>
           <div className="chat-bubble assistant">
             <strong>Chào bạn, An Tâm đây 🌿</strong>
             <p>

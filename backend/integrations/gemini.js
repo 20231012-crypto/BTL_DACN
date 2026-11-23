@@ -2,6 +2,13 @@
 // Only de-identified, minimal retrieved context and recent turns are sent.
 import { geminiKeys, geminiRequest } from './gemini-client.js';
 
+const FALLBACK_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-lite',
+];
+
 const SYSTEM_PROMPT = [
   'Bạn là trợ lý thông tin chính thức của Nhà thuốc An Tâm. Trả lời bằng tiếng Việt tự nhiên, lịch sự, đi thẳng vào câu hỏi của khách hàng.',
   '',
@@ -26,12 +33,14 @@ export async function generateAnswer({
   modelOverride = '',
 }) {
   if (!geminiKeys(apiKeys).length) return null;
-  const model =
+  const primaryModel =
     (typeof modelOverride === 'string' && modelOverride.trim()) ||
-    process.env.GEMINI_MODEL ||
+    process.env.GEMINI_MODEL?.trim() ||
     'gemini-2.5-flash';
-  if (!/^[a-zA-Z0-9._-]+$/.test(model))
+  if (!/^[a-zA-Z0-9._-]+$/.test(primaryModel))
     throw new Error('Cấu hình model Gemini không hợp lệ.');
+
+  const modelsToTry = [...new Set([primaryModel, ...FALLBACK_MODELS])];
 
   const contents = [];
   for (const turn of history.slice(-6)) {
@@ -46,29 +55,41 @@ export async function generateAnswer({
     : `CÂU HỎI KHÁCH HÀNG:\n${question}`;
   contents.push({ role: 'user', parts: [{ text: prompt }] });
 
-  const generationConfig = {
-    temperature: 0.15,
-    maxOutputTokens: 1000,
-    ...(/^gemini-2\.5/.test(model)
-      ? { thinkingConfig: { thinkingBudget: 0 } }
-      : {}),
-  };
-
-  const result = await geminiRequest(
-    `models/${model}:generateContent`,
-    {
-      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-      contents,
-      generationConfig,
-    },
-    15000,
-    9000,
-    apiKeys,
-  );
-  const output = result.candidates?.[0]?.content?.parts
-    ?.filter((part) => !part.thought)
-    .map((part) => part.text || '')
-    .join('\n');
-  if (!output?.trim()) throw new Error('Gemini returned no text');
-  return output.trim().slice(0, 5000);
+  const overallDeadline = Date.now() + 22000;
+  let lastError = null;
+  for (const model of modelsToTry) {
+    const remaining = overallDeadline - Date.now();
+    if (remaining < 1500) break;
+    const generationConfig = {
+      temperature: 0.15,
+      maxOutputTokens: 1000,
+      ...(/^gemini-2\.5-flash/.test(model)
+        ? { thinkingConfig: { thinkingBudget: 0 } }
+        : {}),
+    };
+    try {
+      const result = await geminiRequest(
+        `models/${model}:generateContent`,
+        {
+          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents,
+          generationConfig,
+        },
+        Math.min(remaining, 12000),
+        Math.min(remaining, 8000),
+        apiKeys,
+      );
+      const output = result.candidates?.[0]?.content?.parts
+        ?.filter((part) => !part.thought)
+        .map((part) => part.text || '')
+        .join('\n');
+      if (!output?.trim()) throw new Error('Gemini returned no text');
+      return output.trim().slice(0, 5000);
+    } catch (error) {
+      lastError = error;
+      // Only fall through to alternate models on model/quota/server/timeout errors; stop on bad key (401/403).
+      if (error.httpStatus === 401 || error.httpStatus === 403) break;
+    }
+  }
+  throw lastError || new Error('Gemini tạm thời chưa xử lý được.');
 }

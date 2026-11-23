@@ -1155,6 +1155,12 @@ svg {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  height: 100%;
+}
+.chat-header,
+.chat-mode,
+.chat-bottom {
+  flex-shrink: 0;
 }
 .chat-header {
   padding: 17px;
@@ -1316,15 +1322,21 @@ svg {
 }
 .chat-full {
   max-width: 800px;
+  height: clamp(520px, 72dvh, 720px);
+  max-height: calc(100dvh - 180px);
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
   margin: 0 auto 30px;
 }
 .chat-full .chat-messages {
-  height: 460px;
-  min-height: 400px;
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
   max-height: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .chat-full .chat-bubble {
   font-size: 12px;
@@ -4003,10 +4015,16 @@ svg {
   .chat-mode {
     font-size: 8px;
   }
+  .chat-full {
+    height: min(74dvh, 620px);
+    max-height: calc(100dvh - 150px);
+  }
   .chat-full .chat-messages {
-    height: 430px;
-    min-height: 300px;
-    max-height: 60dvh;
+    flex: 1 1 0;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
   }
   .chat-full .chat-bubble {
     max-width: 95%;
